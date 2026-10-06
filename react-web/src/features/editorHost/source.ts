@@ -50,8 +50,11 @@ function withSigned(services: Omit<EditorServices, 'signed'>): EditorServices {
   return signed == null ? services : { ...services, signed }
 }
 
-/** What the released package talks to. projects: null until the storage service is deployed. */
-const PINNED_SERVICES: EditorServices = withSigned({ projects: null, worldsContent: 'https://worlds-content-server.decentraland.zone' })
+/** What the released package talks to: the project service (dcl-editor packages/service) and Worlds. */
+const PINNED_SERVICES: EditorServices = withSigned({
+  projects: 'https://web-editor-dev.dclregenesislabs.xyz',
+  worldsContent: 'https://worlds-content-server.decentraland.zone'
+})
 
 const LOOPBACK_SERVICES: EditorServices = {
   projects: 'http://localhost:8787',
