@@ -1,9 +1,9 @@
-// The page's side of the editor host contract (v1.1): the object the editor package finds at
+// The page's side of the editor host contract (v1.2): the object the editor package finds at
 // window.__dclEditorHost, the element it mounts into, and the script tag that loads it.
 
 import type { AuthChainLink, AuthIdentity } from '../../auth/sso'
 import type { EditorHudMode } from '../hudMode'
-import { PROJECT_ID, type EditorServices, type EditorSource } from '../source'
+import { PROJECT_ID, type EditorServices, type EditorSource, type SignedServices } from '../source'
 import { CID_PATTERN } from './cid'
 import { sceneIdFromAbout, stageEditorScene } from './editorScene'
 import type { Signer } from './signer'
@@ -18,6 +18,21 @@ export interface DeploymentRequest {
   title: string
   fileCount: number
   bytes: number
+}
+
+export interface UndeployRequest {
+  world: string
+  /** null: the whole world, every scene in it */
+  coordinate: string | null
+}
+
+export interface SignedFetchInit {
+  method?: string
+  headers?: Record<string, string>
+  body?: BodyInit | null
+  /** The x-identity-metadata of a request to `services.signed`; ignored for `services.projects`. */
+  metadata?: Record<string, unknown>
+  signal?: AbortSignal
 }
 
 export interface DclEditorHostV1 {
@@ -41,9 +56,10 @@ export interface DclEditorHostV1 {
   /** Spawn the package's own scene (`<editorBase>scene`, checked against the pin and served by
    *  the page) with its permissions; resolves once live. */
   spawnEditorScene: () => Promise<{ hash: string }>
-  /** fetch a url under `services.projects` as the signed-in wallet. Rejects 'not-allowed' for any
-   *  other url and 'not-signed-in' for a guest. */
-  signedFetch: (url: string, init?: { method?: string; headers?: Record<string, string>; body?: BodyInit | null }) => Promise<Response>
+  /** fetch a url under `services.projects` or `services.signed` as the signed-in wallet. Rejects
+   *  'not-allowed' for any other url, method or editor metadata, 'cancelled' when the player declines
+   *  an undeploy, and 'not-signed-in' for a guest. */
+  signedFetch: (url: string, init?: SignedFetchInit) => Promise<Response>
   /** Ask the player to confirm a Worlds deployment, then sign its entity id. Rejects 'cancelled'
    *  when declined and 'not-signed-in' for a guest. */
   signDeployment: (request: DeploymentRequest) => Promise<AuthChainLink[]>
@@ -71,6 +87,8 @@ export interface EditorHostDeps {
   login: () => Promise<AuthIdentity | null>
   /** The player's answer to "sign this deployment as `wallet`, for `server`?". */
   confirmDeployment: (request: DeploymentRequest, wallet: string, server: string) => Promise<boolean>
+  /** The player's answer to "sign removing this scene from `request.world` as `wallet`?". */
+  confirmUndeploy: (request: UndeployRequest, wallet: string, server: string, signal?: AbortSignal) => Promise<boolean>
   setMode: (mode: EditorHudMode) => void
   showCreatePage: (open: boolean) => void
   travel: (realm: string, parcel?: { x: number; y: number }) => Promise<void>
@@ -99,7 +117,18 @@ const EDITOR_COMMANDS = new Set([
   'set_scene', 'texture_camera_screenshot', 'tick_scene', 'time', 'unfreeze_scene'
 ])
 // headers the editor may send on a request signed as the player
-const SIGNED_FETCH_HEADERS = new Set(['accept', 'content-type', 'if-match', 'if-none-match'])
+const SIGNED_FETCH_HEADERS = new Set(['accept', 'content-type', 'if-match', 'if-none-match', 'x-confirm-delete-all'])
+// what the editor may ask of each service a scene's signed fetch reaches
+const SIGNED_METHODS: Record<keyof SignedServices, ReadonlySet<string>> = {
+  worldsContent: new Set(['GET', 'PUT', 'DELETE']),
+  commsGatekeeper: new Set(['GET', 'POST', 'PUT', 'DELETE']),
+  storage: new Set(['GET', 'POST', 'PUT', 'DELETE']),
+  creatorsData: new Set(['POST']),
+  multiplayer: new Set(['GET'])
+}
+// the server's router ignores case and a trailing slash
+const UNDEPLOY = /^\/world\/([^/]+)\/scenes\/([^/]+)\/?$/i
+const UNDEPLOY_WORLD = /^\/entities\/([^/]+)\/?$/i
 
 // Where the player was before the first preview.
 let home: Home | null = null
@@ -173,6 +202,26 @@ function under(base: string | null, url: string): string | null {
   if (base == null || !URL.canParse(url)) return null
   const { href } = new URL(url)
   return href.startsWith(`${base}/`) ? href : null
+}
+
+/** Which of `services` `url` is under, and its normalised form; null for none or a request the
+ *  editor may not sign there. */
+function signedTarget(services: SignedServices | undefined, url: string, method: string): { service: keyof SignedServices; target: string } | null {
+  if (services == null) return null
+  for (const service of Object.keys(SIGNED_METHODS) as Array<keyof SignedServices>) {
+    const target = under(services[service], url)
+    if (target == null) continue
+    if (!SIGNED_METHODS[service].has(method)) return null
+    if (service === 'multiplayer' && new URL(target).pathname !== '/logs') return null
+    return { service, target }
+  }
+  return null
+}
+
+// a signature only the editor's own service should get; checked as signed, lowercased
+function editorMetadata(metadata: Record<string, unknown>): boolean {
+  const folded = JSON.parse(JSON.stringify(metadata).toLowerCase()) as Record<string, unknown>
+  return folded.signer === 'dcl:editor' || (typeof folded.intent === 'string' && folded.intent.startsWith('dcl:editor:'))
 }
 
 /** The console line that puts the clock back, from the engine's reply to a bare `/time`. */
@@ -298,15 +347,29 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
       return pending.then(({ hash }) => ({ hash }))
     },
     async signedFetch(url, init) {
-      const target = under(source.services.projects, url)
+      const method = (init?.method ?? 'GET').toUpperCase()
+      const project = under(source.services.projects, url)
+      const other = project == null ? signedTarget(source.services.signed, url, method) : null
+      const target = project ?? other?.target
       if (target == null) throw new Error('not-allowed')
+      const metadata = other == null ? undefined : (init?.metadata ?? {})
+      if (metadata != null && (typeof metadata !== 'object' || Array.isArray(metadata) || editorMetadata(metadata))) throw new Error('not-allowed')
       const identity = await deps.login()
       if (identity == null) throw new Error('not-signed-in')
-      const method = (init?.method ?? 'GET').toUpperCase()
+      const signal = init?.signal
+      signal?.throwIfAborted()
+      const path = new URL(target).pathname
+      const undeploy = other?.service === 'worldsContent' && method === 'DELETE' ? (UNDEPLOY.exec(path) ?? UNDEPLOY_WORLD.exec(path)) : null
+      if (undeploy != null) {
+        const request = { world: decodeURIComponent(undeploy[1]), coordinate: undeploy[2] == null ? null : decodeURIComponent(undeploy[2]) }
+        const confirmed = await deps.confirmUndeploy(request, identity.authChain[0].payload, new URL(target).host, signal)
+        signal?.throwIfAborted()
+        if (!confirmed) throw new Error('cancelled')
+      }
       const own = Object.entries(init?.headers ?? {}).filter(([name]) => SIGNED_FETCH_HEADERS.has(name.toLowerCase()))
       const loaded = await loadSigner()
-      const signed = await loaded.signFetch(identity, method, target, signerFor(loaded, identity))
-      return fetch(target, { method, body: init?.body, headers: { ...Object.fromEntries(own), ...signed } })
+      const signed = await loaded.signFetch(identity, method, target, signerFor(loaded, identity), metadata)
+      return fetch(target, { method, body: init?.body, signal, headers: { ...Object.fromEntries(own), ...signed } })
     },
     async signDeployment(request) {
       const identity = await deps.login()

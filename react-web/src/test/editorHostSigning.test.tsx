@@ -1,5 +1,5 @@
 // What the editor host signs for the editor (features/editorHost/host): requests to the project
-// storage service and Worlds deployments, with the signed-in wallet's stored identity, checked
+// storage service and the services a scene's signed fetch reaches, and Worlds deployments, with the signed-in wallet's stored identity, checked
 // against the reference implementation of the auth chain.
 import { beforeAll, describe, it, expect, vi } from 'vitest'
 import { act, render, renderHook, screen } from '@testing-library/react'
@@ -113,5 +113,106 @@ describe('editor host signing', () => {
     for (const entityId of ['get:/projects:1:{}', 'QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG', 'a'.repeat(64)]) {
       await expect(host().signDeployment({ ...request, entityId })).rejects.toThrow('invalid entity id')
     }
+  })
+
+  it('signs requests to the services a scene reaches as a scene would, path only, and never as the editor', async () => {
+    const fetched = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('{}'))
+    session.profile.data = null
+    await expect(host().signedFetch('https://storage.decentraland.org/players')).rejects.toThrow('not-signed-in')
+    await signIn()
+    const refused: Array<[string, { method?: string; metadata?: Record<string, unknown> }?]> = [
+      // the other environment's, and creators-data's lookalike
+      ['https://worlds-content-server.decentraland.zone/world/x/about'],
+      ['https://creators-data.decentraland.zone/v2/x', { method: 'POST' }],
+      ['https://creators-data.decentraland.org/v3/x', { method: 'POST' }],
+      ['https://storage.decentraland.org@evil.example/players'],
+      ['https://storage.decentraland.org:444/players'],
+      ['https://storage.decentraland.org.evil.example/players'],
+      ['https://worlds-content-server.decentraland.org/entities', { method: 'POST' }],
+      ['https://creators-data.decentraland.org/v2/x'],
+      ['https://multiplayer-server.decentraland.org/logs', { method: 'POST' }],
+      ['https://multiplayer-server.decentraland.org/rooms'],
+      ['https://storage.decentraland.org/players', { metadata: { signer: 'dcl:editor' } }],
+      ['https://storage.decentraland.org/players', { metadata: { intent: 'dcl:editor:projects' } }],
+      // the payload is signed lowercased, so a case change still signs as the editor
+      ['https://storage.decentraland.org/players', { metadata: { signer: 'DCL:Editor' } }],
+      ['https://storage.decentraland.org/players', { metadata: { Intent: 'dcl:editor:projects' } }]
+    ]
+    for (const [url, init] of refused) await expect(host().signedFetch(url, init), url).rejects.toThrow('not-allowed')
+    expect(fetched).not.toHaveBeenCalled()
+
+    for (const [url, method] of [
+      ['https://worlds-content-server.decentraland.org/world/boedo.dcl.eth/permissions', 'PUT'],
+      ['https://comms-gatekeeper.decentraland.org/scene-admin', 'POST'],
+      ['https://storage.decentraland.org/players/0x1', 'DELETE'],
+      ['https://creators-data.decentraland.org/v2/assets', 'POST'],
+      ['https://multiplayer-server.decentraland.org/logs?since=1', 'GET']
+    ]) {
+      await host().signedFetch(url, { method })
+      expect(fetched.mock.lastCall![0], url).toBe(url)
+    }
+
+    const metadata = { signer: 'decentraland-kernel-scene', sceneId: 'bafkreiscene', realm: { hostname: 'boedo.dcl.eth' } }
+    const body = new FormData()
+    const abort = new AbortController()
+    await host().signedFetch('https://storage.decentraland.org/players/0x1/values?key=a', {
+      method: 'delete',
+      body,
+      metadata,
+      signal: abort.signal,
+      headers: { 'x-confirm-delete-all': 'true' }
+    })
+    const init = fetched.mock.lastCall![1]!
+    const headers = init.headers as Record<string, string>
+    expect(init.body).toBe(body)
+    expect(init.signal).toBe(abort.signal)
+    expect(headers['content-type'], 'the browser sets the form boundary').toBeUndefined()
+    expect(headers['x-confirm-delete-all']).toBe('true')
+    expect(headers['x-identity-metadata']).toBe(JSON.stringify(metadata))
+    // the path without the query, as a scene's signed fetch signs it
+    const chain = [0, 1, 2].map((i) => JSON.parse(headers[`x-identity-auth-chain-${i}`]))
+    const payload = `delete:/players/0x1/values:${headers['x-identity-timestamp']}:${headers['x-identity-metadata']}`.toLowerCase()
+    expect(await Authenticator.validateSignature(payload, chain, null)).toEqual({ ok: true, message: undefined })
+
+    // the project service keeps its own metadata
+    await host().signedFetch('http://localhost:8787/projects', { metadata })
+    expect(JSON.parse((fetched.mock.lastCall![1]!.headers as Record<string, string>)['x-identity-metadata'])).toMatchObject({ intent: 'dcl:editor:projects' })
+    fetched.mockRestore()
+  })
+
+  it('unpublishes a scene from a world only once the player has confirmed it in the page', async () => {
+    const fetched = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('{}'))
+    render(<PopupHost />)
+    await signIn()
+    const url = 'https://worlds-content-server.decentraland.org/world/boedo.dcl.eth/scenes/-3,4'
+    const declined = expect(host().signedFetch(url, { method: 'DELETE' })).rejects.toThrow('cancelled')
+    const dialog = await screen.findByRole('dialog')
+    for (const fact of ['boedo.dcl.eth', '-3,4', 'worlds-content-server.decentraland.org']) expect(dialog).toHaveTextContent(fact)
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await declined
+    expect(fetched).not.toHaveBeenCalled()
+
+    const removed = host().signedFetch(`${url.replace('/scenes/', '/Scenes/')}/`, { method: 'DELETE' })
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign and unpublish' }))
+    await removed
+    expect(fetched.mock.lastCall![0]).toBe(`${url.replace('/scenes/', '/Scenes/')}/`)
+    fetched.mockClear()
+
+    // the whole world, every scene in it
+    const world = expect(host().signedFetch('https://worlds-content-server.decentraland.org/Entities/boedo.dcl.eth/', { method: 'DELETE' })).rejects.toThrow('cancelled')
+    expect(await screen.findByRole('dialog')).toHaveTextContent('All scenes')
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await world
+    expect(fetched).not.toHaveBeenCalled()
+
+    // the editor gave up while the player was still deciding: nothing is left to sign
+    const abort = new AbortController()
+    const dropped = expect(host().signedFetch(url, { method: 'DELETE', signal: abort.signal })).rejects.toThrow('aborted')
+    await screen.findByRole('dialog')
+    abort.abort()
+    await dropped
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(fetched).not.toHaveBeenCalled()
+    fetched.mockRestore()
   })
 })

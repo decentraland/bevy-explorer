@@ -1,5 +1,6 @@
 // What the scene editor may have signed with the player's identity: a request to the project
-// storage service, and a Worlds deployment. It holds no key: host.ts passes the identity in.
+// storage service or to a service a scene's signed fetch reaches, and a Worlds deployment. It
+// holds no key: host.ts passes the identity in.
 
 import type { AuthChainLink, AuthIdentity } from '../../auth/sso'
 import { personalSign } from '../../../shell/sign'
@@ -21,15 +22,18 @@ async function signPayload(identity: AuthIdentity, payload: string, sign: SignMe
   return [...identity.authChain, { type: 'ECDSA_SIGNED_ENTITY', payload, signature: await sign(identity.ephemeralIdentity.address, payload) }]
 }
 
-/** The signed-fetch (ADR-44) headers for one request to the project storage service. */
-export async function signFetch(identity: AuthIdentity, method: string, url: string, sign: SignMessage): Promise<Record<string, string>> {
+/** The signed-fetch (ADR-44) headers for one request. Without `metadata`, to the project storage
+ *  service; with it, to another service, signed as a scene's signed fetch is. */
+export async function signFetch(identity: AuthIdentity, method: string, url: string, sign: SignMessage, metadata?: Record<string, unknown>): Promise<Record<string, string>> {
   const timestamp = String(Date.now())
-  // fixed here: the service takes this intent only, and refuses a scene's signed fetch
-  const metadata = JSON.stringify({ intent: 'dcl:editor:projects', signer: 'dcl:editor', origin: location.origin })
   const { pathname, search } = new URL(url)
-  // the query too: a verifier reading the path as the server sees it includes it
-  const payload = [method, `${pathname}${search}`, timestamp, metadata].join(':').toLowerCase()
-  const headers: Record<string, string> = { 'x-identity-timestamp': timestamp, 'x-identity-metadata': metadata }
+  // the project service takes only this intent and verifies the query too; the others verify the path alone
+  const [meta, path] =
+    metadata == null
+      ? [JSON.stringify({ intent: 'dcl:editor:projects', signer: 'dcl:editor', origin: location.origin }), `${pathname}${search}`]
+      : [JSON.stringify(metadata), pathname]
+  const payload = [method, path, timestamp, meta].join(':').toLowerCase()
+  const headers: Record<string, string> = { 'x-identity-timestamp': timestamp, 'x-identity-metadata': meta }
   const chain = await signPayload(identity, payload, sign)
   chain.forEach((link, i) => (headers[`x-identity-auth-chain-${i}`] = JSON.stringify(link)))
   return headers

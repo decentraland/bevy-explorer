@@ -43,6 +43,7 @@ describe('editor scene', () => {
       identity: () => ({ address: null, isGuest: true }),
       login: async () => null,
       confirmDeployment: async () => false,
+      confirmUndeploy: async () => false,
       setMode: vi.fn(),
       showCreatePage: vi.fn(),
       travel: async () => {},

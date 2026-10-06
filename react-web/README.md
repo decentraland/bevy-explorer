@@ -109,7 +109,12 @@ this page's own JavaScript realm, so the pin, its integrity hash and the allowed
 keep untrusted code out. `signedFetch` signs only urls under the project storage service, with
 the query, the host's fixed metadata and only the `accept`, `content-type`, `if-match` and
 `if-none-match` headers the editor sets; any method is allowed, so the editor can also delete the
-player's stored scenes. `signDeployment` signs only after the page's own confirmation dialog, and
+player's stored scenes. Beside a `decentraland.zone` or `.org` Worlds server, `signedFetch` also
+signs as a scene's signed fetch would (the path without the query, the editor's metadata) for that
+environment's Worlds, comms-gatekeeper, storage and multiplayer `/logs`, and creators-data `/v2`, with
+a method allow-list per service; it refuses the project service's own metadata there, and removing a
+scene from a world (`DELETE /world/<name>/scenes/<parcel>`) waits for the page's own confirmation.
+The `x-confirm-delete-all` header passes too. `signDeployment` signs only after the page's own confirmation dialog, and
 only the entity id: the world is inside that entity, but the dialog shows the world and server the
 editor reports. `engineConsole` passes only the commands the editor uses to inspect and drive the
 scene it edits; `reload` and `set_scene` must name that scene or the editor's own. A guest gets

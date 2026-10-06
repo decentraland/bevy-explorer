@@ -7,7 +7,7 @@ import { PAGE_DIR } from '../../lib/publicUrl'
 import { getLogin, rootAddress } from '../auth/sso'
 import type { EngineSession } from '../session/useEngineSession'
 import { CreatePage } from './CreatePage'
-import { confirmDeployment } from './DeployConfirm'
+import { confirmDeployment, confirmUndeploy } from './DeployConfirm'
 import { bridgeScene, bridgeTravel } from './host/bridge'
 import { guardUrlSync, loadEditor, type EditorPackage } from './host/host'
 import { editorEntry, editorSource } from './source'
@@ -66,6 +66,7 @@ export function useEditorHost(entrySearch: string, session: EngineSession): Edit
               return rootAddress(stored.identity).toLowerCase() === me.address.toLowerCase() ? stored.identity : null
             },
             confirmDeployment,
+            confirmUndeploy,
             setMode: (mode) => latest.current.editor.setMode(mode),
             showCreatePage: (open) => latest.current.create.show(open),
             travel: bridgeTravel,

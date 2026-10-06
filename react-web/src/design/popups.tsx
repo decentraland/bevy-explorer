@@ -221,6 +221,8 @@ export interface DialogOptions {
   dismissible?: boolean
   /** See PopupOptions.fixed. */
   fixed?: boolean
+  /** Closes the dialog (resolving `null`) when it aborts. */
+  signal?: AbortSignal
 }
 
 /**
@@ -233,9 +235,12 @@ export function showDialog(opts: DialogOptions): Promise<string | null> {
     const settle = (value: string | null): void => {
       if (settled) return
       settled = true
+      opts.signal?.removeEventListener('abort', abort)
       resolve(value)
     }
-    openPopup(
+    const abort = (): void => close()
+    if (opts.signal?.aborted) return resolve(null)
+    const close = openPopup(
       (close) => (
         <ModalShell
           title={opts.title}
@@ -261,6 +266,7 @@ export function showDialog(opts: DialogOptions): Promise<string | null> {
       ),
       { onClose: () => settle(null), backdropClickCloses: opts.dismissible ?? true, fixed: opts.fixed ?? false } // default dim scrim from PopupHost
     )
+    opts.signal?.addEventListener('abort', abort)
   })
 }
 
