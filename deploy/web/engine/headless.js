@@ -5,6 +5,8 @@
 
 import { createSandboxHost } from "./sandbox_host.js";
 
+const RESTART_WAIT_MS = 5000;
+
 /**
  * One server per preview realm across the browser's tabs, as the native server's scene lock
  * (src/bin/headless.rs claim_scene_locks): a second one would take the first's place in the
@@ -15,11 +17,12 @@ import { createSandboxHost } from "./sandbox_host.js";
 function claimRealm(realm) {
   return new Promise((resolve, reject) => {
     navigator.locks
-      .request(`dcl-scene-server:${realm}`, { ifAvailable: true }, (lock) => {
-        resolve(lock !== null);
-        return lock && new Promise(() => {});
+      // a restart starts the next server as it removes the last one's frame: wait for its release
+      .request(`dcl-scene-server:${realm}`, { signal: AbortSignal.timeout(RESTART_WAIT_MS) }, () => {
+        resolve(true);
+        return new Promise(() => {});
       })
-      .catch(reject);
+      .catch((e) => (e?.name === "TimeoutError" || e?.name === "AbortError" ? resolve(false) : reject(e)));
   });
 }
 

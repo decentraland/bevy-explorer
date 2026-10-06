@@ -132,6 +132,8 @@ function createJsContext(wasmApi, context) {
   deleteFromPrototypeChain(self.navigator, "storageBuckets");
   // the page's service worker registration (and its cache routes) is no scene's business
   deleteFromPrototypeChain(self.navigator, "serviceWorker");
+  // the scene server's one-per-scene lock (headless.js) is held by name, which a scene could take
+  deleteFromPrototypeChain(self.navigator, "locks");
 
   // IndexedDB is same-origin too, and holds more than its own data: platform/src/web_save.js keeps
   // the FileSystemDirectoryHandle for the user's picked scene folder there (db `dcl-editor`, store
