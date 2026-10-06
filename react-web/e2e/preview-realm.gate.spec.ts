@@ -9,7 +9,7 @@ import { randomBytes } from 'node:crypto'
 import { appendFileSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test, type BrowserContext, type Page, type Worker } from '@playwright/test'
-import { SERVERS } from './gate'
+import { APP, NAV, SERVERS, appFrame } from './gate'
 import { cmd } from './helpers'
 
 // what the editor previews a project under: a random id, never its name
@@ -197,7 +197,9 @@ test('a scene built in the browser runs from the preview realm and hot-reloads',
   const v1At = markers.find((m) => m.version === 1)!.t
   // not part of the gate: whether the HUD reaches the world on this realm
   const hudReady = await page
-    .waitForSelector('nav[aria-label="Main navigation"]', { timeout: 60_000 })
+    .frameLocator(APP)
+    .locator(NAV)
+    .waitFor({ timeout: 60_000 })
     .then(() => true)
     .catch(() => false)
 
@@ -209,7 +211,7 @@ test('a scene built in the browser runs from the preview realm and hot-reloads',
   expect(second.published!.entityId, 'the entity id is stable across publishes').toBe(entityId)
   expect(bundleV2, 'the bundle id changes with its bytes').not.toBe(bundleV1)
   const reloadAt = Date.now()
-  const reply = await cmd(page, `/reload ${entityId}`)
+  const reply = await cmd(appFrame(page), `/reload ${entityId}`)
   await expect.poll(() => sawMarker(2, reloadAt), { timeout: 120_000, message: 'the scene logs its v2 marker' }).toBe(true)
   const v2At = markers.find((m) => m.version === 2)!.t
 
