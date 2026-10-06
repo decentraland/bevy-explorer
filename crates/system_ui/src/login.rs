@@ -24,7 +24,6 @@ use comms::profile::{
     get_default_look, get_remote_profile, CurrentUserProfile, UserProfile, DEFAULT_LOOKS,
 };
 use ipfs::{IpfsAssetServer, IpfsIo};
-use rand::{seq::SliceRandom, Rng};
 use scene_runner::Toaster;
 use system_bridge::{NativeUi, SystemApi, PROFILE_FETCH_FAILED};
 use tokio::sync::oneshot::error::TryRecvError;
@@ -447,48 +446,58 @@ fn new_profile(address: Address, ipfs: &IpfsIo) -> UserProfile {
     }
 }
 
+/// Name parts for a new guest. Every first + last pair must be alphanumeric and at most 15
+/// characters, the unclaimed-name rule shared by the HUD, the account site and the other
+/// clients (and their `@mention` patterns); see the test below.
 const GUEST_FIRST_NAMES: &[&str] = &[
-    "Astra", "Bolt", "Cinder", "Dusk", "Ember", "Flint", "Gale", "Haze", "Indigo", "Jade",
-    "Kestrel", "Lumen", "Mica", "Nimbus", "Onyx", "Pixel", "Quill", "Rune", "Sable", "Talon",
-    "Umber", "Vesper", "Wren", "Xenon", "Yarrow", "Zephyr", "Comet", "Delta", "Echo", "Nova",
+    "Astra", "Bolt", "Cinder", "Dusk", "Ember", "Flint", "Gale", "Haze", "Indigo", "Jade", "Kite",
+    "Lumen", "Mica", "Nimbus", "Onyx", "Pixel", "Quill", "Rune", "Sable", "Talon", "Umber",
+    "Vesper", "Wren", "Xenon", "Yarrow", "Zephyr", "Comet", "Delta", "Echo", "Nova",
 ];
 const GUEST_LAST_NAMES: &[&str] = &[
-    "Brightwater",
-    "Cloudrunner",
-    "Dawnstrider",
-    "Emberfall",
+    "Ashgrove",
+    "Deepwater",
+    "Fernbrook",
     "Frostvale",
     "Glassmoor",
-    "Hollowpine",
+    "Greywood",
+    "Highmoor",
     "Ironwood",
-    "Lanternlight",
     "Mistgrove",
-    "Nightfield",
-    "Oakenshield",
-    "Riverstone",
-    "Silverbrook",
-    "Stormwatch",
+    "Moonvale",
+    "Northwind",
+    "Oakhollow",
+    "Rainfield",
+    "Riverbend",
+    "Starfall",
+    "Stonehill",
+    "Sunridge",
     "Thornwood",
     "Wildmarsh",
     "Windward",
-    "Ashgrove",
-    "Starfall",
 ];
 
-fn random_guest_name() -> String {
-    let mut rng = rand::thread_rng();
+/// The name and look are derived from the address so a guest comes back the same if the
+/// first deploy didn't land; an EOA address is a keccak digest, so the bytes are uniform.
+fn guest_name(address: &Address) -> String {
+    let bytes = address.as_slice();
     format!(
-        "{} {}",
-        GUEST_FIRST_NAMES.choose(&mut rng).unwrap(),
-        GUEST_LAST_NAMES.choose(&mut rng).unwrap()
+        "{}{}",
+        GUEST_FIRST_NAMES[bytes[4] as usize % GUEST_FIRST_NAMES.len()],
+        GUEST_LAST_NAMES[bytes[5] as usize % GUEST_LAST_NAMES.len()]
     )
+}
+
+fn guest_look_index(address: &Address) -> u32 {
+    let bytes = address.as_slice();
+    u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) % DEFAULT_LOOKS + 1
 }
 
 /// A guest account is created without a profile; give it a name and one of the curated
 /// default looks so it doesn't start as every other new guest. Falls back to the engine's
 /// default look if the catalyst can't provide one.
 async fn new_guest_profile(address: Address, ipfs: std::sync::Arc<IpfsIo>) -> UserProfile {
-    let index = rand::thread_rng().gen_range(1..=DEFAULT_LOOKS);
+    let index = guest_look_index(&address);
     let look = match get_default_look(ipfs.clone(), index).await {
         Ok(Some(look)) => Some(look.content.avatar),
         Ok(None) => {
@@ -501,7 +510,7 @@ async fn new_guest_profile(address: Address, ipfs: std::sync::Arc<IpfsIo>) -> Us
         }
     };
     let mut profile = new_profile(address, &ipfs);
-    profile.content.name = random_guest_name();
+    profile.content.name = guest_name(&address);
     if let Some(look) = look {
         let own = &mut profile.content.avatar;
         own.body_shape = look.body_shape;
@@ -784,6 +793,36 @@ fn process_login_bridge(
             }
             Some(Err(())) => (),
             None => *login_task = Some(task),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn guest_names_are_valid_unclaimed_names() {
+        for first in GUEST_FIRST_NAMES {
+            for last in GUEST_LAST_NAMES {
+                let name = format!("{first}{last}");
+                assert!(
+                    name.len() <= 15 && name.chars().all(|c| c.is_ascii_alphanumeric()),
+                    "{name}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn guest_look_is_a_default_profile_pointer() {
+        for address in [
+            Address::ZERO,
+            Address::repeat_byte(0xff),
+            Address::repeat_byte(0x7a),
+        ] {
+            let index = guest_look_index(&address);
+            assert!((1..=DEFAULT_LOOKS).contains(&index), "{index}");
         }
     }
 }
