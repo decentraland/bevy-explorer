@@ -1,23 +1,14 @@
 // Nearby voice preferences kept on this device: whether you hear others (off mutes incoming voice
 // by zeroing the Voice volume, which comes back on re-enable).
 
-const DISABLED_KEY = 'nearbyVoiceDisabled'
-const VOLUME_KEY = 'nearbyVoiceVolume'
-const USED_KEY = 'nearbyVoiceUsed'
+import { getPref, PREF, setPref } from '../../lib/prefs'
 
-function read(key: string): string | null {
-  try {
-    return localStorage.getItem(key)
-  } catch {
-    return null
-  }
-}
+const DISABLED_KEY = PREF.voiceDisabled
+const VOLUME_KEY = PREF.voiceVolume
+const USED_KEY = PREF.voiceUsed
 
-function write(key: string, value: string): void {
-  try {
-    localStorage.setItem(key, value)
-  } catch {}
-}
+const read = getPref
+const write = setPref
 
 export function hearOthers(): boolean {
   return read(DISABLED_KEY) !== 'true'

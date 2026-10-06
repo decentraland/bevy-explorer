@@ -14,16 +14,12 @@ import { TIP_ROTATE_MS, tipsFor, type LoadingTip } from './loadingTips'
 import prevTip from '../../assets/loading/prev-tip.webp'
 import nextTip from '../../assets/loading/next-tip.webp'
 import styles from './SceneLoadingOverlay.module.css'
+import { getPref, PREF, setPref } from '../../lib/prefs'
 
-const LAST_TIP_KEY = 'loadingLastTip'
 const FADE_MS = 300
 
 function readLastTip(): number {
-  try {
-    return Number(localStorage.getItem(LAST_TIP_KEY) ?? -1)
-  } catch {
-    return -1
-  }
+  return Number(getPref(PREF.loadingLastTip) ?? -1)
 }
 
 function TipBody({ body, emoteKey }: { body: string; emoteKey: string }): React.JSX.Element {
@@ -86,9 +82,7 @@ function TipsCarousel(): React.JSX.Element {
   }, [epoch, count])
   // Fade the old tip out, then the new one in.
   useEffect(() => {
-    try {
-      localStorage.setItem(LAST_TIP_KEY, String(current))
-    } catch {}
+    setPref(PREF.loadingLastTip, String(current))
     if (current === shown) return
     const t = setTimeout(() => setShown(current), FADE_MS)
     return () => clearTimeout(t)

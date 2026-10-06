@@ -4,9 +4,9 @@
 import { serviceUrl } from '../../lib/baseDomain'
 import { EVENTS_API, type DclEvent } from '../events/eventsApi'
 import { DEFAULT_PLACES_ARGS, fetchLiveWorlds, fetchPlaces, placePlayers, type DiscoverPlace } from '../places/placesApi'
+import { getPref, PREF, setPref } from '../../lib/prefs'
 
 const PLACES_API = `${serviceUrl('places')}/api`
-const RECENTS_KEY = 'lobby.recentPlaces'
 const RECENTS_MAX = 20
 const RECENTS_SHOWN = 3
 const LIVE_PLACES_MAX = 10
@@ -88,7 +88,7 @@ export function fetchHomePlace(home: { realm: string | null; parcel: string }): 
 
 function readRecents(): string[] {
   try {
-    const raw = JSON.parse(localStorage.getItem(RECENTS_KEY) ?? '[]') as unknown
+    const raw = JSON.parse(getPref(PREF.lobbyRecents) ?? '[]') as unknown
     return Array.isArray(raw) ? raw.filter((id): id is string => typeof id === 'string') : []
   } catch {
     return []
@@ -97,11 +97,7 @@ function readRecents(): string[] {
 
 function rememberPlace(id: string): void {
   const next = [id, ...readRecents().filter((r) => r !== id)].slice(0, RECENTS_MAX)
-  try {
-    localStorage.setItem(RECENTS_KEY, JSON.stringify(next))
-  } catch {
-    /* storage unavailable: recents just stay empty */
-  }
+  setPref(PREF.lobbyRecents, JSON.stringify(next))
 }
 
 /** Record the place the player is standing in: Genesis City by parcel, a World by its name. */

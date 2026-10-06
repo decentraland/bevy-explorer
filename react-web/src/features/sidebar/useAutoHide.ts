@@ -3,16 +3,12 @@
 // while a full-screen page is open.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { getPref, PREF, setPref } from '../../lib/prefs'
 
-const STORAGE_KEY = 'hud.sidebarAutoHide'
 export const AUTO_HIDE_DELAY_MS = 300
 
 function readStored(): boolean {
-  try {
-    return localStorage.getItem(STORAGE_KEY) === '1'
-  } catch {
-    return false
-  }
+  return getPref(PREF.sidebarAutoHide) === '1'
 }
 
 export interface AutoHide {
@@ -46,11 +42,7 @@ export function useAutoHide(hold: boolean): AutoHide {
 
   const setEnabled = useCallback((on: boolean) => {
     setEnabledState(on)
-    try {
-      localStorage.setItem(STORAGE_KEY, on ? '1' : '0')
-    } catch {
-      /* storage blocked: the choice lasts this session only */
-    }
+    setPref(PREF.sidebarAutoHide, on ? '1' : '0')
     if (!on) {
       if (timer.current) clearTimeout(timer.current)
       setHidden(false)

@@ -1,3 +1,4 @@
+import './lib/noLocalStorage' // first: before anything can read localStorage
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import '@fontsource-variable/inter/index.css' // self-hosted Inter (matches the Figma type)
@@ -9,6 +10,7 @@ import { installHudScale } from './lib/hudScale'
 import { countLaunch } from './lib/launchCount'
 import { isNativeHud } from './lib/bootMode'
 import { inShell } from './lib/shell'
+import { loadPrefs } from './lib/prefs'
 import './styles/global.css'
 
 // Before anything fetches: annotate loopback/local-network requests so Chrome's Local Network
@@ -17,7 +19,6 @@ installLocalNetworkFetch()
 
 // Keep --ui-scale in sync with the viewport (DPI-correct, like Unity's CanvasScaler).
 installHudScale()
-countLaunch()
 
 // NATIVE (?native=1): bevy renders the 3D world *behind* this transparent webview, so the page must
 // be transparent (in web mode the engine canvas lives in this document at z-0, so the body
@@ -47,8 +48,12 @@ if (isNativeHud()) {
 
 // App picks the mode: ?mock=1 → login UI against the fake bridge (no engine);
 // default → real engine in a same-document canvas driven over console commands.
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>
-)
+// The HUD's stored values are read before it renders (lib/prefs).
+void loadPrefs().then(() => {
+  countLaunch()
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>
+  )
+})

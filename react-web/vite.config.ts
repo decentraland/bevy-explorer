@@ -183,19 +183,27 @@ export default defineConfig(({ command, mode }) => ({
         // Split the single ~880KB bundle so chunks download in parallel and cache
         // independently (vendor + design system rarely change). The heavy full-screen
         // menu pages are grouped together and kept out of the core HUD chunk.
-        manualChunks(id) {
-          // the shell's signing code: kept out of `vendor` so the shell doesn't load the HUD's libs
-          if (id.includes('node_modules/@noble/')) return 'crypto'
-          if (id.includes('node_modules')) return 'vendor'
-          // The emoji dataset is ~716KB (78KB gz) — over half the JS. Pin it to its own chunk so
-          // it caches independently and never bloats/busts the core HUD chunk. (Deferring it fully
-          // behind the chat picker/autocomplete is a follow-up — see emojiData.ts.)
-          if (id.includes('emojis_complete.json') || id.includes('/chat/emojiData')) return 'emoji'
-          // Showcase is dev-only (?showcase=1) and lazy-loaded — leave it out of the design
-          // chunk so its lazy boundary survives and it never ships in the prod HUD path.
-          if (id.includes('/src/design/') && !id.includes('Showcase')) return 'design'
-          if (/\/src\/features\/(map|backpack|communities|gallery|places)\//.test(id)) return 'menus'
-          return undefined
+        codeSplitting: {
+          groups: [
+            // The shell (index.html): its own code, and what it shares with the HUD. Ahead of the
+            // HUD's groups, which would otherwise take these along with the modules that import them.
+            { name: 'crypto', test: /node_modules\/@noble\//, priority: 1 },
+            { name: 'shell', test: /\/src\/(lib\/(shell|prefs)|features\/auth\/sso)\.ts/, priority: 1 },
+            {
+              name(id) {
+                if (id.includes('node_modules')) return 'vendor'
+                // The emoji dataset is ~716KB (78KB gz) — over half the JS. Pin it to its own chunk so
+                // it caches independently and never bloats/busts the core HUD chunk. (Deferring it fully
+                // behind the chat picker/autocomplete is a follow-up — see emojiData.ts.)
+                if (id.includes('emojis_complete.json') || id.includes('/chat/emojiData')) return 'emoji'
+                // Showcase is dev-only (?showcase=1) and lazy-loaded — leave it out of the design
+                // chunk so its lazy boundary survives and it never ships in the prod HUD path.
+                if (id.includes('/src/design/') && !id.includes('Showcase')) return 'design'
+                if (/\/src\/features\/(map|backpack|communities|gallery|places)\//.test(id)) return 'menus'
+                return null
+              }
+            }
+          ]
         }
       }
     }

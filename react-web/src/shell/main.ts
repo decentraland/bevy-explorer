@@ -4,6 +4,7 @@
 // separate processes. The signed-in identity's key stays here: the app asks for the public
 // identity and for signatures, and never reads the origin's localStorage itself.
 import { authLoginUrl, clearStoredLogins, findStoredIdentity, getStoredLogin, publicLogin } from '../features/auth/sso'
+import { migratePrefs } from '../lib/prefs'
 import { personalSign } from './sign'
 
 // The service worker's scope is the package DIRECTORY, but the production entry URL has no
@@ -14,8 +15,17 @@ if (!location.pathname.endsWith('/')) {
 }
 
 let frame: HTMLIFrameElement | null = null
+let mounting = false
 function mount(): void {
-  if (frame) return
+  if (mounting) return
+  mounting = true
+  // the app can't read localStorage, so hand it whatever an earlier version kept there first
+  void migratePrefs()
+    .catch((e: unknown) => console.warn('[shell] could not move stored preferences:', e))
+    .then(mountApp)
+}
+
+function mountApp(): void {
   const f = document.createElement('iframe')
   f.src = 'app.html' + location.search + location.hash
   f.allow = 'fullscreen; microphone; clipboard-read; clipboard-write; autoplay; gamepad'
@@ -85,14 +95,17 @@ const FLAG = 'coi_sw_reloaded'
 if (!('serviceWorker' in navigator)) {
   mount()
 } else {
-  if (navigator.serviceWorker.controller) {
+  // whether THIS load went through the worker: one that claims the page mid-load (clients.claim
+  // on a first visit) didn't rewrite its headers, so it still needs the reload
+  const controlled = navigator.serviceWorker.controller != null
+  if (controlled) {
     sessionStorage.removeItem(FLAG)
     mount()
   }
   navigator.serviceWorker
     .register('service_worker.js')
     .then((reg) => {
-      if (navigator.serviceWorker.controller) return
+      if (controlled) return
       const reloadOnce = (): void => {
         if (sessionStorage.getItem(FLAG)) {
           sessionStorage.removeItem(FLAG)
