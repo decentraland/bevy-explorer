@@ -114,7 +114,8 @@ type HostWindow = Window & {
   __dclEditor?: Partial<EditorPackage>
   set_url_params?: (optionsJson: string) => void
   __dclEditorSigner?: (signer: Signer) => void
-  __bevyStartServer?: (options: { realm: string; position: string; preview: true }) => Promise<unknown>
+  __bevyStartServer?: (options: Record<string, unknown> & { realm: string; position: string; preview: true }) => Promise<unknown>
+  __bevyBootConfig?: Record<string, unknown>
 }
 
 interface Home {
@@ -299,7 +300,9 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
       try {
         if (!(await authoritative(realm))) return
         if (w.__bevyStartServer == null) throw new Error('this engine cannot run a scene server')
-        await w.__bevyStartServer({ realm, position, preview: true })
+        // the client's backends (base domain, service overrides) too, or the two never meet; the
+        // server reads only the shared launch options
+        await w.__bevyStartServer({ ...w.__bevyBootConfig, realm, position, preview: true })
       } catch (e) {
         console.error('[editor host] starting the scene server failed', e)
       }
