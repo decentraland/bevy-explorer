@@ -8,11 +8,11 @@ import { migratePrefs } from '../lib/prefs'
 import { request } from './login'
 
 // The service worker's scope is the package DIRECTORY, but the production entry URL has no
-// trailing slash, which puts this page outside it. Canonicalize to the directory form; the
-// one-shot reload below then navigates in scope.
-if (!location.pathname.endsWith('/') && !location.pathname.endsWith('.html')) {
-  history.replaceState(history.state, '', location.pathname + '/' + location.search + location.hash)
-}
+// trailing slash, which puts this page outside it: the worker never sees the request, so the
+// host's COEP isolates this page, and a reload keeps it that way. Navigate to the directory form
+// instead, where the worker serves the page.
+const outOfScope = !location.pathname.endsWith('/') && !location.pathname.endsWith('.html')
+if (outOfScope) location.replace(location.pathname + '/' + location.search + location.hash)
 
 let frame: HTMLIFrameElement | null = null
 let mounting = false
@@ -91,7 +91,9 @@ addEventListener('message', async (e: MessageEvent) => {
 // when the current one is active; the flag stops a broken worker from reload-looping. Until then
 // the app is not mounted.
 const FLAG = 'coi_sw_reloaded'
-if ((window as { credentialless?: boolean }).credentialless) {
+if (outOfScope) {
+  // leaving for the in-scope url
+} else if ((window as { credentialless?: boolean }).credentialless) {
   // no sign-in key to keep from the app here (see inShell in src/lib/shell.ts)
   location.replace('app.html' + location.search + location.hash)
 } else if (!('serviceWorker' in navigator)) {
