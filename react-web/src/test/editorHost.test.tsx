@@ -23,6 +23,7 @@ type HostWindow = Window & {
   set_url_params?: (json: string) => void
   engine_console_command?: (line: string) => Promise<string>
   __bevyStartServer?: (options: unknown) => Promise<unknown>
+  __bevyBootConfig?: Record<string, unknown>
 }
 const w = window as HostWindow
 
@@ -215,23 +216,32 @@ describe('editor host', () => {
       url.endsWith('/scene.json') ? Response.json({ main: 'bin/index.js', authoritativeMultiplayer: url.includes('/preview/game/') }) : new Response(null, { status: 404 })
     )
     // engine.js: each server is a hidden frame of the page
+    // each server logs the same three lines, numbered from 1 in its own frame (headless.js)
+    const lines = [1, 2, 3].map((seq) => ({ seq, level: 'log' as const, msg: `line ${seq}` }))
     const startServer = vi.fn(async (_options: unknown) => {
       const frame = document.createElement('iframe')
       frame.src = `${PAGE_DIR}engine/headless.html`
       document.body.appendChild(frame)
+      Object.assign(frame.contentWindow!, { sceneLogsAfter: (after: number) => lines.filter((line) => line.seq > after) })
       return {}
     })
     w.__bevyStartServer = startServer
+    // the client's backends, which the server must share to meet it
+    w.__bevyBootConfig = { baseDomain: 'decentraland.zone', realm: 'https://other', position: '9,9' }
     const servers = (): number => document.querySelectorAll('iframe[src$="/headless.html"]').length
     const realm = `${PAGE_DIR}preview/game`
+    const started = (position: string): unknown[] => [{ baseDomain: 'decentraland.zone', realm, position, preview: true }]
 
     await host().openPreview('game', '4,-2')
-    expect(startServer.mock.calls).toEqual([[{ realm, position: '4,-2', preview: true }]])
+    expect(startServer.mock.calls).toEqual([started('4,-2')])
     expect(servers()).toBe(1)
+    const first = host().previewServerLogs(0)
+    expect(first.map((line) => line.msg)).toEqual(['line 1', 'line 2', 'line 3'])
     // opened again: the old server goes, a new one serves it
     await host().openPreview('game', '5,-2')
-    expect(startServer.mock.calls).toEqual([[{ realm, position: '4,-2', preview: true }], [{ realm, position: '5,-2', preview: true }]])
+    expect(startServer.mock.calls).toEqual([started('4,-2'), started('5,-2')])
     expect(servers()).toBe(1)
+    expect(host().previewServerLogs(first[first.length - 1].seq).map((line) => line.msg), 'the new server counts from 0 again').toEqual(['line 1', 'line 2', 'line 3'])
     // a scene with no server of its own
     await host().openPreview('plain', '0,0')
     expect(startServer).toHaveBeenCalledTimes(2)
@@ -244,6 +254,7 @@ describe('editor host', () => {
     expect(startServer).toHaveBeenCalledTimes(3)
     bridge.close()
     delete w.__bevyStartServer
+    delete w.__bevyBootConfig
     vi.unstubAllGlobals()
   })
 

@@ -39,9 +39,7 @@ let sceneLogSeq = 0;
  * @returns {Array<{ seq: number, level: string, msg: string }>}
  */
 export function sceneLogsAfter(after) {
-  // a cursor from a server this frame replaced reads it from the start
-  const from = after > sceneLogSeq ? 0 : after;
-  return sceneLogs.filter((line) => line.seq > from);
+  return sceneLogs.filter((line) => line.seq > after);
 }
 
 export async function startHeadless(compiledModule, options) {

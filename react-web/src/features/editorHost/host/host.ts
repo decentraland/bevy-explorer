@@ -292,10 +292,14 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
   let serverSwitch: Promise<void> = Promise.resolve()
   let served: { realm: string; position: string } | null = null
   let restartQueued = false
+  // the host's count of server log lines (previewServerLogs): where the running frame's start, and the last given out
+  let logBase = 0
+  let logLatest = 0
   const serveScene = (realm: string | null, position = ''): Promise<void> => {
     served = realm == null ? null : { realm, position }
     serverSwitch = serverSwitch.then(async () => {
       for (const frame of document.querySelectorAll(SERVER_FRAME)) frame.remove()
+      logBase = logLatest
       if (realm == null) return
       try {
         if (!(await authoritative(realm))) return
@@ -445,7 +449,12 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
     previewServerLogs(after) {
       const frame = document.querySelector<HTMLIFrameElement>(SERVER_FRAME)
       const read = (frame?.contentWindow as (Window & { sceneLogsAfter?: (after: number) => ServerLogLine[] }) | null | undefined)?.sceneLogsAfter
-      return read == null || !Number.isFinite(after) ? [] : read(after)
+      if (read == null || !Number.isFinite(after)) return []
+      // each server frame counts from 0; on the host's count a restarted server's lines come after
+      // the last one's, so a cursor never skips them
+      const lines = read(Math.max(0, after - logBase)).map((line) => ({ ...line, seq: logBase + line.seq }))
+      if (lines.length > 0) logLatest = Math.max(logLatest, lines[lines.length - 1].seq)
+      return lines.filter((line) => line.seq > after)
     },
     async signDeployment(request) {
       const identity = await deps.login()
