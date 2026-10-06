@@ -426,6 +426,7 @@ fn process_login_bridge(
                         Address,
                         EphemeralKey,
                         Vec<ChainLink>,
+                        bool,
                         Option<UserProfile>,
                         RpcResultSender<Result<(), String>>,
                     ),
@@ -457,7 +458,7 @@ fn process_login_bridge(
             }
             // the account can only change while the world is held (the lobby): once in
             // world, comms and scenes are bound to the wallet that entered
-            SystemApi::LoginPrevious(_, sender) | SystemApi::LoginWithIdentity(_, _, sender)
+            SystemApi::LoginPrevious(_, sender) | SystemApi::LoginWithIdentity(_, _, _, sender)
                 if account_locked(&wallet, &world_hold) =>
             {
                 sender.send(Err(ACCOUNT_LOCKED.to_owned()));
@@ -484,6 +485,7 @@ fn process_login_bridge(
                         root_address,
                         ephemeral_key,
                         auth,
+                        guest_account,
                     } = previous_login;
 
                     let profile =
@@ -502,6 +504,7 @@ fn process_login_bridge(
                         previous_login.root_address,
                         EphemeralKey::Local(local_wallet),
                         auth,
+                        guest_account,
                         profile,
                         rpc_result_sender,
                     ))
@@ -546,12 +549,18 @@ fn process_login_bridge(
                         root_address,
                         EphemeralKey::Local(local_wallet),
                         auth,
+                        false,
                         profile,
                         result_sender,
                     ))
                 }));
             }
-            SystemApi::LoginWithIdentity(payload, default_on_error, rpc_result_sender) => {
+            SystemApi::LoginWithIdentity(
+                payload,
+                default_on_error,
+                guest_account,
+                rpc_result_sender,
+            ) => {
                 // The web page already holds a signed AuthIdentity (read from localStorage,
                 // produced by whatever sign-in method the user used) — finalize the wallet
                 // from it directly, no auth-server request/poll. Mirrors LoginPrevious.
@@ -578,6 +587,7 @@ fn process_login_bridge(
                         root_address,
                         ephemeral_key,
                         auth,
+                        guest_account,
                         profile,
                         rpc_result_sender,
                     ))
@@ -616,7 +626,7 @@ fn process_login_bridge(
             Some(Ok((.., sender))) if account_locked(&wallet, &world_hold) => {
                 sender.send(Err(ACCOUNT_LOCKED.to_owned()));
             }
-            Some(Ok((root_address, ephemeral_key, auth, profile, sender))) => {
+            Some(Ok((root_address, ephemeral_key, auth, guest_account, profile, sender))) => {
                 if let Ok(mut window) = window.single_mut() {
                     window.focused = true;
                 }
@@ -630,10 +640,11 @@ fn process_login_bridge(
                             root_address,
                             ephemeral_key,
                             auth: auth.clone(),
+                            guest_account,
                         });
                         platform::write_config_file(&*config);
 
-                        wallet.finalize(root_address, local_wallet, auth);
+                        wallet.finalize(root_address, local_wallet, auth, guest_account);
                     }
                     // the page holds the key, so there is none to store, and none from an
                     // earlier login should stay behind
@@ -641,10 +652,16 @@ fn process_login_bridge(
                         if config.previous_login.take().is_some() {
                             platform::write_config_file(&*config);
                         }
-                        wallet.finalize_remote(root_address, ephemeral_address, auth);
+                        wallet.finalize_remote(
+                            root_address,
+                            ephemeral_address,
+                            auth,
+                            guest_account,
+                        );
                     }
                 }
-                segment_config.update_identity(format!("{:#x}", wallet.address().unwrap()), false);
+                segment_config
+                    .update_identity(format!("{:#x}", wallet.address().unwrap()), guest_account);
                 if let Some(profile) = profile {
                     current_profile.profile = Some(profile);
                     current_profile.is_deployed = true;

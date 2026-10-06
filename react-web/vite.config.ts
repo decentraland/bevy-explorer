@@ -206,7 +206,7 @@ export default defineConfig(({ command, mode }) => ({
             // The shell (index.html): its own code, and what it shares with the HUD. Ahead of the
             // HUD's groups, which would otherwise take these along with the modules that import them.
             { name: 'crypto', test: /node_modules\/@noble\//, priority: 1 },
-            { name: 'shell', test: /\/src\/(lib\/(shell|prefs)|features\/auth\/sso)\.ts/, priority: 1 },
+            { name: 'shell', test: /\/src\/(lib\/(shell|prefs)|features\/auth\/(sso|guest|thirdweb))\.ts/, priority: 1 },
             {
               name(id) {
                 if (id.includes('node_modules')) return 'vendor'

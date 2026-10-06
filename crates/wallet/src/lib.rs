@@ -33,6 +33,7 @@ struct WalletInner {
     pub(crate) inner: Option<Arc<dyn ObjSafeWalletSigner + 'static + Send + Sync>>,
     pub(crate) root_address: Option<Address>,
     pub(crate) delegates: Vec<ChainLink>,
+    pub(crate) guest_account: bool,
 }
 
 impl Wallet {
@@ -53,6 +54,7 @@ impl Wallet {
         write.inner = None;
         write.root_address = None;
         write.delegates.clear();
+        write.guest_account = false;
     }
 
     pub fn finalize_as_guest(&mut self) {
@@ -61,6 +63,7 @@ impl Wallet {
         let mut write = self.0.try_write().unwrap();
         write.root_address = Some(inner.address());
         write.delegates.clear();
+        write.guest_account = false;
         write.inner = Some(inner);
     }
 
@@ -71,6 +74,7 @@ impl Wallet {
         let mut write = self.0.try_write().unwrap();
         write.root_address = Some(inner.address());
         write.delegates.clear();
+        write.guest_account = false;
         write.inner = Some(inner);
     }
 
@@ -79,10 +83,12 @@ impl Wallet {
         root_address: Address,
         local_wallet: PrivateKeySigner,
         auth: Vec<ChainLink>,
+        guest_account: bool,
     ) {
         let mut write = self.0.try_write().unwrap();
         write.root_address = Some(root_address);
         write.delegates = auth;
+        write.guest_account = guest_account;
         write.inner = Some(Arc::new(local_wallet));
     }
 
@@ -92,10 +98,12 @@ impl Wallet {
         root_address: Address,
         ephemeral_address: Address,
         auth: Vec<ChainLink>,
+        guest_account: bool,
     ) {
         let mut write = self.0.try_write().unwrap();
         write.root_address = Some(root_address);
         write.delegates = auth;
+        write.guest_account = guest_account;
         write.inner = Some(Arc::new(remote_signer::RemoteSigner {
             address: ephemeral_address,
         }));
@@ -123,6 +131,13 @@ impl Wallet {
 
     pub fn is_guest(&self) -> bool {
         self.0.try_read().unwrap().delegates.is_empty()
+    }
+
+    /// An account that was created for a guest. It signs in and keeps a profile like any
+    /// other account (so `is_guest` is false), but the user holds no wallet to approve
+    /// transactions with.
+    pub fn is_guest_account(&self) -> bool {
+        self.0.try_read().unwrap().guest_account
     }
 }
 

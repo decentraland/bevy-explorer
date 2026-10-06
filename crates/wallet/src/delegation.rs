@@ -96,7 +96,7 @@ impl StorageDelegation {
             anyhow::bail!("delegation ephemeral address does not match its key");
         }
         let mut wallet = Wallet::default();
-        wallet.finalize(local_wallet.address(), local_wallet, Vec::default());
+        wallet.finalize(local_wallet.address(), local_wallet, Vec::default(), false);
 
         let scope_header = base64::engine::general_purpose::STANDARD
             .encode(serde_json::to_string(&envelope.scope)?);

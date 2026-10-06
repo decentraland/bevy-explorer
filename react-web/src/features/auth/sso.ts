@@ -8,6 +8,7 @@
 // redirects back, by which point the identity is already in localStorage.
 
 import { inShell, postToShell, shellRequest } from '../../lib/shell'
+import { GUEST_SESSION_KEY } from './thirdweb'
 
 // The standard Decentraland AuthIdentity, as serialized by @dcl/crypto / @dcl/single-sign-on
 // -client. It is the SAME shape no matter how the user signed in (wallet/MetaMask, social,
@@ -30,9 +31,14 @@ export interface AuthIdentity {
 export interface StoredLogin {
   address: string
   identity: AuthIdentity
+  /** A guest account the HUD created (features/auth/guest.ts), not a sign-in. */
+  guest?: boolean
 }
 
 const SSO_PREFIX = 'single-sign-on-'
+// The guest account. It is kept apart from the `single-sign-on-*` entries so the other sites on
+// this origin don't treat it as a sign-in.
+const GUEST_IDENTITY_KEY = 'dcl-guest-identity'
 
 // Expiration: prefer the top-level field; fall back to the `Expiration: <date>` line in the
 // ECDSA_EPHEMERAL payload (what `sites` parses), for identities stored without the top field.
@@ -50,7 +56,10 @@ function isHexAddress(address: string): boolean {
 
 function readIdentity(address: string): AuthIdentity | null {
   if (!isHexAddress(address)) return null
-  const raw = localStorage.getItem(SSO_PREFIX + address)
+  return parseIdentity(localStorage.getItem(SSO_PREFIX + address))
+}
+
+function parseIdentity(raw: string | null): AuthIdentity | null {
   if (!raw) return null
   try {
     const identity = JSON.parse(raw) as AuthIdentity
@@ -65,20 +74,39 @@ function readIdentity(address: string): AuthIdentity | null {
   }
 }
 
-// Scan every `single-sign-on-0x*` entry and return the freshest non-expired identity (the
-// most recently created session), mirroring sites' getStoredAddress().
+// Scan every `single-sign-on-0x*` entry and the guest, and return the freshest non-expired
+// identity (the most recently created session), mirroring sites' getStoredAddress().
 export function getStoredLogin(): StoredLogin | null {
-  let best: { address: string; identity: AuthIdentity; exp: number } | null = null
+  const logins: StoredLogin[] = []
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i)
     if (!key || !key.startsWith(SSO_PREFIX + '0x')) continue
     const address = key.slice(SSO_PREFIX.length)
     const identity = readIdentity(address)
-    if (!identity) continue
-    const exp = expirationMs(identity)
-    if (!best || exp > best.exp) best = { address, identity, exp }
+    if (identity) logins.push({ address, identity })
   }
-  return best ? { address: best.address, identity: best.identity } : null
+  const guest = getStoredGuestLogin()
+  if (guest) logins.push(guest)
+  let best: StoredLogin | null = null
+  for (const login of logins) {
+    if (!best || expirationMs(login.identity) > expirationMs(best.identity)) best = login
+  }
+  return best
+}
+
+export function getStoredGuestLogin(): StoredLogin | null {
+  const identity = parseIdentity(localStorage.getItem(GUEST_IDENTITY_KEY))
+  return identity ? { address: rootAddress(identity).toLowerCase(), identity, guest: true } : null
+}
+
+export function storeGuestLogin(identity: AuthIdentity): void {
+  localStorage.setItem(GUEST_IDENTITY_KEY, JSON.stringify(identity))
+}
+
+// Forget the guest account. Without its session id the wallet cannot be reached again.
+export function clearGuestLogin(): void {
+  localStorage.removeItem(GUEST_IDENTITY_KEY)
+  localStorage.removeItem(GUEST_SESSION_KEY)
 }
 
 export function loginExpired(login: StoredLogin): boolean {
@@ -89,7 +117,14 @@ export function loginExpired(login: StoredLogin): boolean {
 export function publicLogin(login: StoredLogin | null): StoredLogin | null {
   if (!login) return null
   const { privateKey: _, ...ephemeralIdentity } = login.identity.ephemeralIdentity
-  return { address: login.address, identity: { ...login.identity, ephemeralIdentity } }
+  return { ...login, identity: { ...login.identity, ephemeralIdentity } }
+}
+
+// Pack an AuthIdentity into a single base64 console-command argument. The engine's
+// `/login_identity` command decodes this (root address = authChain[0].payload, ephemeral key or
+// address + delegate chain) and finalizes the wallet without any auth-server round-trip.
+export function encodeIdentity(identity: AuthIdentity): string {
+  return btoa(JSON.stringify(identity))
 }
 
 // The signed-in identity, from wherever this page can see it: inside the web shell the shell

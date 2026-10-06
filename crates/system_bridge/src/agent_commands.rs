@@ -80,6 +80,9 @@ struct LoginIdentityCommand {
     /// profile — this overwrites the server-side profile
     #[arg(long)]
     default_on_error: bool,
+    /// the identity is a guest account
+    #[arg(long)]
+    guest: bool,
 }
 
 fn login_identity_cmd(
@@ -92,6 +95,7 @@ fn login_identity_cmd(
         events.write(SystemApi::LoginWithIdentity(
             command.payload.clone(),
             command.default_on_error,
+            command.guest,
             sx,
         ));
         let responder = input.take_responder();

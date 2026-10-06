@@ -540,6 +540,8 @@ pub struct PreviousLogin {
     pub root_address: Address,
     pub ephemeral_key: Vec<u8>,
     pub auth: Vec<ChainLink>,
+    #[serde(default)]
+    pub guest_account: bool,
 }
 
 pub fn default_home_realm() -> String {
