@@ -56,7 +56,11 @@ export function startServer(options) {
   frame.src = new URL("./headless.html", import.meta.url).href;
   const started = new Promise((resolve, reject) => {
     frame.addEventListener("load", () => {
-      frame.contentWindow.startHeadless(compiledModule, options).then(resolve, reject);
+      try {
+        frame.contentWindow.startHeadless(compiledModule, options).then(resolve, reject);
+      } catch (e) {
+        reject(e);
+      }
     });
   });
   document.body.appendChild(frame);
