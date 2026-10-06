@@ -8,7 +8,7 @@
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
-import { SERVERS, ENTRY, HOME, HOME_REALM, NAV, PROJECTS, SCENES, UI, editorBase, keepOffProduction } from './gate'
+import { APP, SERVERS, ENTRY, HOME, HOME_REALM, NAV, PROJECTS, SCENES, UI, appFrame, editorBase, keepOffProduction } from './gate'
 
 const PROJECT_NAME = 'Gate scene'
 // a new scene's id carries a random tail: step 2 reads it back from the store
@@ -51,7 +51,7 @@ type GateWindow = Window & {
 
 // Records what the editor asks of the host, and both buses, from here on.
 async function installSpies(page: Page): Promise<void> {
-  await page.evaluate(() => {
+  await appFrame(page).evaluate(() => {
     const w = window as GateWindow
     const host = w.__dclEditorHost!
     const spy: Spy = { openPreview: [], spawned: [], console: [], modes: [], sceneReady: [], bridgeReady: 0, hello: 0, canvasKeys: 0, channels: [] }
@@ -89,14 +89,14 @@ async function installSpies(page: Page): Promise<void> {
 }
 
 const spy = (page: Page): Promise<Omit<Spy, 'channels'>> =>
-  page.evaluate(() => {
+  appFrame(page).evaluate(() => {
     const { channels: _, ...rest } = (window as GateWindow).__gate!
     return rest
   })
 
 // under the random id the project is previewed at, which the spies saw
 const manifest = (page: Page): Promise<Manifest | null> =>
-  page.evaluate(async () => {
+  appFrame(page).evaluate(async () => {
     const w = window as GateWindow
     const id = w.__gate!.openPreview.at(-1)?.split('@')[0]
     const stored = id == null ? undefined : await (await caches.open('dcl-editor-preview-v1')).match(`${w.__dclEditorHost!.pageDir}preview/${id}/__manifest`)
@@ -146,16 +146,17 @@ test('the page hosts the scene editor: Create, preview, privileged scene, reload
   }
 
   page.setDefaultTimeout(60_000)
-  const ui = page.locator(UI)
+  const app = page.frameLocator(APP)
+  const ui = app.locator(UI)
   const sceneTab = ui.locator('.eui-left-tabs').getByText('Scene', { exact: true })
-  const nav = page.locator(NAV)
+  const nav = app.locator(NAV)
   const realm = (): string | null => new URL(page.url()).searchParams.get('realm')
   // the engine's own word on every scene it starts
   const spawns = (since: number): string[] =>
     lines.filter((l) => l.t >= since).flatMap((l) => /spawning scene "([^"]+)"/.exec(l.text)?.[1] ?? [])
   // false too while a reloaded scene is not pinned yet
   const frozen = (): Promise<boolean> =>
-    page.evaluate(() => (window as GateWindow).__dclEditorHost!.engineConsole('scene_stats')).then(
+    appFrame(page).evaluate(() => (window as GateWindow).__dclEditorHost!.engineConsole('scene_stats')).then(
       (stats) => stats.includes('frozen'),
       () => false
     )
@@ -176,8 +177,8 @@ test('the page hosts the scene editor: Create, preview, privileged scene, reload
     if (request.url().startsWith(PROJECTS)) serviceRequests.push(`${request.method()} ${pathname}`)
   })
 
-  const scenes = page.locator(SCENES)
-  const createPage = page.locator(HOME)
+  const scenes = app.locator(SCENES)
+  const createPage = app.locator(HOME)
   let preview = ''
 
   await step('1 the sidebar Create button opens the Create page, the editor lists the scenes there, and nothing of it loads before the click', async () => {
@@ -187,18 +188,18 @@ test('the page hosts the scene editor: Create, preview, privileged scene, reload
     const create = nav.getByRole('button', { name: 'Create' })
     await create.waitFor({ timeout: 120_000 })
     // a clock that is not the engine's default, to find again after Exit
-    await page.evaluate(() => (window as GateWindow).engine_console_command!('/time 20 7'))
+    await appFrame(page).evaluate(() => (window as GateWindow).engine_console_command!('/time 20 7'))
     expect(editorRequests, 'nothing of the editor is requested before the click').toEqual([])
-    expect(await page.evaluate(() => (window as GateWindow).__dclEditorHost == null)).toBe(true)
+    expect(await appFrame(page).evaluate(() => (window as GateWindow).__dclEditorHost == null)).toBe(true)
     await shot('0-create-in-the-rail')
     await create.click()
-    await page.waitForFunction(() => (window as GateWindow).__dclEditorHost != null && (window as GateWindow).__dclEditor != null, null, {
+    await appFrame(page).waitForFunction(() => (window as GateWindow).__dclEditorHost != null && (window as GateWindow).__dclEditor != null, null, {
       timeout: 120_000
     })
     await installSpies(page)
     await scenes.locator('.eui-create').getByText('Your scenes').waitFor({ timeout: 60_000 })
-    await expect(page.locator('header button[data-page="create"][aria-current="page"]'), 'Create is the menu page open').toHaveCount(1)
-    const info = await page.evaluate(() => {
+    await expect(app.locator('header button[data-page="create"][aria-current="page"]'), 'Create is the menu page open').toHaveCount(1)
+    const info = await appFrame(page).evaluate(() => {
       const { version, openProject, services, identity } = (window as GateWindow).__dclEditorHost!
       const script = document.querySelector<HTMLScriptElement>('script[src$="/editor.js"]')
       return { version, openProject, services, identity: identity(), script: script?.src ?? null }
@@ -211,12 +212,12 @@ test('the page hosts the scene editor: Create, preview, privileged scene, reload
     expect(new URL(page.url()).searchParams.has('editor'), 'Create does not put the flag in the url').toBe(false)
     await expect(nav, 'the menu page covers the HUD').toHaveCount(0)
     expect((await spy(page)).modes, 'listing the scenes changes no mode').toEqual([])
-    await expect(page.locator('#dcl-editor-host > *'), 'nothing is docked yet').toHaveCount(0)
-    await expect(page.locator('#mygame-canvas')).toHaveCount(1)
+    await expect(app.locator('#dcl-editor-host > *'), 'nothing is docked yet').toHaveCount(0)
+    await expect(app.locator('#mygame-canvas')).toHaveCount(1)
     await shot('1-create-page')
   })
 
-  const identityBefore = await page.evaluate(() => (window as GateWindow).__dclEditorHost?.identity().address ?? null).catch(() => null)
+  const identityBefore = await appFrame(page).evaluate(() => (window as GateWindow).__dclEditorHost?.identity().address ?? null).catch(() => null)
 
   const created = await step('2 New scene on the Create page makes a starter, builds and publishes it under a random preview id, and the engine travels to it', async () => {
     await scenes.getByRole('button', { name: '+ New scene' }).click()
@@ -228,7 +229,7 @@ test('the page hosts the scene editor: Create, preview, privileged scene, reload
     const [called] = (await spy(page)).openPreview
     preview = called.split('@')[0]
     expect(called, 'a random preview id, at the base parcel').toMatch(/^p[0-9a-f]{32}@0,0$/)
-    PROJECT_ID = await page.evaluate(async (name) => {
+    PROJECT_ID = await appFrame(page).evaluate(async (name) => {
       const root = await navigator.storage.getDirectory()
       const index = await (await (await root.getDirectoryHandle('dcl-editor')).getFileHandle('index.json')).getFile()
       const { projects } = JSON.parse(await index.text()) as { projects: Array<{ id: string; name: string }> }
@@ -239,24 +240,12 @@ test('the page hosts the scene editor: Create, preview, privileged scene, reload
     await expect.poll(async () => (await manifest(page)) != null, { timeout: 60_000, message: 'the preview is published' }).toBe(true)
     const published = (await manifest(page))!
     entityId = published.entity.id
-    // the editor keeps its choices in IndexedDB: the web shell forbids the app's localStorage
-    const machineId = await page.evaluate(
-      () =>
-        new Promise<string | null>((resolve) => {
-          const open = indexedDB.open('dcl-editor')
-          open.onerror = () => resolve(null)
-          open.onsuccess = () => {
-            const get = open.result.transaction('prefs').objectStore('prefs').get('dcl-editor.machineId')
-            get.onsuccess = () => resolve(typeof get.result === 'string' ? get.result : null)
-            get.onerror = () => resolve(null)
-          }
-        })
-    )
     note(`built + published ${Date.now() - createdAt} ms after Create: preview ${preview}, entity ${entityId}, v${published.version}, ${published.entity.content.length} files`)
-    expect(Buffer.from(entityId.slice(4), 'base64').toString(), 'a b64- preview id').toBe(`/preview/${preview}-${machineId}`)
+    // the tail is the editor's own id for this browser, wallet and project
+    expect(Buffer.from(entityId.slice(4), 'base64').toString(), 'a b64- preview id').toMatch(new RegExp(`^/preview/${preview}-\\w+$`))
     expect(published.entity.content.map((c) => c.file)).toEqual(expect.arrayContaining(['bin/index.js', 'scene.json']))
     expect(
-      await page.evaluate(async () => (await (await caches.open('dcl-editor-preview-v1')).keys()).filter((r) => r.url.includes('/preview/gate-scene/')).length),
+      await appFrame(page).evaluate(async () => (await (await caches.open('dcl-editor-preview-v1')).keys()).filter((r) => r.url.includes('/preview/gate-scene/')).length),
       'nothing is served under the scene’s name'
     ).toBe(0)
     await expect.poll(() => spawns(createdAt), { timeout: 60_000, message: 'the engine starts the project scene' }).toContain(entityId)
@@ -285,10 +274,10 @@ test('the page hosts the scene editor: Create, preview, privileged scene, reload
       }).toPass({ timeout: 30_000 })
       note(`editor scene ${editorScene}; scene-ready for ${JSON.stringify((await spy(page)).sceneReady)}`)
       note(`hierarchy: ${JSON.stringify((await ui.locator('.eui-left').innerText()).split('\n').filter(Boolean))}`)
-      const identity = await page.evaluate(() => (window as GateWindow).__dclEditorHost!.identity().address)
+      const identity = await appFrame(page).evaluate(() => (window as GateWindow).__dclEditorHost!.identity().address)
       expect(identity, 'the editor scene did not log in over the player').toBe(identityBefore)
       expect(seen(/hosted — another privileged scene owns the session/), 'the editor scene saw the HUD scene and left the session alone').toBe(true)
-      await expect(page.locator('[aria-label="Scene permission request"]')).toHaveCount(0)
+      await expect(app.locator('[aria-label="Scene permission request"]')).toHaveCount(0)
       await shot('2-editor-docked')
     }))
 
@@ -358,7 +347,7 @@ test('the page hosts the scene editor: Create, preview, privileged scene, reload
 
   const clockBack = async (): Promise<string> => {
     await page.waitForTimeout(1500)
-    const clock = await page.evaluate(() => (window as GateWindow).__dclEditorHost!.engineConsole('time'))
+    const clock = await appFrame(page).evaluate(() => (window as GateWindow).__dclEditorHost!.engineConsole('time'))
     // the editor stopped the clock at noon to edit: the player has their own back
     expect(clock, 'the clock the player had').toMatch(/-> 20:\d+, speed 7 /)
     return clock
@@ -368,7 +357,7 @@ test('the page hosts the scene editor: Create, preview, privileged scene, reload
   await step('6 Back to scenes leaves the scene for the Create page, and the player is back where they came from', async () => {
     const backAt = Date.now()
     // the trip back happens behind the Create page: no loading screen in between
-    await page.evaluate(() => {
+    await appFrame(page).evaluate(() => {
       const w = window as GateWindow & { __loadingSeen?: boolean }
       w.__loadingSeen = false
       new MutationObserver(() => {
@@ -379,15 +368,15 @@ test('the page hosts the scene editor: Create, preview, privileged scene, reload
     await scenes.locator('.eui-create').waitFor({ timeout: 60_000 })
     await expect(card, 'the Create page lists the scene').toHaveCount(1)
     await expect.poll(() => seen(/GATE_HOME up/, backAt), { timeout: 120_000, message: 'the home scene runs again' }).toBe(true)
-    await expect(page.locator('#dcl-editor-host > *'), 'the docked editor is gone').toHaveCount(0)
+    await expect(app.locator('#dcl-editor-host > *'), 'the docked editor is gone').toHaveCount(0)
     await expect(nav, 'the Create page still covers the HUD').toHaveCount(0)
-    expect(await page.evaluate(() => (window as GateWindow & { __loadingSeen?: boolean }).__loadingSeen), 'no loading screen on the way back').toBe(false)
+    expect(await appFrame(page).evaluate(() => (window as GateWindow & { __loadingSeen?: boolean }).__loadingSeen), 'no loading screen on the way back').toBe(false)
     note(`after Back to scenes: url ${page.url()}; clock ${await clockBack()}; modes ${JSON.stringify((await spy(page)).modes)}`)
     expect((await spy(page)).modes.at(-1)).toBe('off')
     expect(realm()).toBe(homeRealm)
     await shot('5-back-to-scenes')
     // the page's own close gives the HUD back
-    await page.locator('header').getByRole('button', { name: 'Close', exact: true }).click()
+    await app.locator('header').getByRole('button', { name: 'Close', exact: true }).click()
     await nav.waitFor({ timeout: 30_000 })
     await expect(createPage).toHaveCount(0)
     await shot('5b-back-in-the-hud')
@@ -395,7 +384,7 @@ test('the page hosts the scene editor: Create, preview, privileged scene, reload
 
   await step('7 the menu top bar Create item opens the Create page again, without loading the editor again; the scene opens, and Back to Decentraland gives the HUD back', async () => {
     await nav.getByRole('button', { name: 'Settings', exact: true }).click()
-    const item = page.locator('header button[data-page="create"]')
+    const item = app.locator('header button[data-page="create"]')
     await item.waitFor()
     // the page fades in
     await page.waitForTimeout(600)
@@ -403,7 +392,7 @@ test('the page hosts the scene editor: Create, preview, privileged scene, reload
     const loads = editorRequests.filter((url) => url === editorJs).length
     await item.click()
     await card.waitFor({ timeout: 60_000 })
-    await expect(page.locator('header button[data-page="settings"][aria-current="page"]'), 'the Settings page closed').toHaveCount(0)
+    await expect(app.locator('header button[data-page="settings"][aria-current="page"]'), 'the Settings page closed').toHaveCount(0)
     expect(editorRequests.filter((url) => url === editorJs).length, 'mounted again, not fetched again').toBe(loads)
     await shot('7-create-page-again')
     const reopenedAt = Date.now()
@@ -425,7 +414,7 @@ test('the page hosts the scene editor: Create, preview, privileged scene, reload
     await page.mouse.click(back.x + back.width / 2, back.y + back.height / 2)
     await nav.waitFor({ timeout: 120_000 })
     await expect.poll(() => seen(/GATE_HOME up/, exitAt), { timeout: 120_000, message: 'the home scene runs again' }).toBe(true)
-    await expect(page.locator('#dcl-editor-host > *')).toHaveCount(0)
+    await expect(app.locator('#dcl-editor-host > *')).toHaveCount(0)
     await expect(createPage).toHaveCount(0)
     note(`url after Back to Decentraland: ${page.url()}; clock: ${await clockBack()}`)
     expect(realm()).toBe(homeRealm)
@@ -440,7 +429,7 @@ test('the page hosts the scene editor: Create, preview, privileged scene, reload
     await ui.locator('.eui-toolbar').waitFor({ timeout: 120_000 })
     await expect(ui.locator('.eui-loading')).toHaveCount(0, { timeout: 60_000 })
     await expect(createPage, 'the Create page closed for the scene').toHaveCount(0)
-    expect(await page.evaluate(() => (window as GateWindow).__dclEditorHost!.openProject)).toBe(PROJECT_ID)
+    expect(await appFrame(page).evaluate(() => (window as GateWindow).__dclEditorHost!.openProject)).toBe(PROJECT_ID)
     await expect(nav, 'the HUD chrome is hidden in edit mode').toHaveCount(0)
     await expect.poll(() => new URL(page.url()).searchParams.get('editor'), { message: "the engine's url sync keeps the flag" }).toBe(PROJECT_ID)
     await expect(async () => {
