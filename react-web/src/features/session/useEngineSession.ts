@@ -1398,7 +1398,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     const login = pendingLogin.current
     pendingLogin.current = null
     Promise.resolve(login?.(driver))
-      .then(() => setBusy(false))
+      .then(() => {
+        urlDestination.current = null
+        setBusy(false)
+      })
       .catch((e: unknown) => {
         console.error('[login] post-launch login failed:', e)
         // The engine driver rejects with a RAW STRING (wasm-bindgen JsValue), not an Error —
@@ -1556,8 +1559,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // ?position shadow ?realm made a reload in a custom realm respawn in Genesis at the same
   // coordinates (a parcel launch passes DEFAULT_REALM explicitly). The engine's URL sync only
   // writes ?position when the realm honours one; realms with fixed scene urns (worlds) spawn at
-  // their base scene and ignore it anyway. Consumed once — after a sign-out the picker shows
-  // normally.
+  // their base scene and ignore it anyway. Consumed by the first successful login — a failed one
+  // retries to the same destination, the engine having already launched there unheld, where the
+  // lobby can't work; after a sign-out the picker shows normally.
   const urlDestination = useRef<Destination>(
     (() => {
       const q = new URLSearchParams(location.search)
@@ -1583,7 +1587,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       // already there — skip the picker and keep the realm (the no-launch pickDestination(null)
       // path). No validation fetch either: the engine booted on this realm, and preview/file
       // realms wouldn't pass the worlds-server about probe anyway.
-      urlDestination.current = null
       pickDestination(null)
       return
     }
@@ -1595,15 +1598,16 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       checkRealm(dest.realm)
         .then((result) => {
           if (result === 'ok') pickDestination(dest)
-          else setFatalError({ message: realmCheckMessage(dest.realm, result), source: 'realm' })
+          else {
+            urlDestination.current = null
+            setFatalError({ message: realmCheckMessage(dest.realm, result), source: 'realm' })
+          }
         })
         .finally(() => {
-          urlDestination.current = null
           validatingRealm.current = false
         })
       return
     }
-    urlDestination.current = null
     pickDestination(dest)
   }, [submitted, destinationPicked, pickDestination])
   // Optimistically reflect a new equipped set so the button flips to "Unequip" immediately AND the
