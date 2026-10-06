@@ -163,7 +163,7 @@ export default defineConfig(({ command, mode }) => ({
   base: command === 'build' ? (process.env.PUBLIC_URL ? `${process.env.PUBLIC_URL}/` : './') : '/',
   // The editor host's signing script's own deps: it is outside the page's import graph, so they
   // would be found when it first loads, and a late find reloads the page.
-  optimizeDeps: { include: ['@noble/secp256k1', '@noble/hashes/sha3'] },
+  optimizeDeps: { include: ['@noble/curves/secp256k1.js', '@noble/hashes/sha3.js'] },
   plugins: [
     react(),
     bridgeScenePreview(),
