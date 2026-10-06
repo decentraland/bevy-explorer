@@ -6,7 +6,12 @@ import type { EditorPin } from './source'
 
 /** The released package (README "Releasing the editor") and the hosts besides loopback that offer
  *  it; null = none, so a production build carries no editor at all. */
-export const PINNED_EDITOR = null as (EditorPin & { hosts: string[] }) | null
+export const PINNED_EDITOR = {
+  base: 'https://cdn.jsdelivr.net/npm/@dcl-regenesislabs/web-editor@0.1.1-37477647709.commit-b00c2ea/',
+  editorJsIntegrity: 'sha384-V197a9lWgJxnDgN2hhhNemaDPEFvm+nozIEvvdUOFjIoX7LKbeb9NridfQ+ZQidh',
+  editorSceneEntity: 'bafkreidzfny4im7pqpzuedreg2q5e6pd3vokz7h2py5b6zjxn3er6h4f5i',
+  hosts: ['decentraland.zone']
+} as (EditorPin & { hosts: string[] }) | null
 
 // false folds every Create entry point out of a production build that has no pin
 export const EDITOR_BUILD = import.meta.env.DEV || PINNED_EDITOR != null
