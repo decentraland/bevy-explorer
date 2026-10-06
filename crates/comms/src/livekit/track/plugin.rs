@@ -75,8 +75,15 @@ impl Plugin for LivekitTrackPlugin {
 
         #[cfg(not(target_arch = "wasm32"))]
         app.add_systems(Update, copy_frame);
+        // a headless app shows no video
         #[cfg(target_arch = "wasm32")]
-        app.add_systems(Update, queue_frame_copy);
+        if app
+            .world()
+            .get_resource::<common::structs::NoRenderApp>()
+            .is_none()
+        {
+            app.add_systems(Update, queue_frame_copy);
+        }
 
         app.add_observer(on_active_audio_transmitter_add);
         app.add_observer(on_active_audio_transmitter_remove);

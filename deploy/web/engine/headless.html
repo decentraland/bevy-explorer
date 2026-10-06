@@ -1,0 +1,9 @@
+<!doctype html>
+<!-- The document of a headless scene server (headless.js): the client's page loads it in a hidden
+     frame and calls startHeadless (engine.js startServer). -->
+<meta charset="utf-8" />
+<title>headless scene server</title>
+<script type="module">
+  import { startHeadless } from "./headless.js";
+  window.startHeadless = startHeadless;
+</script>

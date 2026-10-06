@@ -128,7 +128,8 @@ function coiHeadersExceptAuth(): Plugin {
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const path = req.url?.split('?')[0]
-        if (path === '/app.html') {
+        // the scene server's frame (engine/headless.html) takes the app's policy, as in the worker
+        if (path === '/app.html' || path === '/engine/headless.html') {
           res.setHeader('Document-Isolation-Policy', 'isolate-and-credentialless')
         } else if (path !== '/' && path !== '/index.html' && !req.url?.startsWith('/auth')) {
           for (const [k, v] of Object.entries(crossOriginIsolation)) res.setHeader(k, v)

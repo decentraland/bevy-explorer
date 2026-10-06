@@ -105,6 +105,7 @@ pub const DISTRIBUTION: &str = "web";
 pub const CONFIG_READ_ATTEMPTS: u32 = 3;
 pub const CONFIG_READ_RETRY_PAUSE: std::time::Duration = std::time::Duration::from_millis(100);
 
+pub mod headless;
 pub mod launch;
 
 pub struct DecentralandApp(App);
