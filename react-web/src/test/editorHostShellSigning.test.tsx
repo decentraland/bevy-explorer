@@ -2,8 +2,6 @@
 
 import { beforeAll, describe, it, expect, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
-import { Authenticator } from '../../bridge-scene/node_modules/@dcl/crypto'
-import { createUnsafeIdentity } from '../../bridge-scene/node_modules/@dcl/crypto/dist/crypto'
 import { useEditorHost } from '../features/editorHost/EditorHost'
 import type { DclEditorHostV1 } from '../features/editorHost/host/host'
 import { localSigner, signDeployment, signFetch } from '../features/editorHost/host/sign'
@@ -20,7 +18,17 @@ type HostWindow = Window & {
 }
 const w = window as HostWindow
 const session = fakeSession()
-const owner = createUnsafeIdentity()
+// the public identity the shell hands out: no private key, and it signs on request
+const OWNER = '0x' + '1'.repeat(40)
+const EPHEMERAL = '0x' + '2'.repeat(40)
+const identity = {
+  ephemeralIdentity: { address: EPHEMERAL, publicKey: '0x04' },
+  expiration: new Date(Date.now() + 60_000).toISOString(),
+  authChain: [
+    { type: 'SIGNER', payload: OWNER, signature: '' },
+    { type: 'ECDSA_EPHEMERAL', payload: `Ephemeral address: ${EPHEMERAL}`, signature: '0xowner' }
+  ]
+}
 
 describe('editor host signing inside the web shell', () => {
   beforeAll(async () => {
@@ -31,16 +39,12 @@ describe('editor host signing inside the web shell', () => {
   })
 
   it('asks the shell to sign with the ephemeral key, and reads no key from storage', async () => {
-    const identity = await Authenticator.initializeAuthChain(owner.address, createUnsafeIdentity(), 60, async (message) =>
-      Authenticator.createSignature(owner, message)
-    )
-    const { privateKey: _, ...ephemeralIdentity } = identity.ephemeralIdentity
     vi.mocked(shellRequest).mockImplementation(async (method: string) => {
-      if (method === 'identity') return { address: owner.address, identity: { ...identity, ephemeralIdentity } }
+      if (method === 'identity') return { address: OWNER, identity }
       if (method === 'sign') return '0xsigned'
       throw new Error(`unexpected ${method}`)
     })
-    session.profile.data = { address: owner.address.toLowerCase(), name: 'Tester', hasClaimedName: false, isGuest: false }
+    session.profile.data = { address: OWNER, name: 'Tester', hasClaimedName: false, isGuest: false }
     const read = vi.spyOn(Storage.prototype, 'getItem')
     const fetched = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('{}'))
 
@@ -49,7 +53,7 @@ describe('editor host signing inside the web shell', () => {
     const sign = vi.mocked(shellRequest).mock.calls.find(([method]) => method === 'sign')
     const headers = fetched.mock.lastCall![1]!.headers as Record<string, string>
     const { signer, message } = sign![1] as { signer: string; message: string }
-    expect(signer).toBe(identity.ephemeralIdentity.address)
+    expect(signer).toBe(EPHEMERAL)
     expect(message).toBe(['put', '/projects/p1/manifest', headers['x-identity-timestamp'], headers['x-identity-metadata']].join(':').toLowerCase())
     expect(JSON.parse(headers['x-identity-auth-chain-2'])).toEqual({ type: 'ECDSA_SIGNED_ENTITY', payload: message, signature: '0xsigned' })
     expect(read.mock.calls.filter(([key]) => String(key).startsWith('single-sign-on-'))).toEqual([])
