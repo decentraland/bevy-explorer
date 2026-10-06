@@ -239,7 +239,19 @@ test('the page hosts the scene editor: Create, preview, privileged scene, reload
     await expect.poll(async () => (await manifest(page)) != null, { timeout: 60_000, message: 'the preview is published' }).toBe(true)
     const published = (await manifest(page))!
     entityId = published.entity.id
-    const machineId = await page.evaluate(() => localStorage.getItem('dcl-editor.machineId'))
+    // the editor keeps its choices in IndexedDB: the web shell forbids the app's localStorage
+    const machineId = await page.evaluate(
+      () =>
+        new Promise<string | null>((resolve) => {
+          const open = indexedDB.open('dcl-editor')
+          open.onerror = () => resolve(null)
+          open.onsuccess = () => {
+            const get = open.result.transaction('prefs').objectStore('prefs').get('dcl-editor.machineId')
+            get.onsuccess = () => resolve(typeof get.result === 'string' ? get.result : null)
+            get.onerror = () => resolve(null)
+          }
+        })
+    )
     note(`built + published ${Date.now() - createdAt} ms after Create: preview ${preview}, entity ${entityId}, v${published.version}, ${published.entity.content.length} files`)
     expect(Buffer.from(entityId.slice(4), 'base64').toString(), 'a b64- preview id').toBe(`/preview/${preview}-${machineId}`)
     expect(published.entity.content.map((c) => c.file)).toEqual(expect.arrayContaining(['bin/index.js', 'scene.json']))
