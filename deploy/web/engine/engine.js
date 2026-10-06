@@ -46,7 +46,7 @@ function workerMessageHandler(name) {
  * Starts a headless scene server for a local preview beside the client: a second instance of
  * the engine in a hidden frame (headless.js). For the embedder that opened the preview, never
  * the engine. `options` is an engine_run options object naming the preview realm. Resolves once
- * the server's workers are started.
+ * the server's workers are started; rejects when the realm already has a server in this browser.
  * @param {object} options
  * @returns {Promise<object>}
  */
@@ -60,6 +60,8 @@ export function startServer(options) {
     });
   });
   document.body.appendChild(frame);
+  // a server that did not start leaves no frame, and with it no claim on its realm (headless.js)
+  started.catch(() => frame.remove());
   return started;
 }
 window.__bevyStartServer = startServer;
