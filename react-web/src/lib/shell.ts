@@ -2,8 +2,11 @@
 // process of its own. Whatever only the top-level page can do (the address bar, top-level
 // navigation, the service worker) goes through the shell's message handler, and so does anything
 // that needs the signed-in identity's key, which only the shell holds (src/shell/main.ts).
+// Except in a credentialless frame (the places pages' scene embed): its storage is a throwaway
+// copy with no sign-in key, and its parent isolates it, so the app runs there on its own. The
+// guard in app.html makes the same check.
 
-export const inShell = window.parent !== window
+export const inShell = window.parent !== window && !(window as { credentialless?: boolean }).credentialless
 
 export function postToShell(message: { type: string; [key: string]: unknown }): void {
   window.parent.postMessage(message, location.origin)

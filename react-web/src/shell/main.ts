@@ -99,7 +99,7 @@ addEventListener('message', (e: MessageEvent) => {
     // the engine's URL sync (engine/boot.js set_url_params), mirrored into the address bar
     case 'bevy-shell:url':
       if (typeof m.search === 'string' && (m.search === '' || m.search[0] === '?')) {
-        history.replaceState(null, '', location.pathname + m.search)
+        history.replaceState(null, '', location.pathname + m.search + location.hash)
       }
       break
     // sign-in: the same-origin auth site, returning here
@@ -120,7 +120,10 @@ addEventListener('message', (e: MessageEvent) => {
 // when the current one is active; the flag stops a broken worker from reload-looping. Until then
 // the app is not mounted.
 const FLAG = 'coi_sw_reloaded'
-if (!('serviceWorker' in navigator)) {
+if ((window as { credentialless?: boolean }).credentialless) {
+  // no sign-in key to keep from the app here (see inShell in src/lib/shell.ts)
+  location.replace('app.html' + location.search + location.hash)
+} else if (!('serviceWorker' in navigator)) {
   start()
 } else {
   // whether THIS load went through the current worker: one that claims the page mid-load

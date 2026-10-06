@@ -10,8 +10,9 @@ The UI being ported lives in the separate **`bevy-ui-scene`** repo
 to that repo.
 
 > **This app IS production.** CI builds it (`vite build`) into `deploy/web/` — the tree published
-> as `@dcl-regenesislabs/bevy-explorer-web` and served at the explorer URL. The React page owns the
-> root `index.html`; the engine boots IN the same document — no iframe, no old boot page — from
+> as `@dcl-regenesislabs/bevy-explorer-web` and served at the explorer URL. The root `index.html` is
+> a small shell page (`src/shell/`) that holds the sign-in key and embeds the React app, `app.html`,
+> in an iframe isolated in a process of its own. The engine boots IN the app's document from
 > `deploy/web/engine/` (boot module + workers + wasm); the bridge scene ships at
 > `deploy/web/bridge-scene/static`. Only the
 > *sources* stay here at the repo root — build artifacts in `deploy/web` are git-ignored.
@@ -78,16 +79,16 @@ explorer URL (e.g. `decentraland.zone/bevy-web`, assets on the versioned CDN pat
 
 | Path in `deploy/web` | What | Built by |
 |---|---|---|
-| `index.html` + `assets/` … | **this React app** (the production page) | `vite build` (CI) |
+| `index.html` + `app.html` + `assets/` … | **this React app**: the shell page and the app it embeds | `vite build` (CI) |
 | `engine/` | engine boot module + workers + `pkg/` (wasm) — no page | `wasm-pack` (CI) |
 | `bridge-scene/static/` | the exported bridge-scene realm | `npm run bundle` (CI) |
-| `service_worker.js` | shared root-scope SW: rewrites COEP → `credentialless` | tracked |
+| `service_worker.js` | shared root-scope SW: isolates `app.html` (Document-Isolation-Policy), drops COEP from the shell, rewrites COEP → `credentialless` elsewhere | tracked |
 
 **URL rules (learned the hard way):**
 - The page is served at a **no-trailing-slash entry** (`/bevy-web`) while assets live on the
   **versioned CDN** — so the React build uses an *absolute* base (`PUBLIC_URL`, from
   `deploy/web/scripts/prebuild.js` → `package.json.homepage`) and never `./`-relative refs
-  in `index.html`.
+  in `index.html` / `app.html`.
 - The **engine module + bridge scene + service worker must stay same-origin** with the page
   (BroadcastChannel / `contentWindow`): they resolve against `PAGE_DIR`
   (`src/lib/publicUrl.ts`), *never* against the CDN base.

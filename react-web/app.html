@@ -2,6 +2,21 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      // Inside the web shell, nothing in the app may read localStorage, our code or a library's:
+      // the first read loads the origin's whole storage area into this process, and it holds the
+      // sign-in key the shell keeps (src/shell/main.ts). A classic script, so it runs before any
+      // module; the HUD's own values live in src/lib/prefs.ts. Same check as inShell in
+      // src/lib/shell.ts.
+      if (window.parent !== window && !window.credentialless) {
+        Object.defineProperty(window, 'localStorage', {
+          configurable: false,
+          get() {
+            throw new Error('localStorage is not available to the app: use lib/prefs')
+          }
+        })
+      }
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Decentraland</title>
     <meta

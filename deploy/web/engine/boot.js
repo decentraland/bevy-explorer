@@ -322,7 +322,7 @@ window.set_url_params = (optionsJson) => {
     applyOptionsToUrlParams(urlParams, options)
     history.replaceState(null, '', window.location.pathname + '?' + urlParams.toString())
     // inside the web shell (react-web/index.html) this page is an iframe; the shell owns the address bar
-    if (window.parent !== window) {
+    if (window.parent !== window && !window.credentialless) {
       window.parent.postMessage({ type: 'bevy-shell:url', search: '?' + urlParams.toString() }, window.location.origin)
     }
   } catch (e) {

@@ -56,7 +56,7 @@ extern "C" {
 
     /// Ping the JS-side watchdog once per frame. If these stop arriving (e.g. the
     /// main thread is deadlocked waiting on a lock held by a crashed worker), the
-    /// watchdog surfaces the crash overlay. Defined in index.html before the engine runs.
+    /// watchdog surfaces the crash overlay. Defined in engine/boot.js before the engine runs.
     #[wasm_bindgen(js_name = "__engineHeartbeat")]
     fn engine_heartbeat();
 
