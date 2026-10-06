@@ -66,6 +66,8 @@ export interface DclEditorHostV1 {
   /** contract v1.3: the open preview's scene server console, the lines after `after` (a `seq` it
    *  returned, 0 for all it keeps); empty with no server running. */
   previewServerLogs: (after: number) => ServerLogLine[]
+  /** contract v1.3: the open preview has new content (a build landed); its scene server restarts on it. */
+  previewChanged: () => void
   /** Ask the player to confirm a Worlds deployment, then sign its entity id. Rejects 'cancelled'
    *  when declined and 'not-signed-in' for a guest. */
   signDeployment: (request: DeploymentRequest) => Promise<AuthChainLink[]>
@@ -288,6 +290,7 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
   // one switch at a time, so a stop never lands between another preview's start and its frame
   let serverSwitch: Promise<void> = Promise.resolve()
   let served: { realm: string; position: string } | null = null
+  let restartQueued = false
   const serveScene = (realm: string | null, position = ''): Promise<void> => {
     served = realm == null ? null : { realm, position }
     serverSwitch = serverSwitch.then(async () => {
@@ -353,10 +356,7 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
       const [name = '', ...args] = line.trim().replace(/^\//, '').split(/\s+/)
       const namesScene = name === 'reload' || (name === 'set_scene' && args.length > 0)
       if (!EDITOR_COMMANDS.has(name) || (namesScene && !editedScene(args.at(0)))) return Promise.reject(new Error('not-allowed'))
-      const reply = deps.engineConsole(line)
-      // the editor reloads its scene for new code, which the server must run too
-      if (name === 'reload' && served != null) void serveScene(served.realm, served.position)
-      return reply
+      return deps.engineConsole(line)
     },
     identity: deps.identity,
     setMode(mode) {
@@ -429,6 +429,15 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
       const route = target.href.startsWith(base.href) ? target.pathname.slice(base.pathname.length) : ''
       if (!PREVIEW_STORAGE_PATH.test(route)) return Promise.reject(new Error('not-allowed'))
       return fetch(target.href, { method: init?.method ?? 'GET', headers: init?.headers, body: init?.body })
+    },
+    previewChanged() {
+      // builds land in bursts: one restart waits behind the switch in progress, with the latest content
+      if (served == null || restartQueued) return
+      restartQueued = true
+      void serverSwitch.then(() => {
+        restartQueued = false
+        if (served != null) void serveScene(served.realm, served.position)
+      })
     },
     previewServerLogs(after) {
       const frame = document.querySelector<HTMLIFrameElement>(SERVER_FRAME)
