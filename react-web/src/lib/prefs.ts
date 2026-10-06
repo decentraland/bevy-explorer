@@ -106,6 +106,7 @@ export async function migratePrefs(): Promise<void> {
     for (const [key, value] of found) s.put(value, key)
     s.transaction.oncomplete = () => resolve()
     s.transaction.onerror = () => reject(s.transaction.error)
+    s.transaction.onabort = () => reject(s.transaction.error ?? new Error('aborted'))
   })
   for (const [key] of found) localStorage.removeItem(key)
 }

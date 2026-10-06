@@ -28,6 +28,7 @@ function mount(): void {
 function mountApp(): void {
   const f = document.createElement('iframe')
   f.src = 'app.html' + location.search + location.hash
+  f.title = 'Decentraland'
   f.allow = 'fullscreen; microphone; clipboard-read; clipboard-write; autoplay; gamepad'
   f.addEventListener('load', () => f.focus())
   document.body.appendChild(f)
@@ -49,12 +50,17 @@ function start(): void {
   else mount()
 }
 
-// The login handed to the app, key included. It is the only one the shell signs with, and it is
-// kept for the session, so signing out or in again in another tab doesn't pull it from under the
-// running engine; storage is read again only when there is none, or it has expired.
+// The login handed to the app, key included. It is the only one the shell signs with, and once it
+// has signed it is kept for the session, so signing out or in again in another tab doesn't pull it
+// from under the running engine. Until then (the login screen), or once it expires, storage is
+// read again.
 let held: StoredLogin | null = null
+let pinned = false
 function currentLogin(): StoredLogin | null {
-  if (!held || loginExpired(held)) held = getStoredLogin()
+  if (!pinned || !held || loginExpired(held)) {
+    held = getStoredLogin()
+    pinned = false
+  }
   return held
 }
 
@@ -69,11 +75,13 @@ function request(method: unknown, params: unknown): unknown {
       if (!ephemeral?.privateKey || ephemeral.address.toLowerCase() !== signer.toLowerCase()) {
         throw new Error(`not signed in as ${signer}`)
       }
+      pinned = true
       return personalSign(ephemeral.privateKey, message)
     }
     case 'logout':
       clearStoredLogins()
       held = null
+      pinned = false
       return null
     default:
       throw new Error(`unknown request ${String(method)}`)
