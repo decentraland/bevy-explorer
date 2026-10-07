@@ -541,7 +541,7 @@ impl SceneRoom {
 }
 
 /// Inverse mapping between a scene id and the transport entity
-#[derive(Default, Resource)]
+#[derive(Default, Resource, Deref)]
 pub struct SceneRoomMap(HashMap<String, Entity>);
 
 #[derive(Resource, Default)]
