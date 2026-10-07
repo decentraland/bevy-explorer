@@ -79,7 +79,7 @@ pub fn create_runtime(
 
     let mut ops = vec![op_require(), op_log(), op_error()];
 
-    let op_sets: [Vec<deno_core::OpDecl>; 13] = [
+    let op_sets: [Vec<deno_core::OpDecl>; 14] = [
         op_wrappers::engine::ops(),
         op_wrappers::restricted_actions::ops(),
         op_wrappers::runtime::ops(),
@@ -89,6 +89,7 @@ pub fn create_runtime(
         op_wrappers::player::ops(),
         op_wrappers::events::ops(),
         op_wrappers::comms::ops(),
+        op_wrappers::comms_api::ops(),
         op_wrappers::testing::ops(),
         op_wrappers::ethereum_controller::ops(),
         op_wrappers::adaption_layer_helper::ops(),
