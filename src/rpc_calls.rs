@@ -1,19 +1,23 @@
 use bevy::prelude::*;
 use common::rpc::{RpcCall, RpcCallEvent};
-use comms::{
-    livekit::{
-        participant::{HostingParticipants, LivekitParticipant},
-        track::{
-            Camera as LivekitSourceCamera, LivekitTrack, Publishing,
-            ScreenshareVideo as LivekitSourceScreenshare, Video,
+use dcl_component::proto_components::kernel::apis::VideoTracksActiveStreamsResponse;
+#[cfg(feature = "livekit")]
+use {
+    comms::{
+        livekit::{
+            participant::{HostingParticipants, LivekitParticipant},
+            track::{
+                Camera as LivekitSourceCamera, LivekitTrack, Publishing,
+                ScreenshareVideo as LivekitSourceScreenshare, Video,
+            },
         },
+        SceneRoomMap, Transport,
     },
-    SceneRoom, SceneRoomMap, Transport,
+    dcl_component::proto_components::kernel::apis::{
+        VideoTrackSourceType, VideoTracksActiveStreamsData,
+    },
+    scene_runner::renderer_context::RendererSceneContext,
 };
-use dcl_component::proto_components::kernel::apis::{
-    VideoTrackSourceType, VideoTracksActiveStreamsData, VideoTracksActiveStreamsResponse,
-};
-use scene_runner::{renderer_context::RendererSceneContext, ContainerEntity};
 
 pub struct RpcCallsPlugin;
 
@@ -23,14 +27,17 @@ impl Plugin for RpcCallsPlugin {
     }
 }
 
-#[expect(clippy::type_complexity, reason = "Queries are complex")]
+#[cfg_attr(
+    feature = "livekit",
+    expect(clippy::type_complexity, reason = "Queries are complex")
+)]
 fn respond_to_rpc_calls(
     mut rpc_calls: EventReader<RpcCallEvent>,
-    scene_rooms: Res<SceneRoomMap>,
-    scenes: Query<&RendererSceneContext>,
-    transports: Query<&HostingParticipants, With<Transport>>,
-    participants: Query<(&LivekitParticipant, &Publishing)>,
-    tracks: Query<
+    #[cfg(feature = "livekit")] scene_rooms: Res<SceneRoomMap>,
+    #[cfg(feature = "livekit")] scenes: Query<&RendererSceneContext>,
+    #[cfg(feature = "livekit")] transports: Query<&HostingParticipants, With<Transport>>,
+    #[cfg(feature = "livekit")] participants: Query<(&LivekitParticipant, &Publishing)>,
+    #[cfg(feature = "livekit")] tracks: Query<
         (
             &LivekitTrack,
             AnyOf<(&LivekitSourceCamera, &LivekitSourceScreenshare)>,
@@ -38,9 +45,14 @@ fn respond_to_rpc_calls(
         With<Video>,
     >,
 ) {
+    #[cfg_attr(not(feature = "livekit"), expect(unused))]
     for RpcCallEvent { origin, call } in rpc_calls.read() {
-        #[expect(clippy::single_match, reason = "May be expanded in the future")]
         match call {
+            #[cfg(not(feature = "livekit"))]
+            RpcCall::ActiveVideoStreams { response } => {
+                response.send(VideoTracksActiveStreamsResponse { streams: vec![] });
+            }
+            #[cfg(feature = "livekit")]
             RpcCall::ActiveVideoStreams { response } => {
                 let mut streams = vec![];
                 let Some(scene) = origin.scene() else {
