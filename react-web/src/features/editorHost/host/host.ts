@@ -131,8 +131,8 @@ const SERVER_FRAME = 'iframe[src$="/headless.html"]'
 const EDITOR_COMMANDS = new Set([
   'component_default', 'component_names', 'component_schema', 'crdt_initial', 'crdt_snapshot', 'debug_colliders',
   'delete_component', 'delete_entity', 'freeze_scene', 'highlight', 'move_player_to', 'new_entity', 'player_position',
-  'reload', 'save_composite', 'scene_content', 'scene_logs', 'scene_stats', 'set_component', 'set_component_raw',
-  'set_scene', 'texture_camera_screenshot', 'tick_scene', 'time', 'unfreeze_scene'
+  'reload', 'save_composite', 'scene_content', 'scene_logs', 'scene_stats', 'screenshot', 'set_component',
+  'set_component_raw', 'set_scene', 'texture_camera_screenshot', 'tick_scene', 'time', 'unfreeze_scene'
 ])
 // headers the editor may send on a request signed as the player
 const SIGNED_FETCH_HEADERS = new Set(['accept', 'content-type', 'if-match', 'if-none-match', 'x-confirm-delete-all'])
