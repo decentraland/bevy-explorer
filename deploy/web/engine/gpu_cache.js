@@ -160,12 +160,56 @@ export async function initGpuCache(key, fakeAsync) {
   await createGpuCache(key);
 }
 
+// Console marker boot.js (the page, where this worker's console is mirrored) turns into the crash
+// modal at once. Keep in sync with boot.js.
+const GPU_FATAL_PREFIX = "[gpu fatal]";
+
+function describeBuffer(descriptor) {
+  const d = descriptor ?? {};
+  return `label=${JSON.stringify(d.label ?? "")} size=${d.size} usage=0x${Number(d.usage ?? 0).toString(16)} mappedAtCreation=${!!d.mappedAtCreation}`;
+}
+
+// Chrome's createBuffer throws (rather than raising an uncaptured error) only for a mappedAtCreation
+// buffer: a size that isn't a multiple of 4, or when the wire client can't allocate the shared-memory
+// staging region for the mapping — renderer memory pressure, or the GPU channel already gone. wgpu
+// unwraps the result, so the throw surfaces as a panic; put the descriptor in the error message so
+// the panic text the crash modal shows says what was being created.
+function patchCreateBuffer(device) {
+  const originalCreateBuffer = device.createBuffer;
+  device.createBuffer = (descriptor) => {
+    try {
+      return originalCreateBuffer.call(device, descriptor);
+    } catch (err) {
+      let detail = `createBuffer(${describeBuffer(descriptor)}) threw ${err?.name ?? "error"}: ${err?.message ?? err}`;
+      if (device.__gpu_lost) detail += " (device lost)";
+      if (err instanceof Error) {
+        err.message = detail;
+        throw err;
+      }
+      throw new Error(detail);
+    }
+  };
+}
+
+// A lost device silently no-ops every call: the render loop keeps beating over a dead canvas and
+// nothing else raises the crash modal (a lost device raises no uncaptured errors either).
+function armDeviceLost(device) {
+  if (device.__gpu_lost_armed) return;
+  device.__gpu_lost_armed = true;
+  device.lost.then((info) => {
+    device.__gpu_lost = true;
+    if (info.reason === "destroyed") return; // deliberate teardown, not a fault
+    console.error(`${GPU_FATAL_PREFIX} WebGPU device lost (${info.reason}): ${info.message}`);
+  });
+}
+
 function patchWebgpuAdapter(fakeAsync) {
   const originalRequestDevice = GPUAdapter.prototype.requestDevice;
   GPUAdapter.prototype.requestDevice = async function (descriptor) {
     const jsonDescriptor = JSON.stringify(descriptor || {});
     if (gpuSessionState.deviceDescriptor === jsonDescriptor) {
       console.log("[GPU Cache] using precached device");
+      armDeviceLost(gpuSessionState.device);
       return gpuSessionState.device;
     }
 
@@ -191,6 +235,9 @@ function patchWebgpuAdapter(fakeAsync) {
     }
     gpuSessionState.device = device;
     await setConfig("deviceDescriptor", jsonDescriptor);
+    patchCreateBuffer(device);
+    // The precache device is only armed if the engine ends up using it (the branch above).
+    if (!precaching) armDeviceLost(device);
 
     function wrapDeviceFunction(itemType, originalFunction) {
       return (...args) => {
