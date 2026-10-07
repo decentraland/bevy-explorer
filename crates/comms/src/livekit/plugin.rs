@@ -1,9 +1,5 @@
 use bevy::prelude::*;
-use common::{
-    debug_panic,
-    rpc::{RpcCall, RpcCallEvent},
-};
-use dcl_component::proto_components::kernel::apis::VideoTracksActiveStreamsResponse;
+use common::debug_panic;
 use tokio::{sync::mpsc, task::JoinHandle};
 #[cfg(not(target_arch = "wasm32"))]
 use {
@@ -69,8 +65,6 @@ impl Plugin for LivekitPlugin {
                     .run_if(resource_exists_and_changed::<AudioSettings>),
             );
         }
-
-        app.add_systems(Update, respond_to_rpc_calls);
 
         app.add_event::<StartLivekit>();
 
@@ -176,17 +170,4 @@ fn respond_to_audio_settings_change(
     livekit_audio_manager
         .main_track()
         .set_volume(audio_settings.scene() as f64, Tween::default());
-}
-
-fn respond_to_rpc_calls(mut rpc_calls: EventReader<RpcCallEvent>) {
-    for RpcCallEvent { origin, call } in rpc_calls.read() {
-        #[expect(clippy::single_match, reason = "May be expanded in the future")]
-        match call {
-            RpcCall::ActiveVideoStreams { response } => {
-                debug!("{:?}", origin.scene());
-                response.send(VideoTracksActiveStreamsResponse { streams: vec![] })
-            }
-            _ => (),
-        }
-    }
 }

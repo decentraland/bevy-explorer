@@ -5,6 +5,7 @@ mod web;
 // POC: react-web HUD via CEF offscreen rendering into an in-engine texture (`react-hud-cef`).
 #[cfg(all(not(target_arch = "wasm32"), feature = "react-hud-cef"))]
 mod react_hud_cef;
+mod rpc_calls;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
@@ -594,7 +595,8 @@ impl DecentralandApp {
             .add_plugins(EmbedAssetsPlugin)
             .add_plugins(ParticleSystemPlugin)
             .add_plugins(LivestreamManagerPlugin)
-            .add_plugins(media::plugin::MediaPlugin);
+            .add_plugins(media::plugin::MediaPlugin)
+            .add_plugins(rpc_calls::RpcCallsPlugin);
 
         if !decentraland_app_config.arguments.launch.preview {
             app.add_plugins(DclImposterPlugin {
