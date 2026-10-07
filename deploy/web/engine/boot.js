@@ -166,7 +166,11 @@ publish()
 
   // Capture Rust panic text: the wasm panic hook prints "panicked at …" via console.error (the only
   // engine path that uses that channel — wasm-bindgen's __wbg_error), while the throw that surfaces
-  // is a generic trap — stash the readable message for the host.
+  // is a generic trap — stash the readable message for the host. The render worker's gpu_cache.js
+  // (its console is mirrored to the page) reports a lost WebGPU device here as fatal at once: a lost
+  // device no-ops every call while the loop keeps beating, so nothing else would ever show the
+  // modal. Keep the prefix in sync.
+  const GPU_FATAL_PREFIX = '[gpu fatal]'
   const origConsoleError = console.error.bind(console)
   console.error = function () {
     try {
@@ -174,6 +178,8 @@ publish()
       if (typeof first === 'string' && first.indexOf('panicked at') !== -1) {
         window.__bevyPanic = { message: String(first), at: nowMs() }
         recordError(first, 'panic')
+      } else if (typeof first === 'string' && first.startsWith(GPU_FATAL_PREFIX)) {
+        crash(first, 'gpu', true)
       }
     } catch (_) {}
     return origConsoleError.apply(console, arguments)
