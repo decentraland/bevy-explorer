@@ -2196,6 +2196,21 @@ struct SignedFetchMeta {
     signer: String,
 }
 
+/// `realm.hostname` in the shape unity sends: the bare host for the `main` realm (the
+/// rewards server string-compares it against `realm-provider-ea.decentraland.org`),
+/// otherwise the realm url's host and path, without scheme or port.
+fn signed_fetch_realm_hostname(about_url: &str, realm_name: &str) -> String {
+    let realm_url = about_url.strip_suffix("/about").unwrap_or(about_url);
+    let Ok(url) = url::Url::parse(realm_url) else {
+        return realm_url.to_owned();
+    };
+    let host = url.host_str().unwrap_or_default();
+    if realm_name == "main" {
+        return host.to_owned();
+    }
+    format!("{host}{}", url.path().trim_end_matches('/'))
+}
+
 // the server's fake player has no identity (#1102), and the server never signs as a guest
 fn signed_fetch_is_guest(server: bool, profile: Option<&UserProfile>) -> Result<bool, String> {
     if server {
@@ -2297,6 +2312,7 @@ fn handle_sign_request(
             } else {
                 realm_name
             };
+            let hostname = signed_fetch_realm_hostname(&realm.about_url, &realm_name);
 
             let method = method.clone();
             let scene = scene.to_string();
@@ -2318,7 +2334,7 @@ fn handle_sign_request(
                     network: Some("mainnet".to_owned()),
                     is_guest: Some(is_guest),
                     realm: SignedFetchMetaRealm {
-                        hostname: base_url,
+                        hostname,
                         protocol: "v3".to_owned(),
                         server_name: realm_name,
                     },
@@ -2683,5 +2699,31 @@ mod signed_fetch_identity_tests {
     fn client_is_guest_unless_web3_connected() {
         assert!(signed_fetch_is_guest(false, Some(&profile(None))).unwrap());
         assert!(!signed_fetch_is_guest(false, Some(&profile(Some(true)))).unwrap());
+    }
+
+    #[test]
+    fn main_realm_hostname_is_bare_host() {
+        assert_eq!(
+            signed_fetch_realm_hostname(
+                "https://realm-provider-ea.decentraland.org/main/about",
+                "main"
+            ),
+            "realm-provider-ea.decentraland.org"
+        );
+    }
+
+    #[test]
+    fn other_realm_hostname_is_host_and_path() {
+        assert_eq!(
+            signed_fetch_realm_hostname(
+                "https://worlds-content-server.decentraland.org/world/robtfm.dcl.eth/about",
+                "robtfm.dcl.eth"
+            ),
+            "worlds-content-server.decentraland.org/world/robtfm.dcl.eth"
+        );
+        assert_eq!(
+            signed_fetch_realm_hostname("http://127.0.0.1:8000/about", "LocalPreview"),
+            "127.0.0.1"
+        );
     }
 }
