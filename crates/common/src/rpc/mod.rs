@@ -9,6 +9,7 @@ use crate::{
 };
 use alloy_core::primitives::Address;
 use bevy::{platform::collections::HashMap, prelude::*};
+use dcl_component::proto_components::kernel::apis::VideoTracksActiveStreamsResponse;
 use serde::{Deserialize, Serialize};
 use std::{cell::RefCell, sync::Arc};
 pub use tokio_util::sync::CancellationToken;
@@ -332,6 +333,9 @@ pub enum RpcCall {
     EntityDefinition {
         urn: String,
         response: RpcResultSender<Option<EntityDefinitionResponse>>,
+    },
+    ActiveVideoStreams {
+        response: RpcResultSender<Option<VideoTracksActiveStreamsResponse>>,
     },
 }
 
