@@ -213,6 +213,8 @@ function createJsContext(wasmApi, context) {
     return values.map(v => {
       if (v === null) return 'null';
       if (v === undefined) return 'undefined';
+      // JSON.stringify(new Error('x')) is '{}': an error's message and stack are not enumerable
+      if (v instanceof Error) return v.stack ? `${v.name}: ${v.message}\n${v.stack}` : `${v.name}: ${v.message}`;
       if (typeof v === 'object') { try { return JSON.stringify(v); } catch(e) { return String(v); } }
       return String(v);
     }).join(' ');
