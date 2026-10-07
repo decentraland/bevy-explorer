@@ -335,7 +335,7 @@ pub enum RpcCall {
         response: RpcResultSender<Option<EntityDefinitionResponse>>,
     },
     ActiveVideoStreams {
-        response: RpcResultSender<Option<VideoTracksActiveStreamsResponse>>,
+        response: RpcResultSender<VideoTracksActiveStreamsResponse>,
     },
 }
 

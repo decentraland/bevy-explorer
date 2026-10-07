@@ -8,7 +8,7 @@ use crate::{js::State, RpcCalls};
 
 pub async fn op_get_active_video_streams(
     state: Rc<RefCell<impl State>>,
-) -> Result<Option<VideoTracksActiveStreamsResponse>, anyhow::Error> {
+) -> Result<VideoTracksActiveStreamsResponse, anyhow::Error> {
     debug!("op_get_active_video_streams");
     let (sx, rx) = RpcResultSender::channel();
 

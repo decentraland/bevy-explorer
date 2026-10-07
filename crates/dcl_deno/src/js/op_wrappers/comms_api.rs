@@ -12,6 +12,6 @@ pub fn ops() -> Vec<OpDecl> {
 #[serde]
 async fn op_get_active_video_streams(
     state: Rc<RefCell<OpState>>,
-) -> Result<Option<VideoTracksActiveStreamsResponse>, anyhow::Error> {
+) -> Result<VideoTracksActiveStreamsResponse, anyhow::Error> {
     dcl::js::comms_api::op_get_active_video_streams(state).await
 }
