@@ -592,6 +592,16 @@ pub fn broadcast_nearby_chats(
             "embedded://sounds/ui/widget_chat_message_private_send.wav".to_owned(),
         ));
 
+        // unity-explorer decodes the wire timestamp with DateTime.FromOADate: days since
+        // 1899-12-30 UTC (25569 = the OADate of the unix epoch). Receivers only need it
+        // monotonic per sender; we display receive time.
+        let timestamp = web_time::SystemTime::now()
+            .duration_since(web_time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs_f64()
+            / 86_400.0
+            + 25_569.0;
+
         // Nearby chat targets only the realm's byte transports that actually carry it: the websocket
         // dev server and LiveKit (incl. the LiveKit scene room, which rides the LIVEKIT bit). It has
         // no Archipelago use and no Pulse representation, so those are left out rather than queued and
@@ -603,7 +613,7 @@ pub fn broadcast_nearby_chats(
             &rfc4::Packet {
                 message: Some(rfc4::packet::Message::Chat(rfc4::Chat {
                     message: ev.message.clone(),
-                    timestamp: ev.timestamp,
+                    timestamp,
                 })),
                 protocol_version: 100,
             },
