@@ -1221,7 +1221,7 @@ impl IpfsIo {
                             anyhow!("timed out awaiting active-entities headers")
                         }
                         platform::FetchError::Send(e) => anyhow!(e),
-                        platform::FetchError::Status(s) => anyhow!("status: {s}"),
+                        platform::FetchError::Status(s, _) => anyhow!("status: {s}"),
                         platform::FetchError::Stalled => {
                             anyhow!("active-entities response stalled")
                         }
@@ -1759,6 +1759,7 @@ impl AssetReader for IpfsIo {
             debug!("[{token:?}]: remote url: `{remote}` proceeding");
 
             let mut attempt = 0;
+            let mut rate_limited = 0;
             let mut no_cache = false;
             // in wasm we add a custom header to allow the service worker to cache ipfs requests across content servers
             #[cfg(target_arch = "wasm32")]
@@ -1810,6 +1811,21 @@ impl AssetReader for IpfsIo {
                         warn!("[{token:?}] timeout requesting `{remote}`, retrying");
                         continue;
                     }
+                    Err(platform::FetchError::Status(status, retry_after))
+                        if status.as_u16() == 429 && rate_limited < 5 =>
+                    {
+                        // Wait out the server's Retry-After while holding the request slot, so
+                        // the pause also throttles everything queued behind this request.
+                        rate_limited += 1;
+                        let delay = retry_after
+                            .unwrap_or(Duration::from_secs(5))
+                            .min(Duration::from_secs(60));
+                        warn!(
+                            "[{token:?}] rate limited fetching `{remote}`, retrying in {delay:?}"
+                        );
+                        async_std::task::sleep(delay).await;
+                        continue;
+                    }
                     Err(e) => {
                         let detail = match e {
                             platform::FetchError::Headers => {
@@ -1817,7 +1833,7 @@ impl AssetReader for IpfsIo {
                             }
                             platform::FetchError::Stalled => "stalled (no data for 10s)".to_owned(),
                             platform::FetchError::Send(e) => format!("server responded `{e}`"),
-                            platform::FetchError::Status(s) => {
+                            platform::FetchError::Status(s, _) => {
                                 format!("server responded with status {s}")
                             }
                             platform::FetchError::Body(e) => format!("body stream error: {e}"),

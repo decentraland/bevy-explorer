@@ -46,8 +46,9 @@ pub enum FetchError<E> {
     Headers,
     /// The send itself failed before any response was obtained.
     Send(E),
-    /// The server returned a non-success status; the body is not read.
-    Status(reqwest::StatusCode),
+    /// The server returned a non-success status; the body is not read. The second
+    /// field is the `Retry-After` delay if the server sent one in delta-seconds.
+    Status(reqwest::StatusCode, Option<Duration>),
     /// The body transfer stalled — no chunk arrived within the idle window.
     Stalled,
     /// The body stream errored mid-transfer.
@@ -75,7 +76,13 @@ pub async fn fetch<E>(
     };
 
     if !response.status().is_success() {
-        return Err(FetchError::Status(response.status()));
+        let retry_after = response
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.trim().parse::<u64>().ok())
+            .map(Duration::from_secs);
+        return Err(FetchError::Status(response.status(), retry_after));
     }
 
     let headers = response.headers().clone();

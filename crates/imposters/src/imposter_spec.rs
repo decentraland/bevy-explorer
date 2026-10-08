@@ -232,7 +232,7 @@ pub async fn load_imposter_remote(
             {
                 Ok(fetched) => fetched,
                 // a missing imposter for this area is an expected 404
-                Err(platform::FetchError::Status(_)) => return Ok(None),
+                Err(platform::FetchError::Status(_, _)) => return Ok(None),
                 Err(platform::FetchError::Send(e)) => return Err(e),
                 Err(platform::FetchError::Headers) => {
                     anyhow::bail!("imposter request timed out awaiting headers")

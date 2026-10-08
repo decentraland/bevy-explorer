@@ -412,10 +412,10 @@ async fn fetch_fontsource_family(
     .map_err(|e| match e {
         platform::FetchError::Headers => anyhow!("timed out awaiting headers"),
         platform::FetchError::Send(e) => anyhow!(e),
-        platform::FetchError::Status(status) if status.as_u16() == 404 => {
+        platform::FetchError::Status(status, _) if status.as_u16() == 404 => {
             anyhow!("unknown family")
         }
-        platform::FetchError::Status(status) => anyhow!("status {status}"),
+        platform::FetchError::Status(status, _) => anyhow!("status {status}"),
         platform::FetchError::Stalled => anyhow!("body transfer stalled"),
         platform::FetchError::Body(e) => anyhow!(e),
     })?;
