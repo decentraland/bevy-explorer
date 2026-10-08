@@ -150,6 +150,8 @@ pub fn pipe_dm_user_state_to_scene(
     mut social_changed: EventReader<SocialStateChanged>,
     room_changed: Query<(), Changed<PrivateChatPrivacy>>,
     mut room_removed: RemovedComponents<PrivateChatPrivacy>,
+    connected: Query<(), (With<PrivateChatRoom>, Added<Connected>)>,
+    mut disconnected: RemovedComponents<Connected>,
     players_changed: Query<&ForeignPlayer, Changed<ForeignPlayer>>,
     mut players_removed: RemovedComponents<ForeignPlayer>,
     states: DmUserStates,
@@ -168,7 +170,14 @@ pub fn pipe_dm_user_state_to_scene(
     }
     // drain the signals even with no subscribers, so a later one does not see stale ones
     let social_changed = social_changed.read().count() > 0;
-    let room_changed = !room_changed.is_empty() || room_removed.read().count() > 0;
+    let room_changed = !room_changed.is_empty()
+        || room_removed.read().count() > 0
+        || !connected.is_empty()
+        || disconnected
+            .read()
+            .filter(|room| states.rooms.contains(*room))
+            .count()
+            > 0;
     let players_removed = players_removed.read().count() > 0;
 
     streams.retain(|s| !s.sender.is_closed());
