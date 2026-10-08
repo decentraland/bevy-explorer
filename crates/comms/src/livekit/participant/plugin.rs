@@ -164,6 +164,7 @@ fn participant_disconnected(
     trigger: Trigger<ParticipantDisconnected>,
     mut commands: Commands,
     rooms: Query<(&LivekitRoom, &ParticipantIndex)>,
+    participants: Query<&LivekitParticipant>,
     transport_senders: crate::global_crdt::TransportSenders,
     mut player_update_tasks: PlayerUpdateTasksMut,
     livekit_runtime: LivekitRuntimeRes,
@@ -202,9 +203,16 @@ fn participant_disconnected(
         }
     }
 
+    // by identity, then confirmed by sid: a rejoin under the same identity may already own the
+    // index entry
     let Some(entity) = index
         .get(&ParticipantIndex::key(participant.identity().as_str()))
         .copied()
+        .filter(|entity| {
+            participants
+                .get(*entity)
+                .is_ok_and(|current| current.sid() == participant.sid())
+        })
     else {
         error!(
             "Disconnecting participant '{}' ({}) not found in participants.",
@@ -231,8 +239,12 @@ fn participant_entity_removed(
     let identity = participant.identity();
     match maybe_hosted {
         Some(hosted) => {
+            // a rejoin under the same identity may have replaced the entry already
             if let Ok(mut index) = indexes.get_mut(hosted.get()) {
-                index.remove(&ParticipantIndex::key(identity.as_str()));
+                let key = ParticipantIndex::key(identity.as_str());
+                if index.get(&key) == Some(&trigger.target()) {
+                    index.remove(&key);
+                }
             }
             rate_limiter
                 .windows
