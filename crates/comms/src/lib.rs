@@ -524,6 +524,33 @@ pub struct GatekeeperResponse {
     adapter: String,
 }
 
+/// Signed request to a comms-gatekeeper endpoint, returning the adapter string it mints. `meta`
+/// travels in the signed identity headers, not the body.
+pub(crate) async fn mint_gatekeeper_adapter(
+    method: &str,
+    client: reqwest::Client,
+    uri: Uri,
+    wallet: &Wallet,
+    meta: String,
+) -> Result<String, anyhow::Error> {
+    let headers = sign_request(method, &uri, wallet, meta).await?;
+
+    let mut request = client
+        .request(method.parse()?, uri.to_string())
+        .timeout(std::time::Duration::from_secs(10))
+        .header("Content-Type", "application/json");
+    for (k, v) in headers {
+        request = request.header(k, v);
+    }
+    let response = request.send().await?;
+
+    if response.status() != StatusCode::OK {
+        return Err(anyhow::anyhow!("status: {}", response.status()));
+    }
+
+    Ok(response.json::<GatekeeperResponse>().await?.adapter)
+}
+
 #[derive(Component)]
 pub struct SceneRoom(pub String);
 
@@ -645,22 +672,10 @@ fn connect_scene_room(
                 serde_json::to_string(&ev).unwrap()
             };
             *gatekeeper_task = Some(IoTaskPool::get().spawn_compat(async move {
-                let headers = sign_request("POST", &uri, &wallet, meta).await?;
-
-                let mut request = client
-                    .post(uri.to_string())
-                    .timeout(std::time::Duration::from_secs(10))
-                    .header("Content-Type", "application/json");
-                for (k, v) in headers {
-                    request = request.header(k, v);
-                }
-                let response = request.send().await?;
-
-                if response.status() != StatusCode::OK {
-                    return Err(anyhow::anyhow!("status: {}", response.status()));
-                }
-
-                Ok((response.json::<GatekeeperResponse>().await?.adapter, ev))
+                Ok((
+                    mint_gatekeeper_adapter("POST", client, uri, &wallet, meta).await?,
+                    ev,
+                ))
             }));
         }
     }
