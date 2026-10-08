@@ -414,8 +414,11 @@ impl SocialClientHandler {
         &self.unread_messages
     }
 
-    pub fn update(&mut self) {
+    /// Applies pending updates; true if any arrived.
+    pub fn update(&mut self) -> bool {
+        let mut changed = false;
         while let Ok(rec) = self.friendship_receiver.try_recv() {
+            changed = true;
             match rec {
                 FriendData::Init {
                     sent_requests,
@@ -562,6 +565,7 @@ impl SocialClientHandler {
                 }
             }
         }
+        changed
     }
 }
 

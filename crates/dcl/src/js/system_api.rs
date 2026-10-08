@@ -11,15 +11,15 @@ use common::{
 };
 use dcl_component::proto_components::common::Vector2;
 use serde::{Deserialize, Serialize};
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use strum::IntoEnumIterator;
 use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
-    BlockingStatusData, ChatMessage, FriendConnectivityEvent, FriendData, FriendRequestData,
-    FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo,
-    PermanentPermissionItem, PermissionRequestEvent, ProfileChangedEvent, ProximityEvent,
-    SatelliteView, SceneLoadingUi, SetAvatarData, SetPermanentPermission, SetSinglePermission,
-    SystemApi, VoiceMessage,
+    BlockingStatusData, ChatMessage, DmUserStateData, FriendConnectivityEvent, FriendData,
+    FriendRequestData, FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent,
+    LiveSceneInfo, PermanentPermissionItem, PermissionRequestEvent, ProfileChangedEvent,
+    ProximityEvent, SatelliteView, SceneLoadingUi, SetAvatarData, SetPermanentPermission,
+    SetSinglePermission, SystemApi, VoiceMessage,
 };
 
 use crate::{interface::crdt_context::CrdtContext, js::player_identity, RpcCalls};
@@ -1186,6 +1186,66 @@ pub async fn op_get_blocking_status(
     rx.await
         .map_err(|e| anyhow::anyhow!(e))?
         .map_err(|e| anyhow::anyhow!(e))
+}
+
+/// Open DM user-state streams by stream id. Several can be open at once (one per
+/// conversation the HUD shows), so unlike the single-slot streams they are keyed rather than
+/// stored by type. A receiver is out of the map while a read awaits it.
+#[derive(Default)]
+struct DmUserStateStreams {
+    next_id: u32,
+    receivers: HashMap<u32, RpcStreamReceiver<DmUserStateData>>,
+}
+
+pub async fn op_get_dm_user_state_stream(state: Rc<RefCell<impl State>>, address: String) -> u32 {
+    let (sx, rx) = RpcStreamSender::channel();
+
+    let mut state = state.borrow_mut();
+    if !state.has::<DmUserStateStreams>() {
+        state.put(DmUserStateStreams::default());
+    }
+    let streams = state.borrow_mut::<DmUserStateStreams>();
+    streams.next_id += 1;
+    let rid = streams.next_id;
+    streams.receivers.insert(rid, rx);
+
+    state
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetDmUserStateStream(address, sx))
+        .unwrap();
+
+    rid
+}
+
+pub async fn op_read_dm_user_state_stream(
+    state: Rc<RefCell<impl State>>,
+    rid: u32,
+) -> Result<Option<DmUserStateData>, anyhow::Error> {
+    let Some(mut receiver) = state
+        .borrow_mut()
+        .try_borrow_mut::<DmUserStateStreams>()
+        .and_then(|streams| streams.receivers.remove(&rid))
+    else {
+        return Ok(None);
+    };
+
+    let res = receiver.recv().await;
+
+    if res.is_some() {
+        state
+            .borrow_mut()
+            .borrow_mut::<DmUserStateStreams>()
+            .receivers
+            .insert(rid, receiver);
+    }
+    Ok(res)
+}
+
+/// Drops the stream's receiver, which closes the engine's sender.
+pub fn op_close_dm_user_state_stream(state: Rc<RefCell<impl State>>, rid: u32) {
+    if let Some(streams) = state.borrow_mut().try_borrow_mut::<DmUserStateStreams>() {
+        streams.receivers.remove(&rid);
+    }
 }
 
 pub async fn op_get_block_update_stream(state: Rc<RefCell<impl State>>) -> u32 {

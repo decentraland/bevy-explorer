@@ -4,13 +4,14 @@
 use alloy_core::primitives::Address;
 use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_console::ConsoleCommand;
-use common::{structs::DmPrivacy, util::AsH160};
+use common::{rpc::RpcStreamSender, structs::DmPrivacy, util::AsH160};
 use comms::{
     global_crdt::ForeignPlayer,
     livekit::participant::{HostingParticipants, LivekitParticipant},
     private_chat::{PrivateChatPrivacy, PrivateChatRoom},
 };
-use social::{FriendshipState, SocialClient};
+use social::{FriendshipState, SocialClient, SocialStateChanged};
+use system_bridge::{DmUserStateData, SystemApi};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DmUserState {
@@ -29,7 +30,20 @@ pub enum DmUserState {
     OtherClient,
 }
 
-#[derive(Clone, Copy, Debug)]
+impl DmUserState {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Connected => "connected",
+            Self::BlockedByOwnUser => "blockedByOwnUser",
+            Self::PrivateMessagesBlockedByOwnUser => "privateMessagesBlockedByOwnUser",
+            Self::PrivateMessagesBlocked => "privateMessagesBlocked",
+            Self::Disconnected => "disconnected",
+            Self::OtherClient => "otherClient",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DmUserStatus {
     /// In the private chat room and not blocked by the local user.
     pub online: bool,
@@ -101,6 +115,69 @@ impl DmUserStates<'_, '_> {
             DmUserState::Connected
         };
         DmUserStatus { online, state }
+    }
+}
+
+/// One HUD subscription to a recipient's DM state.
+pub struct DmUserStateStream {
+    address: Address,
+    sender: RpcStreamSender<DmUserStateData>,
+    /// What was last sent; `None` until the first emit.
+    last: Option<DmUserStatus>,
+}
+
+/// Reports each subscribed recipient's DM state to the HUD: once on subscription and then
+/// whenever one of its inputs changed and the resolved state with it. Subscriptions end when
+/// the HUD drops its end.
+#[allow(clippy::too_many_arguments)]
+pub fn pipe_dm_user_state_to_scene(
+    mut requests: EventReader<SystemApi>,
+    mut streams: Local<Vec<DmUserStateStream>>,
+    mut social_changed: EventReader<SocialStateChanged>,
+    room_changed: Query<(), Changed<PrivateChatPrivacy>>,
+    mut room_removed: RemovedComponents<PrivateChatPrivacy>,
+    players_changed: Query<&ForeignPlayer, Changed<ForeignPlayer>>,
+    mut players_removed: RemovedComponents<ForeignPlayer>,
+    states: DmUserStates,
+) {
+    for request in requests.read() {
+        if let SystemApi::GetDmUserStateStream(address, sender) = request {
+            match address.as_h160() {
+                Some(address) => streams.push(DmUserStateStream {
+                    address,
+                    sender: sender.clone(),
+                    last: None,
+                }),
+                None => warn!("dm user state stream: `{address}` is not a wallet address"),
+            }
+        }
+    }
+    // drain the signals even with no subscribers, so a later one does not see stale ones
+    let social_changed = social_changed.read().count() > 0;
+    let room_changed = !room_changed.is_empty() || room_removed.read().count() > 0;
+    let players_removed = players_removed.read().count() > 0;
+
+    streams.retain(|s| !s.sender.is_closed());
+    if streams.is_empty() {
+        return;
+    }
+    let inputs_changed = social_changed || room_changed || players_removed;
+    let changed_players: Vec<Address> = players_changed.iter().map(|p| p.address).collect();
+
+    for stream in streams.iter_mut() {
+        if !(stream.last.is_none() || inputs_changed || changed_players.contains(&stream.address)) {
+            continue;
+        }
+        let status = states.resolve(stream.address);
+        if stream.last == Some(status) {
+            continue;
+        }
+        stream.last = Some(status);
+        let _ = stream.sender.send(DmUserStateData {
+            address: format!("{:#x}", stream.address),
+            state: status.state.name().to_owned(),
+            online: status.online,
+        });
     }
 }
 

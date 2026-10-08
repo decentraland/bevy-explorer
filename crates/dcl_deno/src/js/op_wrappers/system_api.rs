@@ -9,10 +9,10 @@ use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc};
 use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
-    BlockingStatusData, ChatMessage, FriendConnectivityEvent, FriendData, FriendRequestData,
-    FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo,
-    PermanentPermissionItem, PermissionRequestEvent, ProfileChangedEvent, ProximityEvent,
-    SatelliteView, SceneLoadingUi, SetAvatarData, VoiceMessage,
+    BlockingStatusData, ChatMessage, DmUserStateData, FriendConnectivityEvent, FriendData,
+    FriendRequestData, FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent,
+    LiveSceneInfo, PermanentPermissionItem, PermissionRequestEvent, ProfileChangedEvent,
+    ProximityEvent, SatelliteView, SceneLoadingUi, SetAvatarData, VoiceMessage,
 };
 
 // list of op declarations
@@ -97,6 +97,9 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_get_blocking_status(),
             op_get_block_update_stream(),
             op_read_block_update_stream(),
+            op_get_dm_user_state_stream(),
+            op_read_dm_user_state_stream(),
+            op_close_dm_user_state_stream(),
         ]
     } else {
         Vec::default()
@@ -654,6 +657,28 @@ pub async fn op_get_blocking_status(
     state: Rc<RefCell<OpState>>,
 ) -> Result<BlockingStatusData, anyhow::Error> {
     dcl::js::system_api::op_get_blocking_status(state).await
+}
+
+#[op2(async)]
+pub async fn op_get_dm_user_state_stream(
+    state: Rc<RefCell<OpState>>,
+    #[string] address: String,
+) -> u32 {
+    dcl::js::system_api::op_get_dm_user_state_stream(state, address).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_read_dm_user_state_stream(
+    state: Rc<RefCell<OpState>>,
+    #[smi] rid: u32,
+) -> Result<Option<DmUserStateData>, anyhow::Error> {
+    dcl::js::system_api::op_read_dm_user_state_stream(state, rid).await
+}
+
+#[op2(fast)]
+pub fn op_close_dm_user_state_stream(state: Rc<RefCell<OpState>>, #[smi] rid: u32) {
+    dcl::js::system_api::op_close_dm_user_state_stream(state, rid)
 }
 
 #[op2(async)]

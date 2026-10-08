@@ -53,7 +53,10 @@ impl Plugin for ChatPanelPlugin {
         app.add_systems(Update, (emit_user_chat, broadcast_nearby_chats).chain());
         app.add_systems(Update, (pipe_chats_to_scene, pipe_chats_from_scene));
         #[cfg(feature = "livekit")]
-        app.add_console_command::<dm_state::DmStateCommand, _>(dm_state::dm_state);
+        {
+            app.add_console_command::<dm_state::DmStateCommand, _>(dm_state::dm_state);
+            app.add_systems(Update, dm_state::pipe_dm_user_state_to_scene);
+        }
 
         let native_chat = app.world().resource::<NativeUi>().chat;
 

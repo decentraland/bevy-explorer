@@ -160,6 +160,9 @@ pub enum SystemApi {
     GetBlockedUsers(RpcResultSender<Vec<BlockedUserData>>),
     GetBlockingStatus(RpcResultSender<Result<BlockingStatusData, String>>),
     GetBlockUpdateStream(RpcStreamSender<BlockUpdateData>),
+    // Social / DMs
+    /// Emits the given recipient's DM state now and whenever it changes, until dropped.
+    GetDmUserStateStream(String, RpcStreamSender<DmUserStateData>),
 }
 
 #[derive(Resource)]

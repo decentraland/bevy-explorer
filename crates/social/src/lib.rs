@@ -48,11 +48,15 @@ impl Plugin for SocialPlugin {
         app.add_event::<DirectChatEvent>();
         app.init_resource::<SocialClient>();
         app.init_resource::<SocialConsumerRequested>();
-        app.add_systems(PostUpdate, |mut client: ResMut<SocialClient>| {
-            if let Some(client) = client.0.as_mut() {
-                client.update();
-            }
-        });
+        app.add_event::<SocialStateChanged>();
+        app.add_systems(
+            PostUpdate,
+            |mut client: ResMut<SocialClient>, mut changed: EventWriter<SocialStateChanged>| {
+                if client.0.as_mut().is_some_and(|client| client.update()) {
+                    changed.write(SocialStateChanged);
+                }
+            },
+        );
         app.add_systems(PostUpdate, init_social_client);
         app.add_systems(
             PostUpdate,
@@ -107,6 +111,7 @@ fn is_social_consumer_request(event: &SystemApi) -> bool {
             | SystemApi::GetBlockedUsers(_)
             | SystemApi::GetBlockingStatus(_)
             | SystemApi::GetBlockUpdateStream(_)
+            | SystemApi::GetDmUserStateStream(_, _)
     )
 }
 
@@ -1236,6 +1241,10 @@ fn friendship_event_to_update(body: &Option<FriendshipEventBody>) -> Option<Frie
 
 #[derive(Event)]
 pub struct FriendshipEvent(pub Option<FriendshipEventBody>);
+
+/// The social client applied an update: friends, requests, connectivity, blocks or own settings.
+#[derive(Event)]
+pub struct SocialStateChanged;
 
 #[derive(Event, Clone)]
 pub struct ConnectivityEvent {

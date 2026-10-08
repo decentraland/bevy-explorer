@@ -590,6 +590,27 @@ module.exports.social = {
     }
 
     return streamGenerator();
+  },
+
+  // DM state of `address`: emitted now, then on change. Several may be open at once; stop
+  // iterating (break / return) to drop one.
+  // type DmUserStateData = { address: string, state: string, online: boolean }
+  getDmUserStateStream: async function(address) {
+    const rid = await Deno.core.ops.op_get_dm_user_state_stream(address);
+
+    async function* streamGenerator() {
+      try {
+        while (true) {
+          const next = await Deno.core.ops.op_read_dm_user_state_stream(rid);
+          if (next === null) break;
+          yield next;
+        }
+      } finally {
+        Deno.core.ops.op_close_dm_user_state_stream(rid);
+      }
+    }
+
+    return streamGenerator();
   }
 }
 

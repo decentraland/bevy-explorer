@@ -328,6 +328,20 @@ pub struct BlockUpdateData {
     pub is_blocked: bool,
 }
 
+/// Whether the local user can DM `address`, and why not; emitted for the watched recipient.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(export)]
+pub struct DmUserStateData {
+    pub address: String,
+    /// "connected", "blockedByOwnUser", "privateMessagesBlockedByOwnUser",
+    /// "privateMessagesBlocked", "disconnected" or "otherClient"
+    pub state: String,
+    /// In the private chat room and not blocked by the local user.
+    pub online: bool,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(ts_rs::TS)]
