@@ -47,6 +47,7 @@ export function ProfileCard({
       onBlock={(u) => void confirmBlock(splitName(u.name).base).then((ok) => ok && act('block', u.address))}
       onReport={(u) => void reportUser(session.profile.data?.address, u.address)}
       onMention={session.chat.mention}
+      onMessage={(u) => session.chat.openConversation(u.address)}
       onViewProfile={() => openPassport(userId)}
       onClose={onClose}
     />

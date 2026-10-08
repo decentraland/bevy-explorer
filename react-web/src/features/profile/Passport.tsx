@@ -63,6 +63,10 @@ export function Passport({
       }
       relationship={relationshipOf(session.friends, userId)}
       onAddFriend={() => openFriendRequest('send', friendUser)}
+      onMessage={(a) => {
+        onClose()
+        session.chat.openConversation(a)
+      }}
       onUnfriend={() => void confirmUnfriend(friendUser).then((ok) => ok && session.friends.act('delete', userId))}
       onCancelRequest={() => session.friends.act('cancel', userId)}
       onAcceptRequest={() => openFriendRequest('accept', friendUser)}

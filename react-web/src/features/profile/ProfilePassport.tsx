@@ -112,6 +112,7 @@ export function ProfilePassport({
   editing,
   onAddFriend,
   onUnfriend,
+  onMessage,
   onCancelRequest,
   onAcceptRequest,
   onUnblock,
@@ -127,6 +128,8 @@ export function ProfilePassport({
   editing?: PassportEditing
   onAddFriend?: (address: string) => void
   onUnfriend?: (address: string) => void
+  /** Open a DM with this user. */
+  onMessage?: (address: string) => void
   onCancelRequest?: (address: string) => void
   onAcceptRequest?: (address: string) => void
   onUnblock?: (address: string) => void
@@ -224,6 +227,11 @@ export function ProfilePassport({
             )}
           </div>
           <div className={styles.headActions}>
+            {!isSelf && relationship !== 'blocked' && onMessage != null && (
+              <button type="button" className={styles.headBtn} onClick={() => onMessage(profile.address)}>
+                MESSAGE
+              </button>
+            )}
             {!isSelf &&
               (relationship === 'friend' ? (
                 <button type="button" className={`${styles.headBtn} ${styles.headBtnSwap}`} onClick={() => onUnfriend?.(profile.address)}>

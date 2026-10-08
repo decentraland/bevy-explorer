@@ -104,11 +104,18 @@ describe('chat input', () => {
 })
 
 describe('friends panel action clicks', () => {
+  const onMessage = vi.fn()
   function renderPanel(over: Partial<FriendsState>): FriendsState {
     const friends: FriendsState = { ...fakeSession().friends, open: true, available: true, act: vi.fn(), ...over }
-    render(<FriendsPanel friends={friends} />)
+    render(<FriendsPanel friends={friends} onMessage={onMessage} />)
     return friends
   }
+
+  it("a friend row's envelope opens a DM with them", async () => {
+    renderPanel({ list: [{ address: '0xf', name: 'F', status: 'online' }] })
+    await userEvent.click(screen.getByRole('button', { name: /^Message F/ }))
+    expect(onMessage).toHaveBeenCalledWith('0xf')
+  })
 
   it('accept / reject a received request', async () => {
     const friends = renderPanel({ received: [{ address: '0xr', name: 'R', id: 'r1' }] })

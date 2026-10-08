@@ -165,7 +165,7 @@ interface RowProps {
 }
 const isPending = (pending: ReadonlySet<string>, op: string, address: string): boolean => pending.has(`${op}:${address.toLowerCase()}`)
 
-function FriendRow({ friend, menuOpen, onMenu }: { friend: Friend } & Omit<RowProps, 'pending'>): React.JSX.Element {
+function FriendRow({ friend, menuOpen, onMenu, onMessage }: { friend: Friend; onMessage: (address: string) => void } & Omit<RowProps, 'pending'>): React.JSX.Element {
   const { name, picture } = useRowIdentity(friend)
   return (
     <Row
@@ -180,6 +180,19 @@ function FriendRow({ friend, menuOpen, onMenu }: { friend: Friend } & Omit<RowPr
         <span className={styles.status}>{STATUS_LABEL[friend.status]}</span>
       </div>
       <div className={styles.hoverActions}>
+        <Tooltip label="Message" side="top" variant="rail">
+          <button
+            type="button"
+            className={styles.menuBtn}
+            aria-label={`Message ${label(name, friend.address)}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              onMessage(friend.address)
+            }}
+          >
+            <Envelope size={18} />
+          </button>
+        </Tooltip>
         <RowMenu address={friend.address} onOpen={(a, el) => onMenu(a, el, 'friend')} />
       </div>
     </Row>
@@ -288,9 +301,12 @@ function BlockedRow({ user, menuOpen, onMenu, pending, onUnblock }: { user: Bloc
 }
 
 export function FriendsPanel({
-  friends
+  friends,
+  onMessage
 }: {
   friends: FriendsState
+  /** Open a DM with a friend (the row's envelope). */
+  onMessage: (address: string) => void
 }): React.JSX.Element | null {
   const [tab, setTab] = useState<Tab>('friends')
   // Kept above the closed early-return so folded sections stay folded across reopen.
@@ -392,12 +408,12 @@ export function FriendsPanel({
             <>
               <Collapsible title="Online" {...fold('online')} count={online.length} emptyLabel="No Friends">
                 {online.map((f) => (
-                  <FriendRow key={f.address} friend={f} {...rowProps(f.address)} />
+                  <FriendRow key={f.address} friend={f} onMessage={onMessage} {...rowProps(f.address)} />
                 ))}
               </Collapsible>
               <Collapsible title="Offline" {...fold('offline')} count={offline.length} emptyLabel="No Friends">
                 {offline.map((f) => (
-                  <FriendRow key={f.address} friend={f} {...rowProps(f.address)} />
+                  <FriendRow key={f.address} friend={f} onMessage={onMessage} {...rowProps(f.address)} />
                 ))}
               </Collapsible>
             </>

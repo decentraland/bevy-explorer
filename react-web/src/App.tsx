@@ -366,9 +366,10 @@ function Hud(): React.JSX.Element {
             me={session.profile.data}
             onTeleport={(x, y) => session.map.teleport(x, y)}
             onVisitWorld={(name) => openWorldVisit({ worldName: name, onConfirm: () => session.map.changeRealm(name) })}
+            onOpenSettings={session.settings.toggle}
           />
           <SurfaceBoundary name="Friends" open={session.friends.open} onCrash={session.closeAllPanels}>
-            <FriendsPanel friends={session.friends} />
+            <FriendsPanel friends={session.friends} onMessage={session.chat.openConversation} />
           </SurfaceBoundary>
           <SurfaceBoundary name="Settings" open={session.settings.open} onCrash={session.closeAllPanels}>
             <SettingsPanel settings={session.settings} bindings={session.bindings} profile={session.profile} onNavigate={goToMenuPage} />
