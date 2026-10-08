@@ -7,11 +7,8 @@ use bevy_console::ConsoleCommand;
 use common::{rpc::RpcStreamSender, structs::DmPrivacy, util::AsH160};
 use comms::{
     global_crdt::ForeignPlayer,
-    livekit::{
-        participant::{HostingParticipants, LivekitParticipant},
-        room::Connected,
-    },
-    private_chat::{PrivateChatPrivacy, PrivateChatRoom},
+    livekit::{participant::ParticipantIndex, room::Connected},
+    private_chat::{PrivateChatPresenceChanged, PrivateChatPrivacy, PrivateChatRoom},
 };
 use social::{FriendshipState, SocialClient, SocialStateChanged};
 use system_bridge::{DmUserStateData, SystemApi};
@@ -60,20 +57,18 @@ pub struct DmUserStatus {
 #[derive(SystemParam)]
 pub struct DmUserStates<'w, 's> {
     social: Res<'w, SocialClient>,
-    rooms: Query<'w, 's, &'static HostingParticipants, With<PrivateChatRoom>>,
+    rooms: Query<'w, 's, &'static ParticipantIndex, With<PrivateChatRoom>>,
     connected_rooms: Query<'w, 's, (), (With<PrivateChatRoom>, With<Connected>)>,
-    participants: Query<'w, 's, (&'static LivekitParticipant, &'static PrivateChatPrivacy)>,
+    participants: Query<'w, 's, &'static PrivateChatPrivacy>,
     players: Query<'w, 's, &'static ForeignPlayer>,
 }
 
 impl DmUserStates<'_, '_> {
     /// Their privacy if they are in the private chat room.
     fn in_private_chat_room(&self, address: Address) -> Option<Option<DmPrivacy>> {
-        let hosting = self.rooms.single().ok()?;
-        self.participants
-            .iter_many(hosting.collection())
-            .find(|(participant, _)| participant.identity().as_str().as_h160() == Some(address))
-            .map(|(_, privacy)| privacy.0)
+        let index = self.rooms.single().ok()?;
+        let entity = index.get(&ParticipantIndex::key(&format!("{address:#x}")))?;
+        self.participants.get(*entity).ok().map(|privacy| privacy.0)
     }
 
     fn in_world(&self, address: Address) -> bool {
@@ -148,8 +143,7 @@ pub fn pipe_dm_user_state_to_scene(
     mut requests: EventReader<SystemApi>,
     mut streams: Local<Vec<DmUserStateStream>>,
     mut social_changed: EventReader<SocialStateChanged>,
-    room_changed: Query<(), Changed<PrivateChatPrivacy>>,
-    mut room_removed: RemovedComponents<PrivateChatPrivacy>,
+    mut presence_changed: EventReader<PrivateChatPresenceChanged>,
     connected: Query<(), (With<PrivateChatRoom>, Added<Connected>)>,
     mut disconnected: RemovedComponents<Connected>,
     players_changed: Query<&ForeignPlayer, Changed<ForeignPlayer>>,
@@ -170,9 +164,8 @@ pub fn pipe_dm_user_state_to_scene(
     }
     // drain the signals even with no subscribers, so a later one does not see stale ones
     let social_changed = social_changed.read().count() > 0;
-    let room_changed = !room_changed.is_empty()
-        || room_removed.read().count() > 0
-        || !connected.is_empty()
+    let presence_changed: Vec<Address> = presence_changed.read().map(|e| e.address).collect();
+    let room_changed = !connected.is_empty()
         || disconnected
             .read()
             .filter(|room| states.rooms.contains(*room))
@@ -188,7 +181,11 @@ pub fn pipe_dm_user_state_to_scene(
     let changed_players: Vec<Address> = players_changed.iter().map(|p| p.address).collect();
 
     for stream in streams.iter_mut() {
-        if !(stream.last.is_none() || inputs_changed || changed_players.contains(&stream.address)) {
+        if !(stream.last.is_none()
+            || inputs_changed
+            || changed_players.contains(&stream.address)
+            || presence_changed.contains(&stream.address))
+        {
             continue;
         }
         let status = states.resolve(stream.address);

@@ -47,8 +47,10 @@ pub struct PrivateChatPlugin;
 impl Plugin for PrivateChatPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<PrivateChatReceived>();
+        app.add_event::<PrivateChatPresenceChanged>();
         app.add_systems(Update, (connect_private_chat_room, send_private_chats));
         app.add_observer(participant_added);
+        app.add_observer(participant_removed);
         app.add_observer(participant_metadata_changed);
         app.add_observer(participant_payload);
         app.add_console_command::<DmRoomCommand, _>(dm_room);
@@ -68,6 +70,12 @@ pub struct PrivateChatRoom {
 /// metadata, `None` until it arrives.
 #[derive(Component, Debug)]
 pub struct PrivateChatPrivacy(pub Option<DmPrivacy>);
+
+/// A wallet joined or left the private chat room, or its privacy changed.
+#[derive(Event, Debug)]
+pub struct PrivateChatPresenceChanged {
+    pub address: Address,
+}
 
 /// A DM addressed to the local user, after the topic and rate checks.
 #[derive(Event, Debug)]
@@ -186,6 +194,7 @@ fn participant_added(
     mut commands: Commands,
     participants: Query<(&LivekitParticipant, &HostedBy)>,
     rooms: Query<(), With<PrivateChatRoom>>,
+    mut presence: EventWriter<PrivateChatPresenceChanged>,
 ) {
     let Ok((participant, hosted_by)) = participants.get(trigger.target()) else {
         return;
@@ -198,12 +207,29 @@ fn participant_added(
     commands
         .entity(trigger.target())
         .try_insert(PrivateChatPrivacy(privacy));
+    if let Some(address) = participant.identity().as_str().as_h160() {
+        presence.write(PrivateChatPresenceChanged { address });
+    }
+}
+
+fn participant_removed(
+    trigger: Trigger<OnRemove, PrivateChatPrivacy>,
+    participants: Query<&LivekitParticipant>,
+    mut presence: EventWriter<PrivateChatPresenceChanged>,
+) {
+    let Ok(participant) = participants.get(trigger.target()) else {
+        return;
+    };
+    if let Some(address) = participant.identity().as_str().as_h160() {
+        presence.write(PrivateChatPresenceChanged { address });
+    }
 }
 
 fn participant_metadata_changed(
     trigger: Trigger<ParticipantMetadataChanged>,
     rooms: Query<&ParticipantIndex, With<PrivateChatRoom>>,
     mut participants: Query<&mut PrivateChatPrivacy>,
+    mut presence: EventWriter<PrivateChatPresenceChanged>,
 ) {
     let ParticipantMetadataChanged { participant, room } = trigger.event();
     let Ok(index) = rooms.get(*room) else {
@@ -220,6 +246,9 @@ fn participant_metadata_changed(
     };
     privacy.0 = privacy_from_metadata(&participant.metadata());
     debug!(target: "comms::private_chat", "{} privacy {:?}", participant.identity(), privacy.0);
+    if let Some(address) = participant.identity().as_str().as_h160() {
+        presence.write(PrivateChatPresenceChanged { address });
+    }
 }
 
 /// A DM on the private chat room. The sender is the LiveKit-authenticated identity; the topic
