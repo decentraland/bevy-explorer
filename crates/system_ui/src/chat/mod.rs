@@ -669,6 +669,7 @@ pub(crate) fn select_chat_tab(
 
 fn pipe_chats_to_scene(
     mut chat_events: EventReader<ChatEvent>,
+    #[cfg(feature = "livekit")] mut dms: EventReader<comms::private_chat::PrivateChatReceived>,
     mut requests: EventReader<SystemApi>,
     mut senders: Local<Vec<RpcStreamSender<ChatMessage>>>,
     players: Query<&ForeignPlayer>,
@@ -721,6 +722,19 @@ fn pipe_chats_to_scene(
                 sender_address: sender_address.clone(),
                 message: chat_event.message.clone(),
                 channel: chat_event.channel.clone(),
+            });
+        }
+    }
+
+    // incoming DMs: the partner is both the sender and the channel
+    #[cfg(feature = "livekit")]
+    for dm in dms.read() {
+        let partner = format!("{:#x}", dm.from);
+        for sender in senders.iter() {
+            let _ = sender.send(ChatMessage {
+                sender_address: partner.clone(),
+                message: dm.message.clone(),
+                channel: partner.clone(),
             });
         }
     }
