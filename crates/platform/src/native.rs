@@ -18,6 +18,8 @@ use serde::Serialize;
 pub use tungstenite::client::IntoClientRequest;
 
 pub mod deeplink;
+mod dm_history;
+pub use dm_history::*;
 
 pub struct WebSocket {
     inner: WebSocketStream<ConnectStream>,

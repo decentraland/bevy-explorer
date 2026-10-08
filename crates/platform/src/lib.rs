@@ -8,6 +8,17 @@ mod wasm;
 #[cfg(target_arch = "wasm32")]
 pub use wasm::*;
 
+/// One stored DM. `from` is the sender's wallet (the account or the partner).
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DmHistoryEntry {
+    pub from: String,
+    pub message: String,
+    /// rfc4 chat wire timestamp (OADate), as sent.
+    pub timestamp: f64,
+    /// Unix seconds when the local client stored it.
+    pub received_at: f64,
+}
+
 use std::{future::Future, time::Duration};
 
 use futures_util::{
