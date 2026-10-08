@@ -38,6 +38,7 @@ import type {
   ChangeRealmRequest,
   ChatMessage,
   Community,
+  DmUserState,
   CommunityAction,
   CommunityDetailMessage,
   Emote,
@@ -354,9 +355,41 @@ export interface PermissionsState {
 
 export type ChatLine = ChatMessage & { id: number; ts: number }
 
+/** An open DM tab. Tabs are HUD state only: nothing opens on boot, a tab appears when a DM
+ *  arrives or is sent, or from Message on a profile, and closing it is local. */
+export interface Conversation {
+  /** Partner wallet, lowercase. */
+  address: string
+  /** DMs received on this tab while it was not the one shown (or chat was closed). */
+  unread: number
+  /** From the engine's per-tab state stream; null until the first report. */
+  state: DmUserState | null
+  online: boolean
+  /** Stored history requested once when the tab first appears. */
+  historyLoaded: boolean
+}
+
+/** A chat line's tab: 'Nearby', or the partner wallet in lowercase. */
+export function channelKey(channel: string): string {
+  return channel === 'Nearby' ? channel : channel.toLowerCase()
+}
+
 export interface ChatState {
+  /** The lines of the channel shown (`channel`). */
   messages: ChatLine[]
+  /** Sends to the channel shown: Nearby, or the open DM. */
   send: (text: string) => void
+  /** 'Nearby' or a partner wallet (lowercase). */
+  channel: string
+  select: (channel: string) => void
+  /** Open DM tabs, in the order they appeared. */
+  conversations: Conversation[]
+  /** Show a DM tab for `address` (adding it if needed), select it, and open chat. */
+  openConversation: (address: string) => void
+  /** Drop a DM tab; its history stays stored. */
+  closeConversation: (address: string) => void
+  /** Delete the stored history with a partner and clear their lines. */
+  deleteHistory: (address: string) => void
   /** Visibility, toggled by the React sidebar chat icon. */
   open: boolean
   toggle: () => void
@@ -618,6 +651,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [proximity, setProximity] = useState<ProximityTip[]>([])
   const [cursorLocked, setCursorLocked] = useState(false)
   const [messages, setMessages] = useState<ChatLine[]>(initialMessages)
+  const [channel, setChannel] = useState('Nearby')
+  const channelRef = useRef(channel)
+  channelRef.current = channel
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const conversationsRef = useRef(conversations)
+  conversationsRef.current = conversations
+  // History lines get ids below every live line (and the -1 greeting), so they never read as new.
+  const historyId = useRef(-2)
   const [members, setMembers] = useState<NearbyMember[]>([])
   const [speaking, setSpeaking] = useState<ReadonlySet<string>>(() => new Set())
   // Mirror cursor-lock into a ref so the run-once message handler reads it without a stale closure —
@@ -798,14 +839,42 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           openProfileCard(msg.address, p.x, p.y)
           break
         }
-        case 'chat':
+        case 'chat': {
           setMessages((prev) =>
             [...prev, { ...msg.chat, id: chatId.current++, ts: Date.now() }].slice(
               -MAX_CHAT_LINES
             )
           )
           if (!chatOpenRef.current) setChatUnread((n) => n + 1)
+          const key = channelKey(msg.chat.channel)
+          if (key !== 'Nearby') {
+            ensureConversation(key)
+            if (!chatOpenRef.current || channelRef.current !== key) {
+              setConversations((prev) => prev.map((c) => (c.address === key ? { ...c, unread: c.unread + 1 } : c)))
+            }
+          }
           break
+        }
+        case 'dmHistory': {
+          const key = channelKey(msg.address)
+          const lines: ChatLine[] = msg.entries.map((e) => ({
+            sender: e.from,
+            message: e.message,
+            channel: key,
+            id: historyId.current--,
+            ts: e.receivedAt
+          }))
+          // The store holds every DM up to the request (the engine serialises its appends before
+          // the read), so the answer simply becomes the tab's lines.
+          setMessages((prev) => [...lines, ...prev.filter((m) => channelKey(m.channel) !== key)])
+          setConversations((prev) => prev.map((c) => (c.address === key ? { ...c, historyLoaded: true } : c)))
+          break
+        }
+        case 'dmUserState': {
+          const key = channelKey(msg.address)
+          setConversations((prev) => prev.map((c) => (c.address === key ? { ...c, state: msg.state, online: msg.online } : c)))
+          break
+        }
         case 'focusChat':
           requestFocusChat()
           break
@@ -1154,7 +1223,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       const cmd = parseChatCommand(text)
       switch (cmd.kind) {
         case 'send':
-          if (cmd.text) driverRef.current?.send({ kind: 'sendChat', message: cmd.text, channel: 'Nearby' })
+          if (cmd.text) driverRef.current?.send({ kind: 'sendChat', message: cmd.text, channel: channelRef.current })
           break
         case 'goto':
           driverRef.current?.send({ kind: 'teleport', x: cmd.x, y: cmd.y })
@@ -1241,6 +1310,44 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const consumeMention = useCallback(() => setPendingMention(null), [])
+  // A DM tab for `key` (lowercase wallet), added on first sight: the engine follows the partner's
+  // state while the tab is open, and the stored history loads once.
+  function ensureConversation(key: string): void {
+    if (conversationsRef.current.some((c) => c.address === key)) return
+    const next: Conversation = { address: key, unread: 0, state: null, online: false, historyLoaded: false }
+    conversationsRef.current = [...conversationsRef.current, next]
+    setConversations(conversationsRef.current)
+    driverRef.current?.send({ kind: 'dmWatch', address: key, on: true })
+    driverRef.current?.send({ kind: 'dmHistory', address: key })
+  }
+  const selectChannel = useCallback((next: string) => {
+    const key = channelKey(next)
+    setChannel(key)
+    if (key !== 'Nearby') setConversations((prev) => prev.map((c) => (c.address === key ? { ...c, unread: 0 } : c)))
+  }, [])
+  const openConversation = useCallback((address: string) => {
+    const key = channelKey(address)
+    panelSetters.forEach((set) => set(false))
+    setChatOpen(true)
+    ensureConversation(key)
+    selectChannel(key)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const closeConversation = useCallback((address: string) => {
+    const key = channelKey(address)
+    conversationsRef.current = conversationsRef.current.filter((c) => c.address !== key)
+    setConversations(conversationsRef.current)
+    // its lines go too: reopening reloads them from the store
+    setMessages((prev) => prev.filter((m) => channelKey(m.channel) !== key))
+    driverRef.current?.send({ kind: 'dmWatch', address: key, on: false })
+    if (channelRef.current === key) setChannel('Nearby')
+  }, [])
+  const deleteHistory = useCallback((address: string) => {
+    const key = channelKey(address)
+    driverRef.current?.send({ kind: 'dmDelete', address: key })
+    setMessages((prev) => prev.filter((m) => channelKey(m.channel) !== key))
+  }, [])
+  const channelMessages = useMemo(() => messages.filter((m) => channelKey(m.channel) === channel), [messages, channel])
 
   // The full-screen main menu — mirrors App's `pageOpen`.
   const menuPageOpen =
@@ -1856,6 +1963,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setFriendPending(new Set())
     setMutualFriends({})
     setMessages(initialMessages)
+    setChannel('Nearby')
+    conversationsRef.current = []
+    setConversations([])
     setChatUnread(0)
   }, [closeAllPanels])
 
@@ -2321,8 +2431,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     cursorLocked,
     proximity,
     chat: {
-      messages,
+      messages: channelMessages,
       send: sendChat,
+      channel,
+      select: selectChannel,
+      conversations,
+      openConversation,
+      closeConversation,
+      deleteHistory,
       open: chatOpen,
       toggle: toggleChat,
       members,

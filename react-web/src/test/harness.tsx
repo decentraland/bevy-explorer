@@ -186,7 +186,7 @@ export function fakeSession(): EngineSession {
     hover: [],
     cursorLocked: false,
     proximity: [],
-    chat: { messages: [], send: vi.fn(), open: true, toggle: vi.fn(), members: [], speaking: new Set(), mention: vi.fn(), pendingMention: null, consumeMention: vi.fn(), unread: 0, focusTick: 0, requestFocus: vi.fn() },
+    chat: { messages: [], send: vi.fn(), channel: 'Nearby', select: vi.fn(), conversations: [], openConversation: vi.fn(), closeConversation: vi.fn(), deleteHistory: vi.fn(), open: true, toggle: vi.fn(), members: [], speaking: new Set(), mention: vi.fn(), pendingMention: null, consumeMention: vi.fn(), unread: 0, focusTick: 0, requestFocus: vi.fn() },
     friends: { available: true, list: [], received: [], sent: [], blocked: [], blockedUsers: [], loading: false, open: false, toggle: vi.fn(), act: vi.fn(), pending: new Set(), mutuals: {}, loadMutuals: vi.fn() },
     settings: { list: [], open: false, toggle: vi.fn(), set: vi.fn(), load: vi.fn() },
     bindings: {
