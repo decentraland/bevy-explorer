@@ -609,6 +609,18 @@ pub struct ChatEvent {
     pub message: String,
 }
 
+/// The rfc4 chat wire timestamp for now. unity-explorer decodes it with DateTime.FromOADate: days
+/// since 1899-12-30 UTC (25569 = the OADate of the unix epoch). Receivers only need it monotonic
+/// per sender.
+pub fn chat_wire_timestamp() -> f64 {
+    web_time::SystemTime::now()
+        .duration_since(web_time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs_f64()
+        / 86_400.0
+        + 25_569.0
+}
+
 #[derive(Default, Resource, Deref, DerefMut)]
 pub struct VoiceMessageStreams {
     streams: Vec<RpcStreamSender<VoiceMessage>>,

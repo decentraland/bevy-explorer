@@ -14,37 +14,44 @@ use bevy::{
 use bevy_console::ConsoleCommand;
 use common::{
     base_domain::Service,
-    structs::{AppConfig, DmPrivacy},
+    structs::{AppConfig, DmPrivacy, PrimaryUser},
     util::{AsH160, TaskCompat, TaskExt},
 };
 use console::DoAddConsoleCommand;
+use dcl_component::proto_components::kernel::comms::rfc4;
 use http::Uri;
 use ipfs::IpfsAssetServer;
+use prost::Message as _;
 use serde::Deserialize;
+use system_bridge::SystemApi;
 use tokio::sync::mpsc::Sender;
 use wallet::Wallet;
 
 use crate::{
-    global_crdt::ChannelControl,
+    global_crdt::{chat_wire_timestamp, ChannelControl, ChatEvent},
     livekit::{
         participant::{
-            HostedBy, HostingParticipants, LivekitParticipant, Local as LocalParticipant,
-            ParticipantMetadataChanged,
+            plugin::InboundRateLimiter, HostedBy, HostingParticipants, LivekitParticipant,
+            Local as LocalParticipant, ParticipantMetadataChanged, ParticipantPayload,
         },
         room::{Connected, Connecting, Disconnected},
         standalone_room_components, LivekitTransport,
     },
     mint_gatekeeper_adapter, DisableRealmComms, DisableSceneRoomGatekeeper, NetworkMessage,
+    NetworkMessageRecipient,
 };
 
 pub struct PrivateChatPlugin;
 
 impl Plugin for PrivateChatPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, connect_private_chat_room);
+        app.add_event::<PrivateChatReceived>();
+        app.add_systems(Update, (connect_private_chat_room, send_private_chats));
         app.add_observer(participant_added);
         app.add_observer(participant_metadata_changed);
+        app.add_observer(participant_payload);
         app.add_console_command::<DmRoomCommand, _>(dm_room);
+        app.add_console_command::<DmCommand, _>(dm);
     }
 }
 
@@ -60,6 +67,14 @@ pub struct PrivateChatRoom {
 /// metadata, `None` until it arrives.
 #[derive(Component, Debug)]
 pub struct PrivateChatPrivacy(pub Option<DmPrivacy>);
+
+/// A DM addressed to the local user, after the topic and rate checks.
+#[derive(Event, Debug)]
+pub struct PrivateChatReceived {
+    pub from: Address,
+    pub message: String,
+    pub timestamp: f64,
+}
 
 #[derive(Deserialize)]
 struct ParticipantMetadata {
@@ -181,6 +196,125 @@ fn participant_metadata_changed(
         debug!(target: "comms::private_chat", "{} privacy {:?}", participant.identity(), privacy.0);
         return;
     }
+}
+
+/// A DM on the private chat room. The sender is the LiveKit-authenticated identity; the topic
+/// must name us, so a packet addressed elsewhere (or to nobody) is dropped.
+fn participant_payload(
+    trigger: Trigger<ParticipantPayload>,
+    rooms: Query<(), With<PrivateChatRoom>>,
+    wallet: Res<Wallet>,
+    time: Res<Time>,
+    mut rate_limiter: ResMut<InboundRateLimiter>,
+    mut received: EventWriter<PrivateChatReceived>,
+) {
+    let ParticipantPayload {
+        room,
+        participant,
+        payload,
+        topic,
+    } = trigger.event();
+    if !rooms.contains(*room) {
+        return;
+    }
+    let identity = participant.identity().to_string();
+    let Some(from) = identity.as_h160() else {
+        return;
+    };
+    if !rate_limiter.allow(*room, &identity, time.elapsed_secs_f64()) {
+        return;
+    }
+    let Some(me) = wallet.address() else {
+        return;
+    };
+    if topic
+        .as_deref()
+        .is_none_or(|topic| topic.as_h160() != Some(me))
+    {
+        warn!(target: "comms::private_chat", "dropping packet from {from:#x} with topic {topic:?}");
+        return;
+    }
+    let message = match rfc4::Packet::decode(payload.as_slice()) {
+        Ok(rfc4::Packet {
+            message: Some(rfc4::packet::Message::Chat(chat)),
+            ..
+        }) => chat,
+        Ok(other) => {
+            debug!(target: "comms::private_chat", "ignoring non-chat packet from {from:#x}: {other:?}");
+            return;
+        }
+        Err(e) => {
+            warn!(target: "comms::private_chat", "undecodable packet from {from:#x}: {e}");
+            return;
+        }
+    };
+    info!(target: "comms::private_chat", "dm from {from:#x}: {}", message.message);
+    received.write(PrivateChatReceived {
+        from,
+        message: message.message,
+        timestamp: message.timestamp,
+    });
+}
+
+/// The local player's chat events whose channel is a wallet address go out as DMs on the private
+/// chat room, addressed to that wallet by topic and destination identity.
+fn send_private_chats(
+    mut chats: EventReader<ChatEvent>,
+    player: Query<Entity, With<PrimaryUser>>,
+    room: Query<&PrivateChatRoom>,
+) {
+    let Ok(player) = player.single() else {
+        return;
+    };
+    for ev in chats.read().filter(|ev| ev.sender == player) {
+        let Some(to) = ev.channel.as_h160() else {
+            continue;
+        };
+        let Ok(room) = room.single() else {
+            warn!(target: "comms::private_chat", "no private chat room, dropping dm to {to:#x}");
+            continue;
+        };
+        let packet = rfc4::Packet {
+            message: Some(rfc4::packet::Message::Chat(rfc4::Chat {
+                message: ev.message.clone(),
+                timestamp: chat_wire_timestamp(),
+            })),
+            protocol_version: 100,
+        };
+        let message = NetworkMessage {
+            topic: Some(format!("{to:#x}")),
+            ..NetworkMessage::targetted_reliable(&packet, NetworkMessageRecipient::Peer(to))
+        };
+        match room.sender.try_send(message) {
+            Ok(()) => info!(target: "comms::private_chat", "dm to {to:#x}: {}", ev.message),
+            Err(e) => warn!(target: "comms::private_chat", "failed to queue dm to {to:#x}: {e}"),
+        }
+    }
+}
+
+/// `/dm <address> <message>` sends a DM, the same way the HUD does.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/dm")]
+struct DmCommand {
+    address: String,
+    #[arg(trailing_var_arg = true, required = true)]
+    message: Vec<String>,
+}
+
+fn dm(mut input: ConsoleCommand<DmCommand>, mut events: EventWriter<SystemApi>) {
+    let Some(Ok(command)) = input.take() else {
+        return;
+    };
+    if command.address.as_h160().is_none() {
+        input.reply_failed(format!("`{}` is not a wallet address", command.address));
+        return;
+    }
+    let message = command.message.join(" ");
+    events.write(SystemApi::SendChat(
+        message.clone(),
+        command.address.clone(),
+    ));
+    input.reply_ok(format!("dm to {}: {message}", command.address));
 }
 
 /// `/dm_room` prints the private chat room's connection state and who is in it.
