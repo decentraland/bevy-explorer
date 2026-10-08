@@ -1968,3 +1968,18 @@ mod tests {
         assert!(parse(r#"{"sizes":[],"satelliteView":{"version":1}}"#).is_none());
     }
 }
+
+/// Who may DM a user. Mirrors the social service's `PrivateMessagePrivacySetting`, which the
+/// generated proto only provides behind the `social` feature.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DmPrivacy {
+    All,
+    OnlyFriends,
+}
+
+/// Another user's DM privacy, as returned by `GetPrivateMessagesSettings`.
+#[derive(Clone, Debug)]
+pub struct DmPrivacyOf {
+    pub address: String,
+    pub privacy: DmPrivacy,
+}

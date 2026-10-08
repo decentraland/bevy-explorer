@@ -129,20 +129,7 @@ fn restart_social(
     }
 }
 
-/// Who may DM the local user. Mirrors the social service's `PrivateMessagePrivacySetting`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DmPrivacy {
-    All,
-    OnlyFriends,
-}
-
-/// Another user's DM privacy, as returned by `GetPrivateMessagesSettings`.
-#[derive(Clone, Debug)]
-pub struct DmPrivacyOf {
-    pub address: String,
-    pub privacy: DmPrivacy,
-    pub is_friend: bool,
-}
+pub use common::structs::{DmPrivacy, DmPrivacyOf};
 
 /// `/dm_privacy` prints the local user's DM privacy; `/dm_privacy all|friends` sets it.
 #[cfg(feature = "social")]
@@ -230,14 +217,7 @@ fn dm_privacy_of(
             result.map(|entries| {
                 entries
                     .iter()
-                    .map(|e| {
-                        format!(
-                            "{}: {:?}{}",
-                            e.address,
-                            e.privacy,
-                            if e.is_friend { " (friend)" } else { "" }
-                        )
-                    })
+                    .map(|e| format!("{}: {:?}", e.address, e.privacy))
                     .collect::<Vec<_>>()
                     .join("\n")
             })
