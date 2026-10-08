@@ -1,4 +1,6 @@
 pub mod conversation_manager;
+#[cfg(feature = "livekit")]
+pub mod dm_state;
 pub mod friends;
 pub mod history;
 
@@ -50,6 +52,8 @@ impl Plugin for ChatPanelPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Update, (emit_user_chat, broadcast_nearby_chats).chain());
         app.add_systems(Update, (pipe_chats_to_scene, pipe_chats_from_scene));
+        #[cfg(feature = "livekit")]
+        app.add_console_command::<dm_state::DmStateCommand, _>(dm_state::dm_state);
 
         let native_chat = app.world().resource::<NativeUi>().chat;
 
