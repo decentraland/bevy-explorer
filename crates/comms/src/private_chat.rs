@@ -32,7 +32,8 @@ use crate::{
     livekit::{
         participant::{
             plugin::InboundRateLimiter, HostedBy, HostingParticipants, LivekitParticipant,
-            Local as LocalParticipant, ParticipantMetadataChanged, ParticipantPayload,
+            Local as LocalParticipant, ParticipantIndex, ParticipantMetadataChanged,
+            ParticipantPayload,
         },
         room::{Connected, Connecting, Disconnected},
         standalone_room_components, LivekitTransport,
@@ -201,22 +202,24 @@ fn participant_added(
 
 fn participant_metadata_changed(
     trigger: Trigger<ParticipantMetadataChanged>,
-    rooms: Query<&HostingParticipants, With<PrivateChatRoom>>,
-    mut participants: Query<(&LivekitParticipant, &mut PrivateChatPrivacy)>,
+    rooms: Query<&ParticipantIndex, With<PrivateChatRoom>>,
+    mut participants: Query<&mut PrivateChatPrivacy>,
 ) {
     let ParticipantMetadataChanged { participant, room } = trigger.event();
-    let Ok(hosting) = rooms.get(*room) else {
+    let Ok(index) = rooms.get(*room) else {
         return;
     };
-    let mut hosted = participants.iter_many_mut(hosting.collection());
-    while let Some((hosted_participant, mut privacy)) = hosted.fetch_next() {
-        if hosted_participant.identity() != participant.identity() {
-            continue;
-        }
-        privacy.0 = privacy_from_metadata(&participant.metadata());
-        debug!(target: "comms::private_chat", "{} privacy {:?}", participant.identity(), privacy.0);
+    let Some(entity) = index
+        .get(&ParticipantIndex::key(participant.identity().as_str()))
+        .copied()
+    else {
         return;
-    }
+    };
+    let Ok(mut privacy) = participants.get_mut(entity) else {
+        return;
+    };
+    privacy.0 = privacy_from_metadata(&participant.metadata());
+    debug!(target: "comms::private_chat", "{} privacy {:?}", participant.identity(), privacy.0);
 }
 
 /// A DM on the private chat room. The sender is the LiveKit-authenticated identity; the topic

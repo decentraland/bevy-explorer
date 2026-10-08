@@ -31,6 +31,7 @@ pub struct StartLivekit {
 }
 
 #[derive(Component)]
+#[require(participant::ParticipantIndex)]
 pub struct LivekitTransport {
     pub address: String,
     pub retries: usize,

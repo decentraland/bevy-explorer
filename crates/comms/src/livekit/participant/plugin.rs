@@ -24,9 +24,9 @@ use crate::{
     },
     livekit::{
         participant::{
-            ActiveSpeaker, ActiveSpeakersChanged, HostedBy, HostingParticipants,
-            LivekitParticipant, Local, ParticipantConnected, ParticipantConnectionQuality,
-            ParticipantDisconnected, ParticipantMetadataChanged, ParticipantPayload,
+            ActiveSpeaker, ActiveSpeakersChanged, HostedBy, LivekitParticipant, Local,
+            ParticipantConnected, ParticipantConnectionQuality, ParticipantDisconnected,
+            ParticipantIndex, ParticipantMetadataChanged, ParticipantPayload,
         },
         plugin::{PlayerUpdateTask, PlayerUpdateTasksMut},
         room::LivekitRoom,
@@ -91,6 +91,7 @@ fn participant_connected(
     trigger: Trigger<ParticipantConnected>,
     mut commands: Commands,
     rooms: Query<&LivekitRoom>,
+    mut indexes: Query<&mut ParticipantIndex>,
     transport_senders: crate::global_crdt::TransportSenders,
     mut player_update_tasks: PlayerUpdateTasksMut,
     livekit_runtime: LivekitRuntimeRes,
@@ -117,6 +118,12 @@ fn participant_connected(
     ));
     if is_local {
         cmd.insert(Local);
+    }
+    if let Ok(mut index) = indexes.get_mut(*room_entity) {
+        index.insert(
+            ParticipantIndex::key(participant.identity().as_str()),
+            cmd.id(),
+        );
     }
 
     // Register presence explicitly. Membership is otherwise implied by a `PlayerUpdate` arriving,
@@ -156,8 +163,7 @@ fn participant_connected(
 fn participant_disconnected(
     trigger: Trigger<ParticipantDisconnected>,
     mut commands: Commands,
-    participants: Query<(Entity, &LivekitParticipant)>,
-    rooms: Query<(&LivekitRoom, Option<&HostingParticipants>)>,
+    rooms: Query<(&LivekitRoom, &ParticipantIndex)>,
     transport_senders: crate::global_crdt::TransportSenders,
     mut player_update_tasks: PlayerUpdateTasksMut,
     livekit_runtime: LivekitRuntimeRes,
@@ -166,7 +172,7 @@ fn participant_disconnected(
         participant,
         room: room_entity,
     } = trigger.event();
-    let Ok((room, maybe_hosting_participants)) = rooms.get(*room_entity) else {
+    let Ok((room, index)) = rooms.get(*room_entity) else {
         debug_panic!("Room {room_entity} given to ParticipantDisconnected was invalid.");
     };
     debug!(
@@ -196,19 +202,9 @@ fn participant_disconnected(
         }
     }
 
-    let Some(hosting_participants) = maybe_hosting_participants else {
-        debug_panic!("Room {} is not hosting participants.", room.name());
-    };
-
-    let Some(entity) = participants
-        .iter_many(hosting_participants.collection())
-        .find_map(|(entity, ecs_participant)| {
-            if ecs_participant.sid() == participant.sid() {
-                Some(entity)
-            } else {
-                None
-            }
-        })
+    let Some(entity) = index
+        .get(&ParticipantIndex::key(participant.identity().as_str()))
+        .copied()
     else {
         error!(
             "Disconnecting participant '{}' ({}) not found in participants.",
@@ -226,6 +222,7 @@ fn participant_disconnected(
 fn participant_entity_removed(
     trigger: Trigger<OnRemove, LivekitParticipant>,
     participants: Query<(&LivekitParticipant, Option<&HostedBy>)>,
+    mut indexes: Query<&mut ParticipantIndex>,
     mut rate_limiter: ResMut<InboundRateLimiter>,
 ) {
     let Ok((participant, maybe_hosted)) = participants.get(trigger.target()) else {
@@ -234,6 +231,9 @@ fn participant_entity_removed(
     let identity = participant.identity();
     match maybe_hosted {
         Some(hosted) => {
+            if let Ok(mut index) = indexes.get_mut(hosted.get()) {
+                index.remove(&ParticipantIndex::key(identity.as_str()));
+            }
             rate_limiter
                 .windows
                 .remove(&(hosted.get(), identity.as_str().to_owned()));
@@ -248,15 +248,19 @@ fn participant_entity_removed(
 fn participant_connection_quality_changed(
     trigger: Trigger<ParticipantConnectionQuality>,
     mut commands: Commands,
-    participants: Query<(Entity, &LivekitParticipant)>,
-    rooms: Query<(&LivekitRoom, &HostingParticipants)>,
+    rooms: Query<(&LivekitRoom, &ParticipantIndex)>,
+    private_rooms: Query<(), With<PrivateChatRoom>>,
 ) {
     let ParticipantConnectionQuality {
         participant,
         room,
         connection_quality,
     } = trigger.event();
-    let Ok((livekit_room, hosting_participants)) = rooms.get(*room) else {
+    // nobody reads quality on the private chat room, and it is environment-wide
+    if private_rooms.contains(*room) {
+        return;
+    }
+    let Ok((livekit_room, index)) = rooms.get(*room) else {
         debug_panic!("Room given to ParticipantConnectionQuality was invalid.");
     };
 
@@ -268,15 +272,9 @@ fn participant_connection_quality_changed(
         connection_quality
     );
 
-    let Some(entity) = participants
-        .iter_many(hosting_participants.collection())
-        .find_map(|(entity, ecs_participant)| {
-            if ecs_participant.sid() == participant.sid() {
-                Some(entity)
-            } else {
-                None
-            }
-        })
+    let Some(entity) = index
+        .get(&ParticipantIndex::key(participant.identity().as_str()))
+        .copied()
     else {
         error!(
             "No entity referent to '{}' ({}).",
