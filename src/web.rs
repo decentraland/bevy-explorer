@@ -13,6 +13,7 @@ use common::{
     structs::{
         AppConfig, CurrentRealm, EditorMode, PreviewMode, PrimaryUser, StartupScenes, WorldHold,
     },
+    util::JsThread,
 };
 use dcl_wasm::init_runtime;
 use futures_lite::io::{AsyncReadExt, AsyncWriteExt};
@@ -428,9 +429,9 @@ pub fn engine_run(options: JsValue) -> Result<(), JsValue> {
     };
     app.insert_resource(text_bindings);
 
-    // The systems that call the page hooks take `NonSend<JsThread>` so the multi-threaded
-    // executor keeps them on this thread (the hooks are shims on this worker's global).
-    app.insert_non_send_resource(JsThread);
+    // The systems that call the page hooks take `JsThread` so the multi-threaded
+    // executor keeps them on this thread, off the compute workers (see `JsThread`).
+    app.insert_non_send_resource(());
     app.add_systems(Update, update_winit_fps)
         .add_systems(Update, update_url_params)
         .add_systems(Update, update_text_focus)
@@ -483,12 +484,8 @@ pub async fn engine_console_command(command_line: String) -> Result<JsValue, JsV
         .map_err(|e| JsValue::from_str(&e))
 }
 
-/// Marker resource: a system taking `NonSend<JsThread>` runs on the engine worker, the thread
-/// whose JS global has the page hooks.
-struct JsThread;
-
 /// Extract console command metadata from clap and store as JSON for the JS API.
-fn extract_js_api(config: Res<ConsoleConfiguration>, _js: NonSend<JsThread>) {
+fn extract_js_api(config: Res<ConsoleConfiguration>, _js: JsThread) {
     let commands: Vec<serde_json::Value> = config
         .commands
         .iter()
@@ -533,15 +530,11 @@ fn extract_js_api(config: Res<ConsoleConfiguration>, _js: NonSend<JsThread>) {
 }
 
 /// Pings the JS watchdog each frame so it can detect a stalled engine loop.
-fn engine_heartbeat_system(_js: NonSend<JsThread>) {
+fn engine_heartbeat_system(_js: JsThread) {
     engine_heartbeat();
 }
 
-fn update_text_focus(
-    priorities: Res<InputPriorities>,
-    mut prev: Local<bool>,
-    _js: NonSend<JsThread>,
-) {
+fn update_text_focus(priorities: Res<InputPriorities>, mut prev: Local<bool>, _js: JsThread) {
     let focused = priorities.keyboard_claimed();
     if focused != *prev {
         *prev = focused;
@@ -574,7 +567,7 @@ fn update_url_params(
     editor: Res<EditorMode>,
     mut prev: Local<Option<EngineRunOptions>>,
     world_hold: Option<Res<WorldHold>>,
-    _js: NonSend<JsThread>,
+    _js: JsThread,
 ) {
     // held, the player has no destination yet: writing its placeholder parcel would make a
     // reload or a sign-in redirect deep-link past the lobby

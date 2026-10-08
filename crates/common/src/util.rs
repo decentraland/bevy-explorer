@@ -498,6 +498,16 @@ pub fn reqwest_client() -> reqwest::Client {
         .unwrap()
 }
 
+/// System param for systems that call page functions: on the web it keeps the system on the
+/// engine worker. Every worker has the relays, but a compute worker never returns to its event
+/// loop, so a call from one would never have its result delivered or its pending entry freed.
+/// The web entry inserts the `()` non-send resource behind it.
+#[cfg(target_arch = "wasm32")]
+pub type JsThread<'w> = bevy::prelude::NonSend<'w, ()>;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub type JsThread<'w> = ();
+
 #[cfg(target_arch = "wasm32")]
 pub trait TaskCompat {
     fn spawn_compat<T>(&self, future: impl core::future::Future<Output = T> + 'static) -> Task<T>
