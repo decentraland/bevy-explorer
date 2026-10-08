@@ -2,7 +2,7 @@ use alloy_core::primitives::Address;
 use anyhow::anyhow;
 use bevy::{
     log::{debug, error, info, warn},
-    platform::collections::HashMap,
+    platform::collections::{HashMap, HashSet},
 };
 use common::util::AsH160;
 #[cfg(target_arch = "wasm32")]
@@ -83,6 +83,9 @@ enum FriendData {
         sent_requests: HashMap<Address, FriendshipRequestResponse>,
         received_requests: HashMap<Address, FriendshipRequestResponse>,
         friends: HashMap<Address, FriendProfile>,
+        blocked: HashSet<Address>,
+        blocked_by: HashSet<Address>,
+        dm_privacy: DmPrivacy,
     },
     FriendshipEvent(friendship_update::Update),
     ConnectivityEvent {
@@ -100,6 +103,11 @@ enum FriendData {
     OwnBlock {
         address: Address,
     },
+    OwnUnblock {
+        address: Address,
+    },
+    /// The local user's DM privacy as the server stored it.
+    OwnDmPrivacy(DmPrivacy),
     /// Someone blocked / unblocked the local user (from SubscribeToBlockUpdates).
     BlockUpdate {
         address: String,
@@ -137,6 +145,12 @@ pub struct SocialClientHandler {
     pub received_requests: HashMap<Address, FriendshipRequestResponse>,
     pub friends: HashMap<Address, FriendProfile>,
     pub friend_status: HashMap<Address, ConnectivityStatus>,
+    /// Addresses the local user has blocked.
+    pub blocked: HashSet<Address>,
+    /// Addresses that have blocked the local user.
+    pub blocked_by: HashSet<Address>,
+    /// The local user's own DM privacy.
+    pub dm_privacy: DmPrivacy,
 
     pub unread_messages: HashMap<Address, usize>,
 
@@ -179,6 +193,9 @@ impl SocialClientHandler {
             received_requests: Default::default(),
             friends: Default::default(),
             friend_status: Default::default(),
+            blocked: Default::default(),
+            blocked_by: Default::default(),
+            dm_privacy: Default::default(),
             unread_messages: Default::default(),
             friend_event_callback: Box::new(friend_callback),
             connectivity_callback: Box::new(connectivity_callback),
@@ -404,10 +421,16 @@ impl SocialClientHandler {
                     sent_requests,
                     received_requests,
                     friends,
+                    blocked,
+                    blocked_by,
+                    dm_privacy,
                 } => {
                     self.received_requests = received_requests;
                     self.sent_requests = sent_requests;
                     self.friends = friends;
+                    self.blocked = blocked;
+                    self.blocked_by = blocked_by;
+                    self.dm_privacy = dm_privacy;
                     self.is_initialized = true;
                 }
                 FriendData::FriendshipEvent(ev) => {
@@ -503,6 +526,7 @@ impl SocialClientHandler {
                     self.friends.insert(address, profile);
                 }
                 FriendData::OwnBlock { address } => {
+                    self.blocked.insert(address);
                     self.friends.remove(&address);
                     // Synthesize an offline transition for subscribers (UI online
                     // list) since the server doesn't echo own actions over the
@@ -513,10 +537,23 @@ impl SocialClientHandler {
                     self.sent_requests.remove(&address);
                     self.received_requests.remove(&address);
                 }
+                FriendData::OwnUnblock { address } => {
+                    self.blocked.remove(&address);
+                }
+                FriendData::OwnDmPrivacy(privacy) => {
+                    self.dm_privacy = privacy;
+                }
                 FriendData::BlockUpdate {
                     address,
                     is_blocked,
                 } => {
+                    if let Some(address) = address.as_h160() {
+                        if is_blocked {
+                            self.blocked_by.insert(address);
+                        } else {
+                            self.blocked_by.remove(&address);
+                        }
+                    }
                     (self.block_update_callback)(&address, is_blocked);
                 }
                 FriendData::Disconnected => {
@@ -727,16 +764,56 @@ async fn run_one_connection(
     }
     debug!("[social] Sent requests loaded: {}", sent_requests.len());
 
+    // Gather initial data: blocking status and own DM privacy. Both are tolerated failing: the
+    // DM gate then treats nobody as blocked and the local user as accepting DMs from everyone.
+    let (blocked, blocked_by): (HashSet<Address>, HashSet<Address>) =
+        match service_module.get_blocking_status().await {
+            Ok(resp) => (
+                resp.blocked_users
+                    .iter()
+                    .filter_map(|a| a.as_h160())
+                    .collect(),
+                resp.blocked_by_users
+                    .iter()
+                    .filter_map(|a| a.as_h160())
+                    .collect(),
+            ),
+            Err(e) => {
+                warn!("[social] get_blocking_status error: {e:?}");
+                Default::default()
+            }
+        };
+    let dm_privacy = match service_module.get_social_settings().await {
+        Ok(resp) => match resp.response {
+            Some(get_social_settings_response::Response::Ok(ok)) => {
+                privacy_from_proto(ok.settings.unwrap_or_default().private_messages_privacy())
+            }
+            other => {
+                warn!("[social] get_social_settings error: {other:?}");
+                Default::default()
+            }
+        },
+        Err(e) => {
+            warn!("[social] get_social_settings error: {e:?}");
+            Default::default()
+        }
+    };
+
     debug!(
-        "[social] Init complete — friends: {}, received_requests: {}, sent_requests: {}",
+        "[social] Init complete — friends: {}, received_requests: {}, sent_requests: {}, blocked: {}, blocked by: {}, dm privacy: {dm_privacy:?}",
         friends.len(),
         received_requests.len(),
-        sent_requests.len()
+        sent_requests.len(),
+        blocked.len(),
+        blocked_by.len(),
     );
     response_sx.send(FriendData::Init {
         sent_requests,
         received_requests,
         friends,
+        blocked,
+        blocked_by,
+        dm_privacy,
     })?;
 
     // Subscribe to friendship updates
@@ -914,6 +991,9 @@ async fn run_one_connection(
                                     match resp.response {
                                         Some(Response::Ok(_)) => {
                                             debug!("[social] unblockUser success for {address}");
+                                            if let Some(addr) = address.as_h160() {
+                                                let _ = response_sx.send(FriendData::OwnUnblock { address: addr });
+                                            }
                                             let _ = response.send(Ok(()));
                                         }
                                         Some(Response::InternalServerError(e)) => {
@@ -1036,8 +1116,11 @@ async fn run_one_connection(
                                 },
                                 Err(e) => Err(format!("{e:?}")),
                             };
-                            if let Err(e) = &result {
-                                warn!("[social] upsertSocialSettings error: {e}");
+                            match &result {
+                                Ok(privacy) => {
+                                    let _ = response_sx.send(FriendData::OwnDmPrivacy(*privacy));
+                                }
+                                Err(e) => warn!("[social] upsertSocialSettings error: {e}"),
                             }
                             let _ = response.send(result);
                         }

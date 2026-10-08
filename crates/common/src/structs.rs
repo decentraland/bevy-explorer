@@ -1971,8 +1971,9 @@ mod tests {
 
 /// Who may DM a user. Mirrors the social service's `PrivateMessagePrivacySetting`, which the
 /// generated proto only provides behind the `social` feature.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum DmPrivacy {
+    #[default]
     All,
     OnlyFriends,
 }

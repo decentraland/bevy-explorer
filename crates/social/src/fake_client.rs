@@ -1,5 +1,5 @@
 use alloy_core::primitives::Address;
-use bevy::platform::collections::HashMap;
+use bevy::platform::collections::{HashMap, HashSet};
 
 use crate::{DirectChatMessage, DmPrivacy, DmPrivacyOf};
 
@@ -43,6 +43,9 @@ pub struct SocialClientHandler {
     pub received_requests: HashMap<Address, FriendshipRequestResponse>,
     pub friends: HashMap<Address, FriendProfile>,
     pub friend_status: HashMap<Address, ConnectivityStatus>,
+    pub blocked: HashSet<Address>,
+    pub blocked_by: HashSet<Address>,
+    pub dm_privacy: DmPrivacy,
 
     pub unread_messages: HashMap<Address, usize>,
 }
