@@ -1,7 +1,7 @@
 use alloy_core::primitives::Address;
 use bevy::platform::collections::HashMap;
 
-use crate::DirectChatMessage;
+use crate::{DirectChatMessage, DmPrivacy, DmPrivacyOf};
 
 /// `(addresses I blocked, addresses that blocked me)` — mirrors the real
 /// client's `BlockingStatus` so signatures match across feature flags.
@@ -148,6 +148,33 @@ impl SocialClientHandler {
     ) -> Result<tokio::sync::oneshot::Receiver<BlockingStatusResult>, anyhow::Error> {
         let (tx, rx) = tokio::sync::oneshot::channel();
         let _ = tx.send(Ok((Vec::new(), Vec::new())));
+        Ok(rx)
+    }
+
+    pub fn get_social_settings(
+        &self,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<DmPrivacy, String>>, anyhow::Error> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(Ok(DmPrivacy::All));
+        Ok(rx)
+    }
+
+    pub fn upsert_social_settings(
+        &self,
+        privacy: DmPrivacy,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<DmPrivacy, String>>, anyhow::Error> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(Ok(privacy));
+        Ok(rx)
+    }
+
+    pub fn get_private_messages_settings(
+        &self,
+        _addresses: Vec<String>,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<Vec<DmPrivacyOf>, String>>, anyhow::Error>
+    {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(Ok(Vec::new()));
         Ok(rx)
     }
 

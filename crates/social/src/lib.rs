@@ -69,6 +69,8 @@ impl Plugin for SocialPlugin {
             app.init_resource::<RestartSocialRequested>();
             app.add_preview_console_command::<DebugSocialCommand, _>(toggle_debug_social);
             app.add_console_command::<RestartSocialCommand, _>(restart_social);
+            app.add_console_command::<DmPrivacyCommand, _>(dm_privacy);
+            app.add_console_command::<DmPrivacyOfCommand, _>(dm_privacy_of);
             app.add_systems(
                 PostUpdate,
                 debug_write_social.run_if(|e: Res<DebugSocialEnabled>| e.0),
@@ -125,6 +127,123 @@ fn restart_social(
         restart.0 = true;
         input.reply_ok("social client restart requested");
     }
+}
+
+/// Who may DM the local user. Mirrors the social service's `PrivateMessagePrivacySetting`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DmPrivacy {
+    All,
+    OnlyFriends,
+}
+
+/// Another user's DM privacy, as returned by `GetPrivateMessagesSettings`.
+#[derive(Clone, Debug)]
+pub struct DmPrivacyOf {
+    pub address: String,
+    pub privacy: DmPrivacy,
+    pub is_friend: bool,
+}
+
+/// `/dm_privacy` prints the local user's DM privacy; `/dm_privacy all|friends` sets it.
+#[cfg(feature = "social")]
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/dm_privacy")]
+struct DmPrivacyCommand {
+    /// `all` or `friends`
+    privacy: Option<String>,
+}
+
+#[cfg(feature = "social")]
+fn dm_privacy(
+    mut input: ConsoleCommand<DmPrivacyCommand>,
+    social: Res<SocialClient>,
+    mut pending: ResMut<console::PendingConsoleResponses>,
+) {
+    let Some(Ok(command)) = input.take() else {
+        return;
+    };
+    let Some(client) = social.0.as_ref() else {
+        input.reply_failed("social not initialized");
+        return;
+    };
+    let privacy = match command.privacy.as_deref() {
+        None => None,
+        Some("all") => Some(DmPrivacy::All),
+        Some("friends") => Some(DmPrivacy::OnlyFriends),
+        Some(other) => {
+            input.reply_failed(format!("unknown privacy `{other}`: use `all` or `friends`"));
+            return;
+        }
+    };
+    let rx = match privacy {
+        Some(privacy) => client.upsert_social_settings(privacy),
+        None => client.get_social_settings(),
+    };
+    let rx = match rx {
+        Ok(rx) => rx,
+        Err(e) => {
+            input.reply_failed(format!("{e}"));
+            return;
+        }
+    };
+    let responder = input.take_responder();
+    pending.push_oneshot(
+        rx,
+        |result| result.map(|privacy| format!("dm privacy: {privacy:?}")),
+        responder,
+    );
+}
+
+/// `/dm_privacy_of <address>...` prints other users' DM privacy and whether they are friends.
+#[cfg(feature = "social")]
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/dm_privacy_of")]
+struct DmPrivacyOfCommand {
+    #[arg(required = true)]
+    addresses: Vec<String>,
+}
+
+#[cfg(feature = "social")]
+fn dm_privacy_of(
+    mut input: ConsoleCommand<DmPrivacyOfCommand>,
+    social: Res<SocialClient>,
+    mut pending: ResMut<console::PendingConsoleResponses>,
+) {
+    let Some(Ok(command)) = input.take() else {
+        return;
+    };
+    let Some(client) = social.0.as_ref() else {
+        input.reply_failed("social not initialized");
+        return;
+    };
+    let rx = match client.get_private_messages_settings(command.addresses) {
+        Ok(rx) => rx,
+        Err(e) => {
+            input.reply_failed(format!("{e}"));
+            return;
+        }
+    };
+    let responder = input.take_responder();
+    pending.push_oneshot(
+        rx,
+        |result| {
+            result.map(|entries| {
+                entries
+                    .iter()
+                    .map(|e| {
+                        format!(
+                            "{}: {:?}{}",
+                            e.address,
+                            e.privacy,
+                            if e.is_friend { " (friend)" } else { "" }
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+        },
+        responder,
+    );
 }
 
 #[cfg(feature = "social")]

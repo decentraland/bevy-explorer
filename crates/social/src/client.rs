@@ -8,14 +8,17 @@ use common::util::AsH160;
 #[cfg(target_arch = "wasm32")]
 use dcl_component::proto_components::social_service::v2::GetFriendshipStatusPayload;
 use dcl_component::proto_components::social_service::v2::{
-    friendship_update, paginated_friendship_requests_response,
+    friendship_update, get_private_messages_settings_response, get_social_settings_response,
+    paginated_friendship_requests_response,
     upsert_friendship_payload::{
         self, AcceptPayload, CancelPayload, DeletePayload, RejectPayload, RequestPayload,
     },
-    upsert_friendship_response, BlockUserPayload, ConnectivityStatus, FriendProfile,
-    FriendshipRequestResponse, GetBlockedUsersPayload, GetFriendsPayload,
-    GetFriendshipRequestsPayload, GetMutualFriendsPayload, Pagination, SocialServiceClient,
-    SocialServiceClientDefinition, UnblockUserPayload, UpsertFriendshipPayload, User,
+    upsert_friendship_response, upsert_social_settings_response, BlockUserPayload,
+    ConnectivityStatus, FriendProfile, FriendshipRequestResponse, GetBlockedUsersPayload,
+    GetFriendsPayload, GetFriendshipRequestsPayload, GetMutualFriendsPayload,
+    GetPrivateMessagesSettingsPayload, Pagination, PrivateMessagePrivacySetting,
+    SocialServiceClient, SocialServiceClientDefinition, UnblockUserPayload,
+    UpsertFriendshipPayload, UpsertSocialSettingsPayload, User,
 };
 use dcl_rpc::{
     client::RpcClient,
@@ -27,7 +30,7 @@ use web_time::Duration;
 
 use crate::rpc_websocket::PlatformRpcWebSocket;
 use crate::runtime::SocialRuntime;
-use crate::DirectChatMessage;
+use crate::{DirectChatMessage, DmPrivacy, DmPrivacyOf};
 
 pub enum SocialQuery {
     GetMutualFriends {
@@ -48,6 +51,35 @@ pub enum SocialQuery {
     GetBlockingStatus {
         response: tokio::sync::oneshot::Sender<BlockingStatusResult>,
     },
+    GetSocialSettings {
+        response: tokio::sync::oneshot::Sender<Result<DmPrivacy, String>>,
+    },
+    UpsertSocialSettings {
+        privacy: DmPrivacy,
+        response: tokio::sync::oneshot::Sender<Result<DmPrivacy, String>>,
+    },
+    GetPrivateMessagesSettings {
+        addresses: Vec<String>,
+        response: tokio::sync::oneshot::Sender<Result<Vec<DmPrivacyOf>, String>>,
+    },
+}
+
+impl From<PrivateMessagePrivacySetting> for DmPrivacy {
+    fn from(value: PrivateMessagePrivacySetting) -> Self {
+        match value {
+            PrivateMessagePrivacySetting::All => DmPrivacy::All,
+            PrivateMessagePrivacySetting::OnlyFriends => DmPrivacy::OnlyFriends,
+        }
+    }
+}
+
+impl From<DmPrivacy> for PrivateMessagePrivacySetting {
+    fn from(value: DmPrivacy) -> Self {
+        match value {
+            DmPrivacy::All => PrivateMessagePrivacySetting::All,
+            DmPrivacy::OnlyFriends => PrivateMessagePrivacySetting::OnlyFriends,
+        }
+    }
 }
 
 enum FriendData {
@@ -307,6 +339,44 @@ impl SocialClientHandler {
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.query_sender
             .send(SocialQuery::GetBlockingStatus { response: tx })?;
+        Ok(rx)
+    }
+
+    /// The local user's own DM privacy setting.
+    pub fn get_social_settings(
+        &self,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<DmPrivacy, String>>, anyhow::Error> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.query_sender
+            .send(SocialQuery::GetSocialSettings { response: tx })?;
+        Ok(rx)
+    }
+
+    /// Sets the local user's DM privacy; resolves to the setting the server stored.
+    pub fn upsert_social_settings(
+        &self,
+        privacy: DmPrivacy,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<DmPrivacy, String>>, anyhow::Error> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.query_sender.send(SocialQuery::UpsertSocialSettings {
+            privacy,
+            response: tx,
+        })?;
+        Ok(rx)
+    }
+
+    /// DM privacy of other users, batched.
+    pub fn get_private_messages_settings(
+        &self,
+        addresses: Vec<String>,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<Vec<DmPrivacyOf>, String>>, anyhow::Error>
+    {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.query_sender
+            .send(SocialQuery::GetPrivateMessagesSettings {
+                addresses,
+                response: tx,
+            })?;
         Ok(rx)
     }
 
@@ -931,6 +1001,83 @@ async fn run_one_connection(
                                     let _ = response.send(Err(format!("{e:?}")));
                                 }
                             }
+                        }
+                        SocialQuery::GetSocialSettings { response } => {
+                            debug!("[social] getSocialSettings request");
+                            let result = match service_module.get_social_settings().await {
+                                Ok(resp) => match resp.response {
+                                    Some(get_social_settings_response::Response::Ok(ok)) => Ok(ok
+                                        .settings
+                                        .unwrap_or_default()
+                                        .private_messages_privacy()
+                                        .into()),
+                                    other => Err(format!("{other:?}")),
+                                },
+                                Err(e) => Err(format!("{e:?}")),
+                            };
+                            if let Err(e) = &result {
+                                warn!("[social] getSocialSettings error: {e}");
+                            }
+                            let _ = response.send(result);
+                        }
+                        SocialQuery::UpsertSocialSettings { privacy, response } => {
+                            debug!("[social] upsertSocialSettings {privacy:?}");
+                            let payload = UpsertSocialSettingsPayload {
+                                private_messages_privacy: Some(
+                                    PrivateMessagePrivacySetting::from(privacy) as i32,
+                                ),
+                                ..Default::default()
+                            };
+                            let result = match service_module.upsert_social_settings(payload).await
+                            {
+                                Ok(resp) => match resp.response {
+                                    Some(upsert_social_settings_response::Response::Ok(
+                                        settings,
+                                    )) => Ok(settings.private_messages_privacy().into()),
+                                    other => Err(format!("{other:?}")),
+                                },
+                                Err(e) => Err(format!("{e:?}")),
+                            };
+                            if let Err(e) = &result {
+                                warn!("[social] upsertSocialSettings error: {e}");
+                            }
+                            let _ = response.send(result);
+                        }
+                        SocialQuery::GetPrivateMessagesSettings {
+                            addresses,
+                            response,
+                        } => {
+                            debug!("[social] getPrivateMessagesSettings for {addresses:?}");
+                            let payload = GetPrivateMessagesSettingsPayload {
+                                user: addresses
+                                    .into_iter()
+                                    .map(|address| User { address })
+                                    .collect(),
+                            };
+                            let result = match service_module
+                                .get_private_messages_settings(payload)
+                                .await
+                            {
+                                Ok(resp) => match resp.response {
+                                    Some(get_private_messages_settings_response::Response::Ok(
+                                        ok,
+                                    )) => Ok(ok
+                                        .settings
+                                        .into_iter()
+                                        .map(|s| DmPrivacyOf {
+                                            privacy: s.private_messages_privacy().into(),
+                                            address: s.user.unwrap_or_default().address,
+                                            is_friend: s.is_friend,
+                                        })
+                                        .collect()),
+                                    other => Err(format!("{other:?}")),
+                                },
+                                Err(e) => Err(format!("{e:?}")),
+                            };
+                            if let Err(e) = &result {
+                                warn!("[social] getPrivateMessagesSettings error: {e}");
+                            }
+                            let _ = response.send(result);
                         }
                     }
                 }
