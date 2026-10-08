@@ -1,4 +1,4 @@
-pub(super) mod plugin;
+pub(crate) mod plugin;
 
 use bevy::{platform::sync::Arc, prelude::*};
 #[cfg(not(target_arch = "wasm32"))]

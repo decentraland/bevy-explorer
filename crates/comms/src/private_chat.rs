@@ -3,12 +3,11 @@
 //! destination identity on it; its participant list is the DM presence list.
 //!
 //! The room is deliberately not a [`Transport`](crate::Transport): nothing broadcast to the
-//! realm's transports can reach it, and its participants never touch the avatar store. The
-//! generic LiveKit participant observers skip it, so a busy room costs one map entry per
-//! participant rather than an entity each.
+//! realm's transports can reach it, and its participants never touch the avatar store.
 
+use alloy_core::primitives::Address;
 use bevy::{
-    platform::collections::HashMap,
+    ecs::relationship::Relationship,
     prelude::*,
     tasks::{IoTaskPool, Task},
 };
@@ -28,7 +27,10 @@ use wallet::Wallet;
 use crate::{
     global_crdt::ChannelControl,
     livekit::{
-        participant::{ParticipantConnected, ParticipantDisconnected, ParticipantMetadataChanged},
+        participant::{
+            HostedBy, HostingParticipants, LivekitParticipant, Local as LocalParticipant,
+            ParticipantMetadataChanged,
+        },
         room::{Connected, Connecting, Disconnected},
         standalone_room_components, LivekitTransport,
     },
@@ -39,10 +41,8 @@ pub struct PrivateChatPlugin;
 
 impl Plugin for PrivateChatPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<PrivateChatPresence>();
         app.add_systems(Update, connect_private_chat_room);
-        app.add_observer(participant_connected);
-        app.add_observer(participant_disconnected);
+        app.add_observer(participant_added);
         app.add_observer(participant_metadata_changed);
         app.add_console_command::<DmRoomCommand, _>(dm_room);
     }
@@ -56,10 +56,10 @@ pub struct PrivateChatRoom {
     _control: Sender<ChannelControl>,
 }
 
-/// Remote participants of the private chat room, keyed by wallet, with the DM privacy the
-/// server stamped into their participant metadata (`None` until metadata arrives).
-#[derive(Resource, Default)]
-pub struct PrivateChatPresence(pub HashMap<alloy_core::primitives::Address, Option<DmPrivacy>>);
+/// On a private chat room participant: the DM privacy the server stamped into their participant
+/// metadata, `None` until it arrives.
+#[derive(Component, Debug)]
+pub struct PrivateChatPrivacy(pub Option<DmPrivacy>);
 
 #[derive(Deserialize)]
 struct ParticipantMetadata {
@@ -82,7 +82,6 @@ fn connect_private_chat_room(
     config: Res<AppConfig>,
     ipfs: IpfsAssetServer,
     rooms: Query<Entity, With<PrivateChatRoom>>,
-    mut presence: ResMut<PrivateChatPresence>,
     mut gatekeeper_task: Local<Option<Task<Result<String, anyhow::Error>>>>,
     disable_realm_comms: Option<Res<DisableRealmComms>>,
     disable_gatekeeper: Res<DisableSceneRoomGatekeeper>,
@@ -97,7 +96,6 @@ fn connect_private_chat_room(
         for room in rooms.iter() {
             commands.entity(room).despawn();
         }
-        presence.0.clear();
         *gatekeeper_task = None;
 
         if wallet.address().is_none() {
@@ -145,57 +143,43 @@ fn connect_private_chat_room(
     }
 }
 
-fn participant_connected(
-    trigger: Trigger<ParticipantConnected>,
+/// Stamps a private chat room participant with the privacy from their metadata.
+fn participant_added(
+    trigger: Trigger<OnAdd, LivekitParticipant>,
+    mut commands: Commands,
+    participants: Query<(&LivekitParticipant, &HostedBy)>,
     rooms: Query<(), With<PrivateChatRoom>>,
-    wallet: Res<Wallet>,
-    mut presence: ResMut<PrivateChatPresence>,
 ) {
-    let ParticipantConnected { participant, room } = trigger.event();
-    if !rooms.contains(*room) {
-        return;
-    }
-    let Some(address) = participant.identity().as_str().as_h160() else {
+    let Ok((participant, hosted_by)) = participants.get(trigger.target()) else {
         return;
     };
-    if Some(address) == wallet.address() {
+    if !rooms.contains(hosted_by.get()) {
         return;
     }
     let privacy = privacy_from_metadata(&participant.metadata());
-    debug!(target: "comms::private_chat", "{address:#x} joined, privacy {privacy:?}");
-    presence.0.insert(address, privacy);
-}
-
-fn participant_disconnected(
-    trigger: Trigger<ParticipantDisconnected>,
-    rooms: Query<(), With<PrivateChatRoom>>,
-    mut presence: ResMut<PrivateChatPresence>,
-) {
-    let ParticipantDisconnected { participant, room } = trigger.event();
-    if !rooms.contains(*room) {
-        return;
-    }
-    if let Some(address) = participant.identity().as_str().as_h160() {
-        debug!(target: "comms::private_chat", "{address:#x} left");
-        presence.0.remove(&address);
-    }
+    debug!(target: "comms::private_chat", "{} joined, privacy {privacy:?}", participant.identity());
+    commands
+        .entity(trigger.target())
+        .try_insert(PrivateChatPrivacy(privacy));
 }
 
 fn participant_metadata_changed(
     trigger: Trigger<ParticipantMetadataChanged>,
-    rooms: Query<(), With<PrivateChatRoom>>,
-    mut presence: ResMut<PrivateChatPresence>,
+    rooms: Query<&HostingParticipants, With<PrivateChatRoom>>,
+    mut participants: Query<(&LivekitParticipant, &mut PrivateChatPrivacy)>,
 ) {
     let ParticipantMetadataChanged { participant, room } = trigger.event();
-    if !rooms.contains(*room) {
-        return;
-    }
-    let Some(address) = participant.identity().as_str().as_h160() else {
+    let Ok(hosting) = rooms.get(*room) else {
         return;
     };
-    if let Some(privacy) = presence.0.get_mut(&address) {
-        *privacy = privacy_from_metadata(&participant.metadata());
-        debug!(target: "comms::private_chat", "{address:#x} privacy {privacy:?}");
+    let mut hosted = participants.iter_many_mut(hosting.collection());
+    while let Some((hosted_participant, mut privacy)) = hosted.fetch_next() {
+        if hosted_participant.identity() != participant.identity() {
+            continue;
+        }
+        privacy.0 = privacy_from_metadata(&participant.metadata());
+        debug!(target: "comms::private_chat", "{} privacy {:?}", participant.identity(), privacy.0);
+        return;
     }
 }
 
@@ -213,18 +197,22 @@ fn dm_room(
             Has<Connecting>,
             Has<Connected>,
             Has<Disconnected>,
+            Option<&HostingParticipants>,
         ),
         With<PrivateChatRoom>,
     >,
+    participants: Query<
+        (&LivekitParticipant, Option<&PrivateChatPrivacy>),
+        Without<LocalParticipant>,
+    >,
     wallet: Res<Wallet>,
-    presence: Res<PrivateChatPresence>,
 ) {
     const LISTED: usize = 20;
 
     if input.take().is_none() {
         return;
     }
-    let Ok((transport, connecting, connected, disconnected)) = rooms.single() else {
+    let Ok((transport, connecting, connected, disconnected, hosting)) = rooms.single() else {
         input.reply_ok("private chat room: not spawned");
         return;
     };
@@ -239,20 +227,23 @@ fn dm_room(
         .address()
         .map(|a| format!("{a:#x}"))
         .unwrap_or_else(|| "none".to_owned());
+    let remote: Vec<_> = hosting
+        .map(|hosting| participants.iter_many(hosting.collection()).collect())
+        .unwrap_or_default();
     let mut lines = vec![
         format!("private chat room: {state} ({host})"),
         format!("identity: {identity}"),
-        format!("remote participants: {}", presence.0.len()),
+        format!("remote participants: {}", remote.len()),
     ];
-    lines.extend(
-        presence
-            .0
-            .iter()
-            .take(LISTED)
-            .map(|(address, privacy)| format!("  {address:#x} {privacy:?}")),
-    );
-    if presence.0.len() > LISTED {
-        lines.push(format!("  ... and {} more", presence.0.len() - LISTED));
+    lines.extend(remote.iter().take(LISTED).map(|(participant, privacy)| {
+        format!(
+            "  {} {:?}",
+            participant.identity(),
+            privacy.map(|p| p.0).unwrap_or_default()
+        )
+    }));
+    if remote.len() > LISTED {
+        lines.push(format!("  ... and {} more", remote.len() - LISTED));
     }
     input.reply_ok(lines.join("\n"));
 }

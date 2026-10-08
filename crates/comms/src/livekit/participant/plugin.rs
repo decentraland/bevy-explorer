@@ -45,12 +45,12 @@ const GRACE_PERIOD: f32 = 3.;
 // which bounds the map by the number of connected participants. Keyed per room as well as
 // identity so the same identity string in two rooms (island + scene) can't share a window.
 #[derive(Resource, Default)]
-struct InboundRateLimiter {
+pub(crate) struct InboundRateLimiter {
     windows: HashMap<(Entity, String), VecDeque<f64>>,
 }
 
 impl InboundRateLimiter {
-    fn allow(&mut self, room: Entity, identity: &str, now: f64) -> bool {
+    pub(crate) fn allow(&mut self, room: Entity, identity: &str, now: f64) -> bool {
         let cutoff = now - INBOUND_RATE_WINDOW_SECS;
 
         let times = self.windows.entry((room, identity.to_owned())).or_default();
@@ -91,7 +91,6 @@ fn participant_connected(
     trigger: Trigger<ParticipantConnected>,
     mut commands: Commands,
     rooms: Query<&LivekitRoom>,
-    private_rooms: Query<(), With<PrivateChatRoom>>,
     transport_senders: crate::global_crdt::TransportSenders,
     mut player_update_tasks: PlayerUpdateTasksMut,
     livekit_runtime: LivekitRuntimeRes,
@@ -100,9 +99,6 @@ fn participant_connected(
         participant,
         room: room_entity,
     } = trigger.event();
-    if private_rooms.contains(*room_entity) {
-        return;
-    }
     let Ok(room) = rooms.get(*room_entity) else {
         debug_panic!("Room {room_entity} given to ParticipantConnected was invalid.");
     };
@@ -157,13 +153,11 @@ fn participant_connected(
     });
 }
 
-#[allow(clippy::too_many_arguments)]
 fn participant_disconnected(
     trigger: Trigger<ParticipantDisconnected>,
     mut commands: Commands,
     participants: Query<(Entity, &LivekitParticipant)>,
     rooms: Query<(&LivekitRoom, Option<&HostingParticipants>)>,
-    private_rooms: Query<(), With<PrivateChatRoom>>,
     transport_senders: crate::global_crdt::TransportSenders,
     mut player_update_tasks: PlayerUpdateTasksMut,
     livekit_runtime: LivekitRuntimeRes,
@@ -172,9 +166,6 @@ fn participant_disconnected(
         participant,
         room: room_entity,
     } = trigger.event();
-    if private_rooms.contains(*room_entity) {
-        return;
-    }
     let Ok((room, maybe_hosting_participants)) = rooms.get(*room_entity) else {
         debug_panic!("Room {room_entity} given to ParticipantDisconnected was invalid.");
     };
@@ -259,16 +250,12 @@ fn participant_connection_quality_changed(
     mut commands: Commands,
     participants: Query<(Entity, &LivekitParticipant)>,
     rooms: Query<(&LivekitRoom, &HostingParticipants)>,
-    private_rooms: Query<(), With<PrivateChatRoom>>,
 ) {
     let ParticipantConnectionQuality {
         participant,
         room,
         connection_quality,
     } = trigger.event();
-    if private_rooms.contains(*room) {
-        return;
-    }
     let Ok((livekit_room, hosting_participants)) = rooms.get(*room) else {
         debug_panic!("Room given to ParticipantConnectionQuality was invalid.");
     };
@@ -405,12 +392,8 @@ fn participant_metadata_changed(
     transport_senders: crate::global_crdt::TransportSenders,
     mut player_update_tasks: PlayerUpdateTasksMut,
     livekit_runtime: LivekitRuntimeRes,
-    private_rooms: Query<(), With<PrivateChatRoom>>,
 ) {
     let ParticipantMetadataChanged { room, participant } = trigger.event();
-    if private_rooms.contains(*room) {
-        return;
-    }
 
     let meta = participant.metadata();
     if !meta.is_empty() {
