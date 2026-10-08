@@ -89,14 +89,21 @@ fn privacy_from_metadata(metadata: &str) -> Option<DmPrivacy> {
     }
 }
 
+/// Gatekeeper retry backoff: 5s doubling to 60s.
+fn gatekeeper_retry_delay(attempt: u32) -> f64 {
+    (5.0 * 2f64.powi(attempt.min(4) as i32)).min(60.0)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn connect_private_chat_room(
     mut commands: Commands,
     wallet: Res<Wallet>,
     config: Res<AppConfig>,
     ipfs: IpfsAssetServer,
+    time: Res<Time>,
     rooms: Query<Entity, With<PrivateChatRoom>>,
     mut gatekeeper_task: Local<Option<Task<Result<String, anyhow::Error>>>>,
+    mut retry: Local<Option<(f64, u32)>>,
     disable_realm_comms: Option<Res<DisableRealmComms>>,
     disable_gatekeeper: Res<DisableSceneRoomGatekeeper>,
 ) {
@@ -106,17 +113,24 @@ fn connect_private_chat_room(
         return;
     }
 
-    if wallet.is_changed() {
+    let now = time.elapsed_secs_f64();
+    let mint = if wallet.is_changed() {
         for room in rooms.iter() {
             commands.entity(room).despawn();
         }
         *gatekeeper_task = None;
+        *retry = None;
 
         if wallet.address().is_none() {
             info!("private chat: no identity, not connecting");
             return;
         }
+        true
+    } else {
+        gatekeeper_task.is_none() && retry.is_some_and(|(due, _)| now >= due)
+    };
 
+    if mint {
         let uri = Uri::try_from(common::base_domain::url(
             Service::CommsGatekeeper,
             "/private-messages/token",
@@ -137,8 +151,16 @@ fn connect_private_chat_room(
     if let Some(mut task) = gatekeeper_task.take() {
         match task.complete() {
             None => *gatekeeper_task = Some(task),
-            Some(Err(e)) => warn!("private chat: failed to get room from gatekeeper: {e}"),
+            Some(Err(e)) => {
+                let attempt = retry.map_or(0, |(_, attempt)| attempt);
+                let delay = gatekeeper_retry_delay(attempt);
+                warn!(
+                    "private chat: failed to get room from gatekeeper: {e}; retrying in {delay}s"
+                );
+                *retry = Some((now + delay, attempt + 1));
+            }
             Some(Ok(adapter)) => {
+                *retry = None;
                 let Some(("livekit", address)) = adapter.split_once(':') else {
                     warn!("private chat: unsupported adapter `{adapter}`");
                     return;
