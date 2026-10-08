@@ -46,6 +46,39 @@ pub struct LivekitNetworkMessage {
     receiver: mpsc::Receiver<NetworkMessage>,
 }
 
+/// Components for a LiveKit room that is not a comms transport: it connects, receives and
+/// publishes like any other room, but has no `Transport`, so it never feeds a crdt context and is
+/// never a broadcast target. Returns the senders for the room's outgoing message and control
+/// channels; the control sender must be kept alive for as long as the room exists.
+pub(crate) fn standalone_room_components(
+    address: String,
+) -> (
+    (
+        LivekitTransport,
+        LivekitChannelControl,
+        LivekitNetworkMessage,
+    ),
+    mpsc::Sender<NetworkMessage>,
+    mpsc::Sender<ChannelControl>,
+) {
+    let (sender, receiver) = mpsc::channel(1000);
+    let (control_sender, control_receiver) = mpsc::channel(128);
+    (
+        (
+            LivekitTransport {
+                address,
+                retries: 0,
+            },
+            LivekitChannelControl {
+                receiver: control_receiver,
+            },
+            LivekitNetworkMessage { receiver },
+        ),
+        sender,
+        control_sender,
+    )
+}
+
 #[derive(Resource, Deref, DerefMut)]
 pub struct LivekitAudioManager {
     manager: AudioManager,
