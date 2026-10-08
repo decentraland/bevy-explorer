@@ -300,6 +300,7 @@ fn participant_payload(
         room: room_entity,
         participant,
         payload,
+        topic: _,
     } = trigger.event();
 
     if !rate_limiter.allow(

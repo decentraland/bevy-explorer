@@ -89,6 +89,8 @@ pub struct ParticipantPayload {
     pub room: Entity,
     pub participant: LivekitParticipant,
     pub payload: Arc<Vec<u8>>,
+    /// LiveKit data-packet topic, if the sender set one.
+    pub topic: Option<String>,
 }
 
 #[derive(Event)]

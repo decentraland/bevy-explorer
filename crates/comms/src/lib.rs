@@ -188,6 +188,8 @@ pub struct NetworkMessage {
     pub(crate) message: Box<dyn Broadcast>,
     pub unreliable: bool,
     pub recipient: NetworkMessageRecipient,
+    /// LiveKit data-packet topic. Only LiveKit transports carry it; the rest ignore it.
+    pub topic: Option<String>,
 }
 
 impl NetworkMessage {
@@ -199,6 +201,7 @@ impl NetworkMessage {
             message: Box::new(data),
             unreliable: true,
             recipient: NetworkMessageRecipient::All,
+            topic: None,
         }
     }
 
@@ -414,6 +417,7 @@ pub fn broadcast_to<'a, D: ToDclWriter>(
             message: Box::new(data.clone()),
             unreliable,
             recipient: NetworkMessageRecipient::All,
+            topic: None,
         });
     }
 }
@@ -444,6 +448,7 @@ pub fn broadcast<'a, B: Broadcast + Clone + 'static>(
                 message: Box::new(message.clone()),
                 unreliable,
                 recipient: NetworkMessageRecipient::All,
+                topic: None,
             });
         } else if auth_server_fanout && BroadcastTarget::LIVEKIT.includes(&transport.transport_type)
         {
@@ -451,6 +456,7 @@ pub fn broadcast<'a, B: Broadcast + Clone + 'static>(
                 message: Box::new(message.clone()),
                 unreliable,
                 recipient: NetworkMessageRecipient::AuthServer,
+                topic: None,
             });
         }
     }

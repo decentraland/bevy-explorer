@@ -229,6 +229,7 @@ fn process_room_events(mut commands: Commands, livekit_rooms: Query<(Entity, &mu
                 },
                 RoomEvent::DataReceived {
                     payload,
+                    topic,
                     participant: maybe_participant,
                     ..
                 } => {
@@ -237,6 +238,7 @@ fn process_room_events(mut commands: Commands, livekit_rooms: Query<(Entity, &mu
                             room: entity,
                             participant: participant.into(),
                             payload,
+                            topic,
                         });
                     } else {
                         debug!("Owner-less payload received.");
@@ -366,7 +368,7 @@ fn process_network_message(
 
                     let packet = DataPacket {
                         payload,
-                        topic: None,
+                        topic: outgoing.topic,
                         reliable: !outgoing.unreliable,
                         destination_identities,
                     };
