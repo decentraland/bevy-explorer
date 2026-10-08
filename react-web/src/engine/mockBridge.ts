@@ -527,6 +527,24 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       reply({ kind: 'friendActionDone', op: msg.op, address: msg.address })
       return
     }
+    // DMs: every partner is reachable, and one has a stored conversation.
+    if (msg.kind === 'dmWatch') {
+      if (msg.on) reply({ kind: 'dmUserState', address: msg.address, state: 'connected', online: true })
+      return
+    }
+    if (msg.kind === 'dmHistory') {
+      const mojito = '0x5854cce95d5e25817b41f4c41f06b695a83bc495'
+      const entries =
+        msg.address.toLowerCase() === mojito
+          ? [
+              { from: mojito, message: 'you around later?', receivedAt: Date.now() - 86_400_000 },
+              { from: o.userId, message: 'yeah, after 8', receivedAt: Date.now() - 86_000_000 }
+            ]
+          : []
+      reply({ kind: 'dmHistory', address: msg.address, entries })
+      return
+    }
+    if (msg.kind === 'dmDelete') return
     if (msg.kind === 'getMutualFriends') {
       reply({
         kind: 'mutualFriends',

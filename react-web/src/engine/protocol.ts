@@ -138,6 +138,9 @@ export type PageToScene =
   | ConsoleCommandRequest
   | NavActionRequest
   | FriendActionRequest
+  | DmWatchRequest
+  | DmHistoryRequest
+  | DmDeleteRequest
   | GetMutualFriendsRequest
   | GetSettingsRequest
   | SetSettingRequest
@@ -369,6 +372,60 @@ export interface FriendActionFailedMessage {
   op: FriendAction
   address: string
   error: string
+}
+
+/** Whether the local user can DM someone, and why not. Mirrors the engine's DmUserStateData. */
+export type DmUserState =
+  | 'notConnected'
+  | 'connected'
+  | 'blockedByOwnUser'
+  | 'privateMessagesBlockedByOwnUser'
+  | 'privateMessagesBlocked'
+  | 'disconnected'
+  | 'otherClient'
+
+/** Start or stop following a partner's DM state (page → scene). The scene holds one engine
+ *  stream per watched address; the page watches each open DM tab. */
+export interface DmWatchRequest {
+  kind: 'dmWatch'
+  address: string
+  on: boolean
+}
+
+/** A watched partner's DM state, on watch and on change (scene → page). */
+export interface DmUserStateMessage {
+  kind: 'dmUserState'
+  address: string
+  state: DmUserState
+  /** In the private chat room and not blocked by the local user. */
+  online: boolean
+}
+
+/** The stored DMs with a partner (page → scene), answered by DmHistoryMessage. */
+export interface DmHistoryRequest {
+  kind: 'dmHistory'
+  address: string
+}
+
+/** One stored DM; `from` is the local user or the partner. */
+export interface DmHistoryEntry {
+  from: string
+  message: string
+  /** Unix ms when the local client stored it. */
+  receivedAt: number
+}
+
+export interface DmHistoryMessage {
+  kind: 'dmHistory'
+  address: string
+  /** Oldest first. */
+  entries: DmHistoryEntry[]
+}
+
+/** Delete the stored DMs with a partner (page → scene). */
+export interface DmDeleteRequest {
+  kind: 'dmDelete'
+  address: string
 }
 
 /** Mirrors the engine's ExplorerSetting (BevyApi.getSettings). A setting is a
@@ -1312,6 +1369,8 @@ export type SceneToPage =
   | FriendActionDoneMessage
   | MutualFriendsMessage
   | FriendOnlineMessage
+  | DmUserStateMessage
+  | DmHistoryMessage
   | SettingsMessage
   | BindingsMessage
   | InputCapturedMessage

@@ -592,8 +592,9 @@ module.exports.social = {
     return streamGenerator();
   },
 
-  // DM state of `address`: emitted now, then on change. Several may be open at once; stop
-  // iterating (break / return) to drop one.
+  // DM state of `address`: emitted now, then on change. Several may be open at once. The
+  // stream's close() ends it (a pending read resolves done); async generator return() would
+  // only run after that read, so it is not enough on its own.
   // type DmUserStateData = { address: string, state: string, online: boolean }
   getDmUserStateStream: async function(address) {
     const rid = await Deno.core.ops.op_get_dm_user_state_stream(address);
@@ -610,7 +611,9 @@ module.exports.social = {
       }
     }
 
-    return streamGenerator();
+    const stream = streamGenerator();
+    stream.close = () => Deno.core.ops.op_close_dm_user_state_stream(rid);
+    return stream;
   },
 
   // local DM history. Which conversations are shown is the HUD's own state.

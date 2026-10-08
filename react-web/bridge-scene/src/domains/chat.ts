@@ -33,8 +33,9 @@ export function registerChat(ctx: Ctx): void {
   relay('chat', async () => await BevyApi.getChatStream(), (m) => {
     if (m.message.indexOf('␑') === 0) return // engine control message
     ctx.send({ kind: 'chat', chat: { sender: m.sender_address, message: m.message, channel: m.channel } })
-    // Pop the speech bubble under this sender's nametag (world-space, engine-positioned).
-    setChatBubble(m.sender_address, m.message, mentionsMe(m.message))
+    // Pop the speech bubble under this sender's nametag (world-space, engine-positioned). Not for
+    // DMs (a wallet channel): those are private.
+    if (m.channel === 'Nearby') setChatBubble(m.sender_address, m.message, mentionsMe(m.message))
   })
 
   // Enter → focus chat, on both native (the engine reads keys off the OS window) and web (winit

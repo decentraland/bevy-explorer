@@ -9,6 +9,8 @@ import type {
   BlockedUserData,
   BlockingStatusData,
   ChatMessage,
+  DmHistoryEntryData,
+  DmUserStateData,
   VoiceMessage,
   FriendData,
   FriendRequestData,
@@ -54,6 +56,10 @@ export type SocialApi = {
   deleteFriend: (address: string) => Promise<void>
   blockUser: (address: string) => Promise<void>
   unblockUser: (address: string) => Promise<void>
+  /** One stream per address; `close()` ends it. */
+  getDmUserStateStream: (address: string) => Promise<AsyncIterable<DmUserStateData> & { close: () => void }>
+  getDmHistory: (address: string) => Promise<DmHistoryEntryData[]>
+  deleteDmHistory: (address: string) => void
 }
 
 export type ChatStreamMessage = ChatMessage
