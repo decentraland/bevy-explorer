@@ -80,7 +80,6 @@ impl DmStoreOp {
                         .map(|e| DmHistoryEntryData {
                             from: e.from,
                             message: e.message,
-                            timestamp: e.timestamp,
                             received_at: e.received_at,
                         })
                         .collect(),
@@ -148,7 +147,6 @@ pub fn record_dms(
             DmHistoryEntry {
                 from: account.clone(),
                 message: ev.message.clone(),
-                timestamp: ev.timestamp,
                 received_at: now_unix(),
             },
         ));
@@ -163,7 +161,6 @@ pub fn record_dms(
             DmHistoryEntry {
                 from: partner,
                 message: dm.message.clone(),
-                timestamp: dm.timestamp,
                 received_at: now_unix(),
             },
         ));
@@ -238,7 +235,7 @@ pub fn dm_history(
             Ok(entries
                 .iter()
                 .skip(skipped)
-                .map(|e| format!("[{}] {}: {}", e.timestamp, e.from, e.message))
+                .map(|e| format!("[{}] {}: {}", e.received_at, e.from, e.message))
                 .collect::<Vec<_>>()
                 .join("\n"))
         },

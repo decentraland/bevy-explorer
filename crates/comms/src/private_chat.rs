@@ -73,7 +73,6 @@ pub struct PrivateChatPrivacy(pub Option<DmPrivacy>);
 pub struct PrivateChatReceived {
     pub from: Address,
     pub message: String,
-    pub timestamp: f64,
 }
 
 #[derive(Deserialize)]
@@ -252,7 +251,6 @@ fn participant_payload(
     received.write(PrivateChatReceived {
         from,
         message: message.message,
-        timestamp: message.timestamp,
     });
 }
 

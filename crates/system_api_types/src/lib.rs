@@ -336,8 +336,6 @@ pub struct BlockUpdateData {
 pub struct DmHistoryEntryData {
     pub from: String,
     pub message: String,
-    /// rfc4 chat wire timestamp (OADate), as sent.
-    pub timestamp: f64,
     /// Unix seconds when the local client stored it.
     pub received_at: f64,
 }

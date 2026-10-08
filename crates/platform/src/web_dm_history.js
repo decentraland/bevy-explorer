@@ -64,7 +64,7 @@ export async function dmHistoryRead(account, partner) {
   const rows = await withDb((db) =>
     request(db.transaction(MESSAGES, 'readonly').objectStore(MESSAGES).index(BY_CONVERSATION).getAll(conversationKey(account, partner)))
   )
-  return JSON.stringify(rows.map(({ from, message, timestamp, received_at }) => ({ from, message, timestamp, received_at })))
+  return JSON.stringify(rows.map(({ from, message, received_at }) => ({ from, message, received_at })))
 }
 
 export async function dmHistoryDelete(account, partner) {
