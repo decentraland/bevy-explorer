@@ -11,7 +11,12 @@ use common::{
 };
 use dcl_component::proto_components::common::Vector2;
 use serde::{Deserialize, Serialize};
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+    sync::Arc,
+};
 use strum::IntoEnumIterator;
 use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
@@ -21,6 +26,7 @@ use system_bridge::{
     ProximityEvent, SatelliteView, SceneLoadingUi, SetAvatarData, SetPermanentPermission,
     SetSinglePermission, SystemApi, VoiceMessage,
 };
+use tokio::sync::Notify;
 
 use crate::{interface::crdt_context::CrdtContext, js::player_identity, RpcCalls};
 
@@ -1190,11 +1196,13 @@ pub async fn op_get_blocking_status(
 
 /// Open DM user-state streams by stream id. Several can be open at once (one per
 /// conversation the HUD shows), so unlike the single-slot streams they are keyed rather than
-/// stored by type. A receiver is out of the map while a read awaits it.
+/// stored by type. A receiver is out of the map while a read awaits it; closing wakes that read
+/// so the receiver drops and the engine sees the stream closed.
 #[derive(Default)]
 struct DmUserStateStreams {
     next_id: u32,
-    receivers: HashMap<u32, RpcStreamReceiver<DmUserStateData>>,
+    receivers: HashMap<u32, (RpcStreamReceiver<DmUserStateData>, Arc<Notify>)>,
+    closed: HashSet<u32>,
 }
 
 pub async fn op_get_dm_user_state_stream(state: Rc<RefCell<impl State>>, address: String) -> u32 {
@@ -1207,7 +1215,7 @@ pub async fn op_get_dm_user_state_stream(state: Rc<RefCell<impl State>>, address
     let streams = state.borrow_mut::<DmUserStateStreams>();
     streams.next_id += 1;
     let rid = streams.next_id;
-    streams.receivers.insert(rid, rx);
+    streams.receivers.insert(rid, (rx, Arc::new(Notify::new())));
 
     state
         .borrow_mut::<SuperUserScene>()
@@ -1221,7 +1229,7 @@ pub async fn op_read_dm_user_state_stream(
     state: Rc<RefCell<impl State>>,
     rid: u32,
 ) -> Result<Option<DmUserStateData>, anyhow::Error> {
-    let Some(mut receiver) = state
+    let Some((mut receiver, notify)) = state
         .borrow_mut()
         .try_borrow_mut::<DmUserStateStreams>()
         .and_then(|streams| streams.receivers.remove(&rid))
@@ -1229,22 +1237,32 @@ pub async fn op_read_dm_user_state_stream(
         return Ok(None);
     };
 
-    let res = receiver.recv().await;
+    let res = tokio::select! {
+        item = receiver.recv() => item,
+        _ = notify.notified() => None,
+    };
 
+    let mut state = state.borrow_mut();
+    let streams = state.borrow_mut::<DmUserStateStreams>();
+    if streams.closed.remove(&rid) {
+        return Ok(None);
+    }
     if res.is_some() {
-        state
-            .borrow_mut()
-            .borrow_mut::<DmUserStateStreams>()
-            .receivers
-            .insert(rid, receiver);
+        streams.receivers.insert(rid, (receiver, notify));
     }
     Ok(res)
 }
 
-/// Drops the stream's receiver, which closes the engine's sender.
+/// Ends the stream: wakes a parked read, and drops the receiver so the engine's sender closes.
 pub fn op_close_dm_user_state_stream(state: Rc<RefCell<impl State>>, rid: u32) {
     if let Some(streams) = state.borrow_mut().try_borrow_mut::<DmUserStateStreams>() {
-        streams.receivers.remove(&rid);
+        match streams.receivers.remove(&rid) {
+            Some(_) => (),
+            // a read holds it: tell the read not to put it back
+            None => {
+                streams.closed.insert(rid);
+            }
+        }
     }
 }
 
