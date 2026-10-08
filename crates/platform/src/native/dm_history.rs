@@ -1,5 +1,5 @@
 //! Local DM history on native: one directory per account under the app data dir, one file per
-//! conversation plus the ordered list of open conversations. Contents are AES-256-CBC with a key
+//! conversation. Contents are AES-256-CBC with a key
 //! derived from the account address and a fresh IV per record, and names are hashes, so nothing
 //! on disk is readable or attributable without knowing the account. That is obfuscation, not
 //! secrecy: the account address is public.
@@ -19,7 +19,8 @@ use crate::DmHistoryEntry;
 type Encryptor = cbc::Encryptor<aes::Aes256>;
 type Decryptor = cbc::Decryptor<aes::Aes256>;
 
-const CONVERSATIONS_FILE: &str = "conversations";
+/// Salt for the account directory name.
+const ACCOUNT_DIR: &str = "account";
 
 /// Serializes all history file access; appends from several tasks must not interleave.
 static LOCK: Mutex<()> = Mutex::new(());
@@ -38,7 +39,7 @@ fn account_dir(key: &[u8; 32]) -> Result<PathBuf, String> {
     Ok(dirs
         .data_dir()
         .join("dm")
-        .join(hashed_name(key, CONVERSATIONS_FILE)))
+        .join(hashed_name(key, ACCOUNT_DIR)))
 }
 
 fn encrypt_record(key: &[u8; 32], plain: &[u8]) -> String {
@@ -117,23 +118,4 @@ pub async fn dm_history_delete(account: &str, partner: &str) -> Result<(), Strin
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(e.to_string()),
     }
-}
-
-/// The partners with stored DMs, oldest conversation first.
-pub async fn dm_conversations_read(account: &str) -> Result<Vec<String>, String> {
-    let key = key(account);
-    let path = account_dir(&key)?.join(CONVERSATIONS_FILE);
-    let _guard = LOCK.lock().map_err(|e| e.to_string())?;
-    // the list is one record, rewritten whole; the last line wins
-    Ok(read_records::<Vec<String>>(&key, &path)?
-        .pop()
-        .unwrap_or_default())
-}
-
-pub async fn dm_conversations_write(account: &str, partners: &[String]) -> Result<(), String> {
-    let key = key(account);
-    let path = account_dir(&key)?.join(CONVERSATIONS_FILE);
-    let _guard = LOCK.lock().map_err(|e| e.to_string())?;
-    let _ = std::fs::remove_file(&path);
-    append_record(&key, &path, &partners)
 }

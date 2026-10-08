@@ -1248,17 +1248,6 @@ pub fn op_close_dm_user_state_stream(state: Rc<RefCell<impl State>>, rid: u32) {
     }
 }
 
-pub async fn op_get_dm_conversations(
-    state: Rc<RefCell<impl State>>,
-) -> Result<Vec<String>, anyhow::Error> {
-    let (sx, rx) = RpcResultSender::channel();
-    state
-        .borrow_mut()
-        .borrow_mut::<SuperUserScene>()
-        .send(SystemApi::GetDmConversations(sx))?;
-    rx.await.map_err(|e| anyhow::anyhow!(e))
-}
-
 pub async fn op_get_dm_history(
     state: Rc<RefCell<impl State>>,
     address: String,

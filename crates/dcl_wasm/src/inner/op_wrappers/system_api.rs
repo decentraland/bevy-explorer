@@ -575,11 +575,6 @@ pub fn op_close_dm_user_state_stream(state: &WorkerContext, rid: u32) {
 }
 
 #[wasm_bindgen]
-pub async fn op_get_dm_conversations(state: &WorkerContext) -> Result<JsValue, WasmError> {
-    serde_result!(dcl::js::system_api::op_get_dm_conversations(state.rc()).await)
-}
-
-#[wasm_bindgen]
 pub async fn op_get_dm_history(
     state: &WorkerContext,
     address: String,

@@ -318,11 +318,6 @@ mod web_dm_history {
         pub async fn read(account: &str, partner: &str) -> Result<JsValue, JsValue>;
         #[wasm_bindgen(catch, js_name = dmHistoryDelete)]
         pub async fn delete(account: &str, partner: &str) -> Result<(), JsValue>;
-        #[wasm_bindgen(catch, js_name = dmConversationsRead)]
-        pub async fn conversations_read(account: &str) -> Result<JsValue, JsValue>;
-        #[wasm_bindgen(catch, js_name = dmConversationsWrite)]
-        pub async fn conversations_write(account: &str, partners_json: &str)
-            -> Result<(), JsValue>;
     }
 }
 
@@ -349,20 +344,6 @@ pub async fn dm_history_read(
 
 pub async fn dm_history_delete(account: &str, partner: &str) -> Result<(), String> {
     web_dm_history::delete(account, partner)
-        .await
-        .map_err(|e| js_error_message(&e))
-}
-
-pub async fn dm_conversations_read(account: &str) -> Result<Vec<String>, String> {
-    let json = web_dm_history::conversations_read(account)
-        .await
-        .map_err(|e| js_error_message(&e))?;
-    serde_json::from_str(&json.as_string().unwrap_or_default()).map_err(|e| e.to_string())
-}
-
-pub async fn dm_conversations_write(account: &str, partners: &[String]) -> Result<(), String> {
-    let json = serde_json::to_string(partners).map_err(|e| e.to_string())?;
-    web_dm_history::conversations_write(account, &json)
         .await
         .map_err(|e| js_error_message(&e))
 }

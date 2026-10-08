@@ -2,12 +2,11 @@
 // account address that native derives its key from already sits in this origin's storage.
 //
 // `messages` holds one record per DM (autoincrement id = arrival order), indexed by
-// [account, partner]; `conversations` holds each account's ordered list of open conversations.
+// [account, partner].
 
 const DB_NAME = 'dcl-dm-history'
 const DB_VERSION = 1
 const MESSAGES = 'messages'
-const CONVERSATIONS = 'conversations'
 const BY_CONVERSATION = 'conversation'
 
 function openDb() {
@@ -19,7 +18,6 @@ function openDb() {
         const store = db.createObjectStore(MESSAGES, { keyPath: 'id', autoIncrement: true })
         store.createIndex(BY_CONVERSATION, ['account', 'partner'])
       }
-      if (!db.objectStoreNames.contains(CONVERSATIONS)) db.createObjectStore(CONVERSATIONS)
     }
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error)
@@ -74,20 +72,6 @@ export async function dmHistoryDelete(account, partner) {
     const tx = db.transaction(MESSAGES, 'readwrite')
     const keys = await request(tx.objectStore(MESSAGES).index(BY_CONVERSATION).getAllKeys(conversationKey(account, partner)))
     for (const key of keys) tx.objectStore(MESSAGES).delete(key)
-    await complete(tx)
-  })
-}
-
-export async function dmConversationsRead(account) {
-  const partners = await withDb((db) => request(db.transaction(CONVERSATIONS, 'readonly').objectStore(CONVERSATIONS).get(account.toLowerCase())))
-  return JSON.stringify(partners ?? [])
-}
-
-export async function dmConversationsWrite(account, partnersJson) {
-  const partners = JSON.parse(partnersJson)
-  await withDb(async (db) => {
-    const tx = db.transaction(CONVERSATIONS, 'readwrite')
-    tx.objectStore(CONVERSATIONS).put(partners, account.toLowerCase())
     await complete(tx)
   })
 }

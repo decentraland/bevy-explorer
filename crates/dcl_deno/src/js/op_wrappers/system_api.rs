@@ -100,7 +100,6 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_get_dm_user_state_stream(),
             op_read_dm_user_state_stream(),
             op_close_dm_user_state_stream(),
-            op_get_dm_conversations(),
             op_get_dm_history(),
             op_delete_dm_history(),
         ]
@@ -682,14 +681,6 @@ pub async fn op_read_dm_user_state_stream(
 #[op2(fast)]
 pub fn op_close_dm_user_state_stream(state: Rc<RefCell<OpState>>, #[smi] rid: u32) {
     dcl::js::system_api::op_close_dm_user_state_stream(state, rid)
-}
-
-#[op2(async)]
-#[serde]
-pub async fn op_get_dm_conversations(
-    state: Rc<RefCell<OpState>>,
-) -> Result<Vec<String>, anyhow::Error> {
-    dcl::js::system_api::op_get_dm_conversations(state).await
 }
 
 #[op2(async)]
