@@ -611,6 +611,19 @@ module.exports.social = {
     }
 
     return streamGenerator();
+  },
+
+  // local DM history: the partners with stored messages (oldest conversation first) and the
+  // messages themselves. Which conversations are shown is the HUD's own state.
+  // type DmHistoryEntryData = { from: string, message: string, timestamp: number, receivedAt: number }
+  getDmConversations: async function() {
+    return await Deno.core.ops.op_get_dm_conversations();
+  },
+  getDmHistory: async function(address) {
+    return await Deno.core.ops.op_get_dm_history(address);
+  },
+  deleteDmHistory: function(address) {
+    Deno.core.ops.op_delete_dm_history(address);
   }
 }
 

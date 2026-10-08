@@ -163,6 +163,12 @@ pub enum SystemApi {
     // Social / DMs
     /// Emits the given recipient's DM state now and whenever it changes, until dropped.
     GetDmUserStateStream(String, RpcStreamSender<DmUserStateData>),
+    /// The partners the local user has stored DMs with, oldest conversation first.
+    GetDmConversations(RpcResultSender<Vec<String>>),
+    /// The stored DMs with a partner, oldest first.
+    GetDmHistory(String, RpcResultSender<Vec<DmHistoryEntryData>>),
+    /// Deletes the stored DMs with a partner.
+    DeleteDmHistory(String),
 }
 
 #[derive(Resource)]

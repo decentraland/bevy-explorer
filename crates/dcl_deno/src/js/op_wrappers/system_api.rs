@@ -9,8 +9,8 @@ use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc};
 use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
-    BlockingStatusData, ChatMessage, DmUserStateData, FriendConnectivityEvent, FriendData,
-    FriendRequestData, FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent,
+    BlockingStatusData, ChatMessage, DmHistoryEntryData, DmUserStateData, FriendConnectivityEvent,
+    FriendData, FriendRequestData, FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent,
     LiveSceneInfo, PermanentPermissionItem, PermissionRequestEvent, ProfileChangedEvent,
     ProximityEvent, SatelliteView, SceneLoadingUi, SetAvatarData, VoiceMessage,
 };
@@ -100,6 +100,9 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_get_dm_user_state_stream(),
             op_read_dm_user_state_stream(),
             op_close_dm_user_state_stream(),
+            op_get_dm_conversations(),
+            op_get_dm_history(),
+            op_delete_dm_history(),
         ]
     } else {
         Vec::default()
@@ -679,6 +682,28 @@ pub async fn op_read_dm_user_state_stream(
 #[op2(fast)]
 pub fn op_close_dm_user_state_stream(state: Rc<RefCell<OpState>>, #[smi] rid: u32) {
     dcl::js::system_api::op_close_dm_user_state_stream(state, rid)
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_dm_conversations(
+    state: Rc<RefCell<OpState>>,
+) -> Result<Vec<String>, anyhow::Error> {
+    dcl::js::system_api::op_get_dm_conversations(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_dm_history(
+    state: Rc<RefCell<OpState>>,
+    #[string] address: String,
+) -> Result<Vec<DmHistoryEntryData>, anyhow::Error> {
+    dcl::js::system_api::op_get_dm_history(state, address).await
+}
+
+#[op2(fast)]
+pub fn op_delete_dm_history(state: Rc<RefCell<OpState>>, #[string] address: String) {
+    dcl::js::system_api::op_delete_dm_history(state, address)
 }
 
 #[op2(async)]

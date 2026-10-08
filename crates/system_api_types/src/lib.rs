@@ -328,6 +328,20 @@ pub struct BlockUpdateData {
     pub is_blocked: bool,
 }
 
+/// One stored DM; `from` is the local user's wallet or the partner's.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(export)]
+pub struct DmHistoryEntryData {
+    pub from: String,
+    pub message: String,
+    /// rfc4 chat wire timestamp (OADate), as sent.
+    pub timestamp: f64,
+    /// Unix seconds when the local client stored it.
+    pub received_at: f64,
+}
+
 /// Whether the local user can DM `address`, and why not; emitted for the watched recipient.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

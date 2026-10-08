@@ -1,5 +1,7 @@
 pub mod conversation_manager;
 #[cfg(feature = "livekit")]
+pub mod dm_history;
+#[cfg(feature = "livekit")]
 pub mod dm_state;
 pub mod friends;
 pub mod history;
@@ -56,6 +58,21 @@ impl Plugin for ChatPanelPlugin {
         {
             app.add_console_command::<dm_state::DmStateCommand, _>(dm_state::dm_state);
             app.add_systems(Update, dm_state::pipe_dm_user_state_to_scene);
+            app.init_resource::<dm_history::DmConversations>();
+            app.add_systems(
+                Update,
+                (
+                    dm_history::load_dm_conversations,
+                    dm_history::record_dms,
+                    dm_history::handle_dm_history_requests,
+                )
+                    .chain(),
+            );
+            app.add_console_command::<dm_history::DmConversationsCommand, _>(
+                dm_history::dm_conversations,
+            );
+            app.add_console_command::<dm_history::DmHistoryCommand, _>(dm_history::dm_history);
+            app.add_console_command::<dm_history::DmDeleteCommand, _>(dm_history::dm_delete);
         }
 
         let native_chat = app.world().resource::<NativeUi>().chat;

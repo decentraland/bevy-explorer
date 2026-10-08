@@ -15,8 +15,8 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use strum::IntoEnumIterator;
 use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
-    BlockingStatusData, ChatMessage, DmUserStateData, FriendConnectivityEvent, FriendData,
-    FriendRequestData, FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent,
+    BlockingStatusData, ChatMessage, DmHistoryEntryData, DmUserStateData, FriendConnectivityEvent,
+    FriendData, FriendRequestData, FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent,
     LiveSceneInfo, PermanentPermissionItem, PermissionRequestEvent, ProfileChangedEvent,
     ProximityEvent, SatelliteView, SceneLoadingUi, SetAvatarData, SetPermanentPermission,
     SetSinglePermission, SystemApi, VoiceMessage,
@@ -1246,6 +1246,37 @@ pub fn op_close_dm_user_state_stream(state: Rc<RefCell<impl State>>, rid: u32) {
     if let Some(streams) = state.borrow_mut().try_borrow_mut::<DmUserStateStreams>() {
         streams.receivers.remove(&rid);
     }
+}
+
+pub async fn op_get_dm_conversations(
+    state: Rc<RefCell<impl State>>,
+) -> Result<Vec<String>, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetDmConversations(sx))?;
+    rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_get_dm_history(
+    state: Rc<RefCell<impl State>>,
+    address: String,
+) -> Result<Vec<DmHistoryEntryData>, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetDmHistory(address, sx))?;
+    rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+pub fn op_delete_dm_history(state: Rc<RefCell<impl State>>, address: String) {
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::DeleteDmHistory(address))
+        .unwrap();
 }
 
 pub async fn op_get_block_update_stream(state: Rc<RefCell<impl State>>) -> u32 {
