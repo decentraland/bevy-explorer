@@ -63,8 +63,11 @@ impl Plugin for ChatPanelPlugin {
                 (
                     dm_history::record_dms,
                     dm_history::handle_dm_history_requests,
-                ),
+                    dm_history::run_dm_store,
+                )
+                    .chain(),
             );
+            app.init_resource::<dm_history::DmStore>();
             app.add_console_command::<dm_history::DmHistoryCommand, _>(dm_history::dm_history);
             app.add_console_command::<dm_history::DmDeleteCommand, _>(dm_history::dm_delete);
         }
@@ -681,9 +684,11 @@ pub(crate) fn select_chat_tab(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn pipe_chats_to_scene(
     mut chat_events: EventReader<ChatEvent>,
     #[cfg(feature = "livekit")] mut dms: EventReader<comms::private_chat::PrivateChatReceived>,
+    #[cfg(feature = "livekit")] social: Res<social::SocialClient>,
     mut requests: EventReader<SystemApi>,
     mut senders: Local<Vec<RpcStreamSender<ChatMessage>>>,
     players: Query<&ForeignPlayer>,
@@ -740,9 +745,12 @@ fn pipe_chats_to_scene(
         }
     }
 
-    // incoming DMs: the partner is both the sender and the channel
+    // incoming DMs: the partner is both the sender and the channel; blocked senders are dropped
     #[cfg(feature = "livekit")]
-    for dm in dms.read() {
+    for dm in dms
+        .read()
+        .filter(|dm| !dm_state::blocked_by_me(&social, dm.from))
+    {
         let partner = format!("{:#x}", dm.from);
         for sender in senders.iter() {
             let _ = sender.send(ChatMessage {

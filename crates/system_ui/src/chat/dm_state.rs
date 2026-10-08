@@ -7,7 +7,10 @@ use bevy_console::ConsoleCommand;
 use common::{rpc::RpcStreamSender, structs::DmPrivacy, util::AsH160};
 use comms::{
     global_crdt::ForeignPlayer,
-    livekit::participant::{HostingParticipants, LivekitParticipant},
+    livekit::{
+        participant::{HostingParticipants, LivekitParticipant},
+        room::Connected,
+    },
     private_chat::{PrivateChatPrivacy, PrivateChatRoom},
 };
 use social::{FriendshipState, SocialClient, SocialStateChanged};
@@ -15,6 +18,9 @@ use system_bridge::{DmUserStateData, SystemApi};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DmUserState {
+    /// The local user is not in the private chat room (not yet joined, or it failed), so
+    /// nothing can be said about anyone else.
+    NotConnected,
     /// Friends and other users that both sides allow; the user is in the private chat room.
     Connected,
     /// The local user blocked them.
@@ -33,6 +39,7 @@ pub enum DmUserState {
 impl DmUserState {
     fn name(self) -> &'static str {
         match self {
+            Self::NotConnected => "notConnected",
             Self::Connected => "connected",
             Self::BlockedByOwnUser => "blockedByOwnUser",
             Self::PrivateMessagesBlockedByOwnUser => "privateMessagesBlockedByOwnUser",
@@ -54,6 +61,7 @@ pub struct DmUserStatus {
 pub struct DmUserStates<'w, 's> {
     social: Res<'w, SocialClient>,
     rooms: Query<'w, 's, &'static HostingParticipants, With<PrivateChatRoom>>,
+    connected_rooms: Query<'w, 's, (), (With<PrivateChatRoom>, With<Connected>)>,
     participants: Query<'w, 's, (&'static LivekitParticipant, &'static PrivateChatPrivacy)>,
     players: Query<'w, 's, &'static ForeignPlayer>,
 }
@@ -75,6 +83,12 @@ impl DmUserStates<'_, '_> {
     }
 
     pub fn resolve(&self, address: Address) -> DmUserStatus {
+        if self.connected_rooms.is_empty() {
+            return DmUserStatus {
+                online: false,
+                state: DmUserState::NotConnected,
+            };
+        }
         let (friend, blocked, blocked_by, own_privacy) = match self.social.0.as_ref() {
             Some(client) => (
                 self.social.get_state(address) == FriendshipState::Friends,
@@ -212,10 +226,19 @@ pub fn dm_state(mut input: ConsoleCommand<DmStateCommand>, states: DmUserStates)
         ),
     };
     input.reply_ok(format!(
-        "{address:#x}: {:?} (online: {})\n  friendship: {friendship}\n  blocked: {blocked}, blocked by: {blocked_by}\n  in private chat room: {:?}\n  in world: {}\n  own privacy: {own_privacy}",
+        "{address:#x}: {:?} (online: {})\n  own room connected: {}\n  friendship: {friendship}\n  blocked: {blocked}, blocked by: {blocked_by}\n  in private chat room: {:?}\n  in world: {}\n  own privacy: {own_privacy}",
         status.state,
         status.online,
+        !states.connected_rooms.is_empty(),
         states.in_private_chat_room(address),
         states.in_world(address),
     ));
+}
+
+/// True if the local user has blocked `address`; such senders' DMs are dropped on receipt.
+pub fn blocked_by_me(social: &SocialClient, address: Address) -> bool {
+    social
+        .0
+        .as_ref()
+        .is_some_and(|client| client.blocked.contains(&address))
 }

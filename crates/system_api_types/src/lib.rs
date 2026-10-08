@@ -349,8 +349,9 @@ pub struct DmHistoryEntryData {
 #[ts(export)]
 pub struct DmUserStateData {
     pub address: String,
-    /// "connected", "blockedByOwnUser", "privateMessagesBlockedByOwnUser",
-    /// "privateMessagesBlocked", "disconnected" or "otherClient"
+    /// "notConnected" (the local user is not in the private chat room), "connected",
+    /// "blockedByOwnUser", "privateMessagesBlockedByOwnUser", "privateMessagesBlocked",
+    /// "disconnected" or "otherClient"
     pub state: String,
     /// In the private chat room and not blocked by the local user.
     pub online: bool,
