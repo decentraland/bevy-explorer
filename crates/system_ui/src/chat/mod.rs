@@ -58,6 +58,8 @@ impl Plugin for ChatPanelPlugin {
         {
             app.add_console_command::<dm_state::DmStateCommand, _>(dm_state::dm_state);
             app.add_systems(Update, dm_state::pipe_dm_user_state_to_scene);
+            // after both chat pipes: a DM the HUD has been told about is appended before any read
+            // it asks for in response is handled
             app.add_systems(
                 Update,
                 (
@@ -65,7 +67,9 @@ impl Plugin for ChatPanelPlugin {
                     dm_history::handle_dm_history_requests,
                     dm_history::run_dm_store,
                 )
-                    .chain(),
+                    .chain()
+                    .after(pipe_chats_to_scene)
+                    .after(pipe_chats_from_scene),
             );
             app.init_resource::<dm_history::DmStore>();
             app.add_console_command::<dm_history::DmHistoryCommand, _>(dm_history::dm_history);
