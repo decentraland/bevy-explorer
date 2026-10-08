@@ -566,6 +566,14 @@ export function Chat({
   }, [unread])
   const seenId = useRef(lastId)
   const heightBefore = useRef(0)
+  // Switching tabs shows a different list: nothing in it is new, and nothing fades in.
+  useEffect(() => {
+    seenId.current = lastId
+    liveFrom.current = lastId + 1
+    setUnread(0)
+    setNewFrom(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat.channel])
   useEffect(() => {
     const el = listRef.current
     if (!el) return

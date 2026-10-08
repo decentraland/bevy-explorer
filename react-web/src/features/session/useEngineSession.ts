@@ -372,6 +372,11 @@ export function channelKey(channel: string): string {
   return channel === 'Nearby' ? channel : channel.toLowerCase()
 }
 
+/** A DM rides a wallet-named channel; anything else (Nearby, System) belongs to the Nearby list. */
+export function isDmChannel(channel: string): boolean {
+  return /^0x[0-9a-f]{40}$/i.test(channel)
+}
+
 export interface ChatState {
   /** The lines of the channel shown (`channel`). */
   messages: ChatLine[]
@@ -659,8 +664,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // A DM tab shows the engine's stored history and nothing else: `messages` holds Nearby only.
   // The store is re-read when the tab is shown and whenever a line lands on the shown tab.
   const [dmLines, setDmLines] = useState<Record<string, ChatLine[]>>({})
-  // History lines get ids below every live line (and the -1 greeting), so they never read as new.
-  const historyId = useRef(-2)
   const [members, setMembers] = useState<NearbyMember[]>([])
   const [speaking, setSpeaking] = useState<ReadonlySet<string>>(() => new Set())
   // Mirror cursor-lock into a ref so the run-once message handler reads it without a stale closure —
@@ -842,9 +845,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         }
         case 'chat': {
-          const key = channelKey(msg.chat.channel)
           if (!chatOpenRef.current) setChatUnread((n) => n + 1)
-          if (key === 'Nearby') {
+          if (!isDmChannel(msg.chat.channel)) {
             setMessages((prev) =>
               [...prev, { ...msg.chat, id: chatId.current++, ts: Date.now() }].slice(
                 -MAX_CHAT_LINES
@@ -854,6 +856,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           }
           // A DM (theirs, or the echo of ours) is already in the store by the time it is relayed:
           // the shown tab re-reads it, any other tab counts it.
+          const key = channelKey(msg.chat.channel)
           ensureConversation(key)
           if (chatOpenRef.current && channelRef.current === key) {
             driverRef.current?.send({ kind: 'dmHistory', address: key })
@@ -866,11 +869,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           const key = channelKey(msg.address)
           // a late answer for a tab closed meanwhile
           if (!openTabsRef.current.has(key)) break
-          const lines: ChatLine[] = msg.entries.slice(-MAX_CHAT_LINES).map((e) => ({
+          // Ids are the row's place in the store, so a re-read keeps every row it already showed
+          // and only the rows added since read as new.
+          const skipped = Math.max(0, msg.entries.length - MAX_CHAT_LINES)
+          const lines: ChatLine[] = msg.entries.slice(skipped).map((e, i) => ({
             sender: e.from,
             message: e.message,
             channel: key,
-            id: historyId.current--,
+            id: skipped + i,
             ts: e.receivedAt
           }))
           setDmLines((prev) => ({ ...prev, [key]: lines }))
@@ -1336,7 +1342,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setChannel(key)
     if (key !== 'Nearby') {
       setConversations((prev) => prev.map((c) => (c.address === key ? { ...c, unread: 0 } : c)))
-      driverRef.current?.send({ kind: 'dmHistory', address: key })
+      // with chat closed, opening it reads the tab
+      if (chatOpenRef.current) driverRef.current?.send({ kind: 'dmHistory', address: key })
     }
   }, [])
   const openConversation = useCallback((address: string) => {
@@ -1363,6 +1370,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     const key = channelKey(address)
     driverRef.current?.send({ kind: 'dmDelete', address: key })
     setDmLines((prev) => ({ ...prev, [key]: [] }))
+    // a read queued before the delete would answer with the old rows: this one answers after it
+    driverRef.current?.send({ kind: 'dmHistory', address: key })
   }, [])
   const channelMessages = useMemo(
     () => (channel === 'Nearby' ? messages : (dmLines[channel] ?? [])),

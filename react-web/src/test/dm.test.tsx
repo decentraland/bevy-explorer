@@ -6,7 +6,6 @@ import { renderSession, enterAsGuest } from './harness'
 // streams, and stored history; sends go to the channel shown.
 const BOB = '0x2b6d2d8cd70b5e9548e87f871d4642e0d6387cd7'
 
-
 describe('dm domain', () => {
   it('a relayed DM opens a tab, watches the partner, and counts unread while not shown', async () => {
     const h = renderSession()
@@ -19,6 +18,14 @@ describe('dm domain', () => {
     // nothing is read until the tab is shown, and the Nearby view never shows it
     expect(h.driver.last('dmHistory')).toBeUndefined()
     expect(chat.messages.some((m) => m.channel === BOB)).toBe(false)
+  })
+
+  it('a System line stays in the Nearby list instead of opening a tab', async () => {
+    const h = renderSession()
+    await enterAsGuest(h)
+    h.driver.emit({ kind: 'chat', chat: { sender: 'system', message: 'Realm set to foo', channel: 'System' } })
+    expect(h.session().chat.conversations).toEqual([])
+    expect(h.session().chat.messages.map((m) => m.message)).toContain('Realm set to foo')
   })
 
   it('showing a tab clears its unread, reads its history, and sends to that partner', async () => {
@@ -34,7 +41,6 @@ describe('dm domain', () => {
     const msgs = h.session().chat.messages
     expect(msgs.map((m) => m.message)).toEqual(['hello?'])
     expect(msgs[0].ts).toBe(1000)
-    expect(msgs.every((m) => m.id < 0)).toBe(true)
     act(() => h.session().chat.send('hi back'))
     expect(h.driver.last('sendChat')).toEqual({ kind: 'sendChat', message: 'hi back', channel: BOB })
   })
@@ -57,7 +63,10 @@ describe('dm domain', () => {
         { from: BOB, message: 'live', receivedAt: 2000 }
       ]
     })
-    expect(h.session().chat.messages.map((m) => m.message)).toEqual(['old', 'live'])
+    const msgs = h.session().chat.messages
+    expect(msgs.map((m) => m.message)).toEqual(['old', 'live'])
+    // the row it already showed keeps its id; only the added row is new
+    expect(msgs.map((m) => m.id)).toEqual([0, 1])
   })
 
   it('nearby traffic does not touch a DM tab', async () => {
@@ -131,8 +140,11 @@ describe('dm domain', () => {
     await enterAsGuest(h)
     act(() => h.session().chat.openConversation(BOB))
     h.driver.emit({ kind: 'dmHistory', address: BOB, entries: [{ from: BOB, message: 'hello?', receivedAt: 5 }] })
+    const reads = h.driver.sentOf('dmHistory').length
     act(() => h.session().chat.deleteHistory(BOB))
     expect(h.driver.last('dmDelete')).toEqual({ kind: 'dmDelete', address: BOB })
     expect(h.session().chat.messages).toEqual([])
+    // re-read behind the delete, so an answer already queued cannot bring the rows back
+    expect(h.driver.sentOf('dmHistory').length).toBe(reads + 1)
   })
 })
