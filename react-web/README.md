@@ -105,8 +105,8 @@ against their hashes (`host/editorScene.ts`), stores them, and the service worke
 
 The host signs for the editor with the signed-in wallet's stored identity; the host API never
 hands the key over. That is a property of the API, not an isolation boundary: the package runs in
-this page's own JavaScript realm, so the pin, its integrity hash and the allowed hosts are what
-keep untrusted code out. `signedFetch` signs only urls under the project storage service, with
+this page's own JavaScript realm, so whoever can publish the released package on its tag runs code
+here: the allowed hosts and the package's npm publish rights are what keep untrusted code out. `signedFetch` signs only urls under the project storage service, with
 the query, the host's fixed metadata and only the `accept`, `content-type`, `if-match` and
 `if-none-match` headers the editor sets; any method is allowed, so the editor can also delete the
 player's stored scenes. Beside a `decentraland.zone` or `.org` Worlds server, `signedFetch` also
@@ -139,25 +139,20 @@ In dev, `?bridgePort=<port>` loads the bridge scene from `http://localhost:<port
 
 ### Releasing the editor
 
-A production build has no editor at all (none of its code ships) until a package is pinned. To release one:
+A production build has no editor at all (none of its code ships) until a package is released.
+`RELEASED_EDITOR` in `src/features/editorHost/config.ts` names the npm package and the dist-tag the
+page follows (`@dcl-regenesislabs/web-editor@latest`) and the deployment hostnames that offer
+Create (loopback always does). When Create opens, the page asks the npm registry which version the
+tag names (the registry is not cached; jsDelivr caches a tag for days) and loads that version's
+immutable directory from jsDelivr: `editor.js`, then the editor scene named by `scene/about` and
+the content files it lists, each checked against its hash before it is spawned
+(`host/editorScene.ts`). So a release is a publish of the editor's `packages/web/dist` on that tag
+(the editor's `web-package` workflow, or `npm dist-tag add <package>@<version> latest`), with no
+explorer change or deploy.
 
-1. Publish the editor's `packages/web/dist` to a **versioned, immutable** CDN directory that sends
-   `Access-Control-Allow-Origin: *` and `Cross-Origin-Resource-Policy: cross-origin` (the page is
-   cross-origin isolated, and `editor.js` loads with `crossorigin`).
-2. Set `PINNED_EDITOR` in `src/features/editorHost/config.ts`:
-   - `base`: that directory, with the trailing slash;
-   - `editorJsIntegrity`: `sha384-` + `openssl dgst -sha384 -binary editor.js | openssl base64 -A`.
-     The editor's own manifest of its worker, wasm, snapshot and css (sha384 each) is inside
-     `editor.js`, so this one hash covers them; checking those is the editor's job, not the page's;
-   - `editorSceneEntity`: the editor scene's entity id, the `urn:decentraland:entity:<id>` in
-     `scene/about` (also printed by `export-static`). The page spawns only that entity, from bytes
-     it has checked against it; a file that does not match is refused and nothing is spawned;
-   - `hosts`: the deployment hostnames that offer Create (loopback always does).
-
-   `PINNED_SERVICES` in `source.ts` says which project service and Worlds server that package talks to.
-
-A pinned production build (`vite build`) loads the released package on loopback too; the dev
-server always serves its own `/editor/`.
+`pinnedServices` in `source.ts` says which project service and Worlds server the released package
+talks to. A production build (`vite build`) follows the release on loopback too; the dev server
+always serves its own `/editor/`.
 
 ## Deploy (production)
 

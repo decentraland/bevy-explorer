@@ -1,16 +1,38 @@
 // Where the editor package comes from and which services it talks to (README "Releasing the
 // editor"). Read by the Create page's chunk only; config.ts holds what the HUD itself needs.
 
-import { isLoopback, PINNED_EDITOR } from './config'
+import { isLoopback, RELEASED_EDITOR } from './config'
 
-/** A released editor package: everything the page runs of it is checked against this. */
+/** An editor package the page runs from one directory. */
 export interface EditorPin {
   /** The package's versioned directory url, with the trailing slash. */
   base: string
-  /** SRI hash of `<base>editor.js` (it covers the editor's own manifest); null for a dev package. */
+  /** SRI hash of `<base>editor.js` (it covers the editor's own manifest); null: not checked. */
   editorJsIntegrity: string | null
-  /** Entity id of the package's editor scene, `<base>scene/<id>`; null: `scene/about`'s (dev). */
+  /** Entity id of the package's editor scene, `<base>scene/<id>`; null: `scene/about`'s. */
   editorSceneEntity: string | null
+}
+
+/** A published package followed by npm dist-tag: the tag resolves to a version each time the
+ *  editor loads, so a release is a publish on that tag and no explorer deploy. */
+export interface EditorRelease {
+  package: string
+  tag: string
+}
+
+const REGISTRY = 'https://registry.npmjs.org'
+const CDN = 'https://cdn.jsdelivr.net/npm'
+// the registry's answer builds a url: only a version gets in
+const VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/
+
+/** The pin a release resolves to now. The CDN caches a tag for days, so the registry (never
+ *  cached) names the version and the CDN serves that immutable directory. */
+export async function releasedPin(release: EditorRelease): Promise<EditorPin> {
+  const res = await fetch(`${REGISTRY}/${release.package}/${release.tag}`, { cache: 'no-cache' })
+  if (!res.ok) throw new Error(`the npm registry answered ${res.status} for ${release.package}@${release.tag}`)
+  const { version } = (await res.json()) as { version?: unknown }
+  if (typeof version !== 'string' || !VERSION.test(version)) throw new Error(`${release.package}@${release.tag} names no version`)
+  return { base: `${CDN}/${release.package}@${version}/`, editorJsIntegrity: null, editorSceneEntity: null }
 }
 
 export interface EditorServices {
@@ -75,12 +97,21 @@ function serviceUrl(raw: string | null): string | null {
   return /^https?:$/.test(url.protocol) && isLoopback(url.hostname) ? (url.origin + url.pathname).replace(/\/+$/, '') : null
 }
 
+const ownPackage = (hostname: string): boolean => isLoopback(hostname) && (import.meta.env.DEV || RELEASED_EDITOR == null)
+
+/** Whether this page has an editor to open: what `editorSource` resolves, known without asking. */
+export const hasEditor = (hostname: string): boolean => ownPackage(hostname) || RELEASED_EDITOR != null
+
 /** The editor this page opens, or null when it has none. A dev server on loopback serves its
- *  own package (vite.config.ts `editorPackage`); a production build uses the pin wherever it runs. */
-export function editorSource(search: string, hostname: string, pageDir: string, baseDomain: string): EditorSource | null {
+ *  own package (vite.config.ts `editorPackage`); a production build follows the release wherever
+ *  it runs. */
+export async function editorSource(search: string, hostname: string, pageDir: string, baseDomain: string): Promise<EditorSource | null> {
   const loopback = isLoopback(hostname)
-  const dev: EditorPin = { base: `${pageDir}editor/`, editorJsIntegrity: null, editorSceneEntity: null }
-  const pin = loopback && (import.meta.env.DEV || PINNED_EDITOR == null) ? dev : PINNED_EDITOR
+  const pin: EditorPin | null = ownPackage(hostname)
+    ? { base: `${pageDir}editor/`, editorJsIntegrity: null, editorSceneEntity: null }
+    : RELEASED_EDITOR == null
+      ? null
+      : await releasedPin(RELEASED_EDITOR)
   if (pin == null) return null
   if (!loopback) return { ...pin, services: pinnedServices(baseDomain) }
   const q = new URLSearchParams(search)
