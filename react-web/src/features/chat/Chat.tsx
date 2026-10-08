@@ -376,21 +376,26 @@ const BLOCKED_COPY: Record<Exclude<DmUserState, 'connected'>, string> = {
   otherClient: 'User is not connected to chat. They may be using a client without DM support.'
 }
 
+/** The words in the own-privacy copy that become the settings link. */
+const SETTINGS_LINK = 'DM settings'
+
 /** Replaces the input while the partner cannot be messaged. The own-setting case links to settings. */
 function BlockedInput({ state, onSettings }: { state: Exclude<DmUserState, 'connected'>; onSettings?: () => void }): React.JSX.Element {
-  const own = state === 'privateMessagesBlockedByOwnUser'
+  const copy = BLOCKED_COPY[state]
+  const [before, after] = copy.split(SETTINGS_LINK)
+  const linked = state === 'privateMessagesBlockedByOwnUser' && onSettings && after != null
   return (
     <div className={`${styles.input} ${styles.blocked}`} role="status">
-      {own && onSettings ? (
+      {linked ? (
         <>
-          Add this user as a friend to chat, or update your{' '}
+          {before}
           <button type="button" className={styles.blockedLink} onClick={onSettings}>
-            DM settings
-          </button>{' '}
-          to connect with everyone.
+            {SETTINGS_LINK}
+          </button>
+          {after}
         </>
       ) : (
-        BLOCKED_COPY[state]
+        copy
       )}
     </div>
   )
