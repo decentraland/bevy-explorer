@@ -7,6 +7,7 @@ import {
   bridgeChannelName,
   type BindingEntry,
   type Community,
+  type DmHistoryEntry,
   type Emote,
   type Envelope,
   type Outfit,
@@ -303,6 +304,26 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     ],
     namesForExtraSlots: []
   }
+  // DM history per partner, as the engine's local store would hold it; one conversation is seeded.
+  const mojito = '0x5854cce95d5e25817b41f4c41f06b695a83bc495'
+  const dmStores = new Map<string, DmHistoryEntry[]>([
+    [
+      mojito,
+      [
+        { from: mojito, message: 'you around later?', receivedAt: Date.now() - 86_400_000 },
+        { from: o.userId, message: 'yeah, after 8', receivedAt: Date.now() - 86_000_000 }
+      ]
+    ]
+  ])
+  const dmStore = (address: string): DmHistoryEntry[] => {
+    const key = address.toLowerCase()
+    let store = dmStores.get(key)
+    if (store == null) {
+      store = []
+      dmStores.set(key, store)
+    }
+    return store
+  }
   const ch = new BroadcastChannel(bridgeChannelName())
   const wait = (ms: number): Promise<void> =>
     new Promise((r) => setTimeout(r, ms))
@@ -516,7 +537,8 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     }
 
     if (msg.kind === 'sendChat') {
-      // Echo the local player's message back (the engine would broadcast it).
+      // Echo the local player's message back (the engine would broadcast it); a DM is stored first.
+      if (msg.channel !== 'Nearby') dmStore(msg.channel).push({ from: o.userId, message: msg.message, receivedAt: Date.now() })
       reply({ kind: 'chat', chat: { sender: o.userId, message: msg.message, channel: msg.channel } })
       return
     }
@@ -533,18 +555,13 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       return
     }
     if (msg.kind === 'dmHistory') {
-      const mojito = '0x5854cce95d5e25817b41f4c41f06b695a83bc495'
-      const entries =
-        msg.address.toLowerCase() === mojito
-          ? [
-              { from: mojito, message: 'you around later?', receivedAt: Date.now() - 86_400_000 },
-              { from: o.userId, message: 'yeah, after 8', receivedAt: Date.now() - 86_000_000 }
-            ]
-          : []
-      reply({ kind: 'dmHistory', address: msg.address, entries })
+      reply({ kind: 'dmHistory', address: msg.address, entries: [...dmStore(msg.address)] })
       return
     }
-    if (msg.kind === 'dmDelete') return
+    if (msg.kind === 'dmDelete') {
+      dmStore(msg.address).length = 0
+      return
+    }
     if (msg.kind === 'getMutualFriends') {
       reply({
         kind: 'mutualFriends',

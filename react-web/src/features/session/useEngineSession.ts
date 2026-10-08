@@ -365,8 +365,6 @@ export interface Conversation {
   /** From the engine's per-tab state stream; null until the first report. */
   state: DmUserState | null
   online: boolean
-  /** Stored history requested once when the tab first appears. */
-  historyLoaded: boolean
 }
 
 /** A chat line's tab: 'Nearby', or the partner wallet in lowercase. */
@@ -657,6 +655,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [conversations, setConversations] = useState<Conversation[]>([])
   const conversationsRef = useRef(conversations)
   conversationsRef.current = conversations
+  // A DM tab shows the engine's stored history and nothing else: `messages` holds Nearby only.
+  // The store is re-read when the tab is shown and whenever a line lands on the shown tab.
+  const [dmLines, setDmLines] = useState<Record<string, ChatLine[]>>({})
   // History lines get ids below every live line (and the -1 greeting), so they never read as new.
   const historyId = useRef(-2)
   const [members, setMembers] = useState<NearbyMember[]>([])
@@ -840,34 +841,38 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         }
         case 'chat': {
-          setMessages((prev) =>
-            [...prev, { ...msg.chat, id: chatId.current++, ts: Date.now() }].slice(
-              -MAX_CHAT_LINES
-            )
-          )
-          if (!chatOpenRef.current) setChatUnread((n) => n + 1)
           const key = channelKey(msg.chat.channel)
-          if (key !== 'Nearby') {
-            ensureConversation(key)
-            if (!chatOpenRef.current || channelRef.current !== key) {
-              setConversations((prev) => prev.map((c) => (c.address === key ? { ...c, unread: c.unread + 1 } : c)))
-            }
+          if (!chatOpenRef.current) setChatUnread((n) => n + 1)
+          if (key === 'Nearby') {
+            setMessages((prev) =>
+              [...prev, { ...msg.chat, id: chatId.current++, ts: Date.now() }].slice(
+                -MAX_CHAT_LINES
+              )
+            )
+            break
+          }
+          // A DM (theirs, or the echo of ours) is already in the store by the time it is relayed:
+          // the shown tab re-reads it, any other tab counts it.
+          ensureConversation(key)
+          if (chatOpenRef.current && channelRef.current === key) {
+            driverRef.current?.send({ kind: 'dmHistory', address: key })
+          } else {
+            setConversations((prev) => prev.map((c) => (c.address === key ? { ...c, unread: c.unread + 1 } : c)))
           }
           break
         }
         case 'dmHistory': {
           const key = channelKey(msg.address)
-          const lines: ChatLine[] = msg.entries.map((e) => ({
+          // a late answer for a tab closed meanwhile
+          if (!conversationsRef.current.some((c) => c.address === key)) break
+          const lines: ChatLine[] = msg.entries.slice(-MAX_CHAT_LINES).map((e) => ({
             sender: e.from,
             message: e.message,
             channel: key,
             id: historyId.current--,
             ts: e.receivedAt
           }))
-          // The store holds every DM up to the request (the engine serialises its appends before
-          // the read), so the answer simply becomes the tab's lines.
-          setMessages((prev) => [...lines, ...prev.filter((m) => channelKey(m.channel) !== key)])
-          setConversations((prev) => prev.map((c) => (c.address === key ? { ...c, historyLoaded: true } : c)))
+          setDmLines((prev) => ({ ...prev, [key]: lines }))
           break
         }
         case 'dmUserState': {
@@ -1298,9 +1303,16 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setChatOpen((o) => !o)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  // Opening chat (any path — sidebar, Enter, a queued mention) clears the unread badge.
+  // Opening chat (any path — sidebar, Enter, a queued mention) clears the unread badge, and the
+  // shown DM tab's: its lines are on screen again, re-read in case any landed while it was closed.
   useEffect(() => {
-    if (chatOpen) setChatUnread(0)
+    if (!chatOpen) return
+    setChatUnread(0)
+    const key = channelRef.current
+    if (key !== 'Nearby') {
+      setConversations((prev) => prev.map((c) => (c.address === key ? { ...c, unread: 0 } : c)))
+      driverRef.current?.send({ kind: 'dmHistory', address: key })
+    }
   }, [chatOpen])
   // "Mention" from a profile card opens chat and queues the @name; Chat consumes it into its draft.
   const mentionInChat = useCallback((name: string) => {
@@ -1311,19 +1323,21 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   }, [])
   const consumeMention = useCallback(() => setPendingMention(null), [])
   // A DM tab for `key` (lowercase wallet), added on first sight: the engine follows the partner's
-  // state while the tab is open, and the stored history loads once.
+  // state while the tab is open. Its lines load when it is shown.
   function ensureConversation(key: string): void {
     if (conversationsRef.current.some((c) => c.address === key)) return
-    const next: Conversation = { address: key, unread: 0, state: null, online: false, historyLoaded: false }
+    const next: Conversation = { address: key, unread: 0, state: null, online: false }
     conversationsRef.current = [...conversationsRef.current, next]
     setConversations(conversationsRef.current)
     driverRef.current?.send({ kind: 'dmWatch', address: key, on: true })
-    driverRef.current?.send({ kind: 'dmHistory', address: key })
   }
   const selectChannel = useCallback((next: string) => {
     const key = channelKey(next)
     setChannel(key)
-    if (key !== 'Nearby') setConversations((prev) => prev.map((c) => (c.address === key ? { ...c, unread: 0 } : c)))
+    if (key !== 'Nearby') {
+      setConversations((prev) => prev.map((c) => (c.address === key ? { ...c, unread: 0 } : c)))
+      driverRef.current?.send({ kind: 'dmHistory', address: key })
+    }
   }, [])
   const openConversation = useCallback((address: string) => {
     const key = channelKey(address)
@@ -1337,17 +1351,23 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     const key = channelKey(address)
     conversationsRef.current = conversationsRef.current.filter((c) => c.address !== key)
     setConversations(conversationsRef.current)
-    // its lines go too: reopening reloads them from the store
-    setMessages((prev) => prev.filter((m) => channelKey(m.channel) !== key))
+    setDmLines((prev) => {
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
     driverRef.current?.send({ kind: 'dmWatch', address: key, on: false })
     if (channelRef.current === key) setChannel('Nearby')
   }, [])
   const deleteHistory = useCallback((address: string) => {
     const key = channelKey(address)
     driverRef.current?.send({ kind: 'dmDelete', address: key })
-    setMessages((prev) => prev.filter((m) => channelKey(m.channel) !== key))
+    setDmLines((prev) => ({ ...prev, [key]: [] }))
   }, [])
-  const channelMessages = useMemo(() => messages.filter((m) => channelKey(m.channel) === channel), [messages, channel])
+  const channelMessages = useMemo(
+    () => (channel === 'Nearby' ? messages : (dmLines[channel] ?? [])),
+    [messages, dmLines, channel]
+  )
 
   // The full-screen main menu — mirrors App's `pageOpen`.
   const menuPageOpen =
@@ -1966,6 +1986,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setChannel('Nearby')
     conversationsRef.current = []
     setConversations([])
+    setDmLines({})
     setChatUnread(0)
   }, [closeAllPanels])
 

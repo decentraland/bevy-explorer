@@ -8,7 +8,7 @@ import { fakeSession } from './harness'
 // DOMAIN: direct messages in the chat panel — the conversation rail, the DM title bar and its
 // menu, and the input replaced by the reason while the partner cannot be messaged.
 const BOB = '0x2b6d2d8cd70b5e9548e87f871d4642e0d6387cd7'
-const convo = (over: Partial<Conversation> = {}): Conversation => ({ address: BOB, unread: 0, state: 'connected', online: true, historyLoaded: true, ...over })
+const convo = (over: Partial<Conversation> = {}): Conversation => ({ address: BOB, unread: 0, state: 'connected', online: true, ...over })
 const chatWith = (over: Partial<ChatState>): ChatState => ({ ...fakeSession().chat, open: true, ...over })
 
 describe('DM chat panel', () => {

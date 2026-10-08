@@ -6,38 +6,49 @@ import { renderSession, enterAsGuest } from './harness'
 // streams, and stored history; sends go to the channel shown.
 const BOB = '0x2b6d2d8cd70b5e9548e87f871d4642e0d6387cd7'
 
+
 describe('dm domain', () => {
-  it('a relayed DM opens a tab, watches the partner, loads history, and counts unread while not shown', async () => {
+  it('a relayed DM opens a tab, watches the partner, and counts unread while not shown', async () => {
     const h = renderSession()
     await enterAsGuest(h)
     h.driver.emit({ kind: 'chat', chat: { sender: BOB, message: 'hello?', channel: BOB } })
     const chat = h.session().chat
     expect(chat.channel).toBe('Nearby')
-    expect(chat.conversations).toEqual([{ address: BOB, unread: 1, state: null, online: false, historyLoaded: false }])
+    expect(chat.conversations).toEqual([{ address: BOB, unread: 1, state: null, online: false }])
     expect(h.driver.last('dmWatch')).toEqual({ kind: 'dmWatch', address: BOB, on: true })
-    expect(h.driver.last('dmHistory')).toEqual({ kind: 'dmHistory', address: BOB })
-    // the Nearby view does not show it
+    // nothing is read until the tab is shown, and the Nearby view never shows it
+    expect(h.driver.last('dmHistory')).toBeUndefined()
     expect(chat.messages.some((m) => m.channel === BOB)).toBe(false)
   })
 
-  it('selecting a tab shows its lines, clears its unread, and sends to that partner', async () => {
+  it('showing a tab clears its unread, reads its history, and sends to that partner', async () => {
     const h = renderSession()
     await enterAsGuest(h)
     h.driver.emit({ kind: 'chat', chat: { sender: BOB, message: 'hello?', channel: BOB } })
     act(() => h.session().chat.select(BOB))
-    const chat = h.session().chat
-    expect(chat.channel).toBe(BOB)
-    expect(chat.conversations[0].unread).toBe(0)
-    expect(chat.messages.map((m) => m.message)).toEqual(['hello?'])
+    expect(h.session().chat.channel).toBe(BOB)
+    expect(h.session().chat.conversations[0].unread).toBe(0)
+    expect(h.driver.last('dmHistory')).toEqual({ kind: 'dmHistory', address: BOB })
+    expect(h.session().chat.messages).toEqual([])
+    h.driver.emit({ kind: 'dmHistory', address: BOB, entries: [{ from: BOB, message: 'hello?', receivedAt: 1000 }] })
+    const msgs = h.session().chat.messages
+    expect(msgs.map((m) => m.message)).toEqual(['hello?'])
+    expect(msgs[0].ts).toBe(1000)
+    expect(msgs.every((m) => m.id < 0)).toBe(true)
     act(() => h.session().chat.send('hi back'))
     expect(h.driver.last('sendChat')).toEqual({ kind: 'sendChat', message: 'hi back', channel: BOB })
   })
 
-  it('stored history replaces what the tab showed, stamped with its stored time', async () => {
+  it('a line landing on the shown tab re-reads the store instead of being appended', async () => {
     const h = renderSession()
     await enterAsGuest(h)
-    // the DM that opened the tab is already in the store when the history answer comes
+    act(() => h.session().chat.openConversation(BOB))
+    h.driver.emit({ kind: 'dmHistory', address: BOB, entries: [{ from: BOB, message: 'old', receivedAt: 1000 }] })
+    const reads = h.driver.sentOf('dmHistory').length
     h.driver.emit({ kind: 'chat', chat: { sender: BOB, message: 'live', channel: BOB } })
+    expect(h.driver.sentOf('dmHistory').length).toBe(reads + 1)
+    expect(h.session().chat.conversations[0].unread).toBe(0)
+    expect(h.session().chat.messages.map((m) => m.message)).toEqual(['old'])
     h.driver.emit({
       kind: 'dmHistory',
       address: BOB,
@@ -46,19 +57,46 @@ describe('dm domain', () => {
         { from: BOB, message: 'live', receivedAt: 2000 }
       ]
     })
-    act(() => h.session().chat.select(BOB))
-    const msgs = h.session().chat.messages
-    expect(msgs.map((m) => m.message)).toEqual(['old', 'live'])
-    expect(msgs[0].ts).toBe(1000)
-    expect(msgs.every((m) => m.id < 0)).toBe(true)
-    expect(h.session().chat.conversations[0].historyLoaded).toBe(true)
+    expect(h.session().chat.messages.map((m) => m.message)).toEqual(['old', 'live'])
   })
 
-  it('closing a tab drops its lines, so reopening reloads them once', async () => {
+  it('nearby traffic does not touch a DM tab', async () => {
     const h = renderSession()
     await enterAsGuest(h)
-    h.driver.emit({ kind: 'chat', chat: { sender: BOB, message: 'hello?', channel: BOB } })
+    act(() => h.session().chat.openConversation(BOB))
+    h.driver.emit({ kind: 'dmHistory', address: BOB, entries: [{ from: BOB, message: 'old', receivedAt: 1000 }] })
+    for (let i = 0; i < 250; i++) {
+      h.driver.emit({ kind: 'chat', chat: { sender: '0x1', message: `n${i}`, channel: 'Nearby' } })
+    }
+    expect(h.session().chat.messages.map((m) => m.message)).toEqual(['old'])
+    act(() => h.session().chat.select('Nearby'))
+    expect(h.session().chat.messages.length).toBe(200)
+  })
+
+  it('reopening chat on a DM tab clears its unread and re-reads it', async () => {
+    const h = renderSession()
+    await enterAsGuest(h)
+    act(() => h.session().chat.openConversation(BOB))
+    act(() => h.session().chat.toggle())
+    expect(h.session().chat.open).toBe(false)
+    h.driver.emit({ kind: 'chat', chat: { sender: BOB, message: 'while closed', channel: BOB } })
+    expect(h.session().chat.conversations[0].unread).toBe(1)
+    expect(h.session().chat.unread).toBe(1)
+    const reads = h.driver.sentOf('dmHistory').length
+    act(() => h.session().chat.toggle())
+    expect(h.session().chat.conversations[0].unread).toBe(0)
+    expect(h.session().chat.unread).toBe(0)
+    expect(h.driver.sentOf('dmHistory').length).toBe(reads + 1)
+  })
+
+  it('closing a tab drops its lines and a late answer for it', async () => {
+    const h = renderSession()
+    await enterAsGuest(h)
+    act(() => h.session().chat.openConversation(BOB))
+    h.driver.emit({ kind: 'dmHistory', address: BOB, entries: [{ from: BOB, message: 'hello?', receivedAt: 5 }] })
+    expect(h.session().chat.messages.length).toBe(1)
     act(() => h.session().chat.closeConversation(BOB))
+    h.driver.emit({ kind: 'dmHistory', address: BOB, entries: [{ from: BOB, message: 'hello?', receivedAt: 5 }] })
     act(() => h.session().chat.openConversation(BOB))
     expect(h.session().chat.messages).toEqual([])
     h.driver.emit({ kind: 'dmHistory', address: BOB, entries: [{ from: BOB, message: 'hello?', receivedAt: 5 }] })
@@ -91,8 +129,8 @@ describe('dm domain', () => {
   it('deleteHistory asks the engine and clears the tab\'s lines', async () => {
     const h = renderSession()
     await enterAsGuest(h)
-    h.driver.emit({ kind: 'chat', chat: { sender: BOB, message: 'hello?', channel: BOB } })
-    act(() => h.session().chat.select(BOB))
+    act(() => h.session().chat.openConversation(BOB))
+    h.driver.emit({ kind: 'dmHistory', address: BOB, entries: [{ from: BOB, message: 'hello?', receivedAt: 5 }] })
     act(() => h.session().chat.deleteHistory(BOB))
     expect(h.driver.last('dmDelete')).toEqual({ kind: 'dmDelete', address: BOB })
     expect(h.session().chat.messages).toEqual([])
