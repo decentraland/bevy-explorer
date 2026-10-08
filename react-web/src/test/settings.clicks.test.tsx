@@ -67,3 +67,17 @@ describe('settings panel controls', () => {
     expect(vi.mocked(settings.set)).toHaveBeenCalledWith('quality', 2)
   })
 })
+
+// An engine value below zero means the setting is not known yet (server-owned, e.g. DM
+// privacy before the social service answers): rendered, but not editable.
+describe('settings panel unset controls', () => {
+  it('a toggle with a negative value is disabled and does not set', async () => {
+    const UNSET = base({ name: 'dm_privacy', category: 'chat', namedVariants: [{ name: 'Everyone', description: '' }, { name: 'Only friends', description: '' }], value: -1, default: 0, maxValue: 2 })
+    const settings: SettingsState = { ...fakeSession().settings, open: true, list: [UNSET], set: vi.fn() }
+    render(<SettingsPanel settings={settings} bindings={fakeSession().bindings} profile={fakeProfileState()} onNavigate={vi.fn()} />)
+    const toggle = screen.getByRole('switch', { name: 'dm_privacy' })
+    expect(toggle).toBeDisabled()
+    await userEvent.click(toggle)
+    expect(vi.mocked(settings.set)).not.toHaveBeenCalled()
+  })
+})

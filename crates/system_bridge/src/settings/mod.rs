@@ -23,7 +23,7 @@ use bevy::{
 use cache_size::CacheSizeSetting;
 use cel_shading_setting::CelShadingSetting;
 #[cfg(not(target_arch = "wasm32"))]
-use common::structs::SsaoSetting;
+use common::structs::{DmPrivacy, SsaoSetting};
 use common::{
     sets::SceneSets,
     structs::{
@@ -55,6 +55,7 @@ pub mod cache_size;
 pub mod camera_smoothing;
 pub mod cel_shading_setting;
 pub mod constrain_ui;
+pub mod dm_privacy;
 pub mod dof_setting;
 pub mod fog_settings;
 pub mod frame_rate;
@@ -175,6 +176,8 @@ impl Plugin for SettingBridgePlugin {
         add_int_setting::<SystemVolumeSetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<AvatarVolumeSetting>(app, &mut settings, &mut schedule, &config);
 
+        add_enum_setting::<DmPrivacy>(app, &mut settings, &mut schedule, &config);
+
         add_enum_setting::<ConstrainUiSetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<WalkSpeedSetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<JogSpeedSetting>(app, &mut settings, &mut schedule, &config);
@@ -202,6 +205,7 @@ impl Plugin for SettingBridgePlugin {
             (
                 record_cameras,
                 apply_settings.run_if(resource_changed::<AppConfig>),
+                refresh_settings.run_if(resource_changed::<AppConfig>),
             )
                 .chain(),
         );
@@ -212,6 +216,7 @@ pub enum SettingCategory {
     Gameplay,
     Graphics,
     Audio,
+    Chat,
     Performance,
     Controls,
 }
@@ -222,6 +227,7 @@ impl Display for SettingCategory {
             SettingCategory::Gameplay => "Gameplay",
             SettingCategory::Graphics => "Graphics",
             SettingCategory::Audio => "Audio",
+            SettingCategory::Chat => "Chat",
             SettingCategory::Performance => "Performance",
             SettingCategory::Controls => "Controls",
         })
@@ -257,6 +263,10 @@ pub trait AppSetting: Eq + 'static {
 pub trait EnumAppSetting: AppSetting + Sized + std::fmt::Debug {
     fn variants() -> Vec<Self>;
     fn name(&self) -> String;
+    /// True while the value is not yet known (reported as -1, which the panel shows disabled).
+    fn is_unset(_config: &AppConfig) -> bool {
+        false
+    }
 }
 
 pub trait IntAppSetting: AppSetting + Sized + std::fmt::Debug {
@@ -279,6 +289,8 @@ pub struct Setting {
     apply: Option<
         Box<dyn Fn(&mut AppConfig, f32) -> Result<f32, anyhow::Error> + Send + Sync + 'static>,
     >,
+    /// The displayed value for the current config, for settings changed outside `set_value`.
+    load: Box<dyn Fn(&AppConfig) -> f32 + Send + Sync + 'static>,
 }
 
 #[derive(Resource)]
@@ -317,6 +329,13 @@ impl Settings {
         Ok(())
     }
 
+    /// Re-reads every displayed value from `config`.
+    pub fn refresh(&mut self, config: &AppConfig) {
+        for setting in self.settings.iter_mut() {
+            setting.info.value = (setting.load)(config);
+        }
+    }
+
     pub fn add_int_setting<S: IntAppSetting>(&mut self, config: &AppConfig) {
         let value = S::load(config);
         self.settings.push(Setting {
@@ -338,24 +357,23 @@ impl Settings {
                     Ok(new_value.value() as f32 * S::scale())
                 },
             )),
+            load: Box::new(|config: &AppConfig| S::load(config).value() as f32 * S::scale()),
         });
     }
 
     pub fn add_enum_setting<S: EnumAppSetting>(&mut self, config: &AppConfig) {
+        fn index_of<S: EnumAppSetting>(value: &S) -> usize {
+            S::variants().iter().position(|s| s == value).unwrap_or(0)
+        }
+        fn displayed<S: EnumAppSetting>(config: &AppConfig) -> f32 {
+            if S::is_unset(config) {
+                -1.0
+            } else {
+                index_of(&S::load(config)) as f32
+            }
+        }
         let value = S::load(config);
-        let index = S::variants()
-            .iter()
-            .enumerate()
-            .find(|(_, s)| **s == value)
-            .map(|(ix, _)| ix)
-            .unwrap_or(0);
-        let default_value = S::load(&AppConfig::default());
-        let default_index = S::variants()
-            .iter()
-            .enumerate()
-            .find(|(_, s)| **s == default_value)
-            .map(|(ix, _)| ix)
-            .unwrap_or(0);
+        let default_index = index_of(&S::load(&AppConfig::default()));
         self.settings.push(Setting {
             info: SettingInfo {
                 name: S::title(),
@@ -370,7 +388,7 @@ impl Settings {
                         description: v.description(),
                     })
                     .collect(),
-                value: index as f32,
+                value: displayed::<S>(config),
                 default: default_index as f32,
                 step_size: 1.0,
             },
@@ -383,6 +401,7 @@ impl Settings {
                     Ok(value as usize as f32)
                 },
             )),
+            load: Box::new(|config: &AppConfig| displayed::<S>(config)),
         });
     }
 }
@@ -408,6 +427,10 @@ fn handle_settings(
             _ => (),
         }
     }
+}
+
+fn refresh_settings(mut settings: ResMut<Settings>, config: Res<AppConfig>) {
+    settings.refresh(&config);
 }
 
 #[derive(Resource)]

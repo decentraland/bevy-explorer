@@ -61,6 +61,7 @@ impl Plugin for SocialPlugin {
                 pipe_friendship_events_to_scene,
                 pipe_connectivity_events_to_scene,
                 pipe_block_updates_to_scene,
+                sync_dm_privacy,
             ),
         );
         #[cfg(feature = "social")]
@@ -129,7 +130,52 @@ fn restart_social(
     }
 }
 
+use common::structs::AppConfig;
 pub use common::structs::{DmPrivacy, DmPrivacyOf};
+
+/// Keeps the DM privacy setting and the social service in step. The config slot is not
+/// persisted. When the client initializes, an unset slot takes the server value and a slot the
+/// user already set is upserted; from then on a slot that differs from the server value is a
+/// user change to upsert. A change is requested once and left pending until the server echoes
+/// it, so a slow or failed upsert is not re-sent every frame. The slot is cleared again when the
+/// client goes away, so the next account does not inherit it.
+fn sync_dm_privacy(
+    mut config: ResMut<AppConfig>,
+    social: Res<SocialClient>,
+    mut synced_from_server: Local<bool>,
+    mut requested: Local<Option<DmPrivacy>>,
+) {
+    let Some(client) = social.0.as_ref().filter(|c| c.is_initialized) else {
+        if *synced_from_server {
+            config.dm_privacy = None;
+            *synced_from_server = false;
+        }
+        *requested = None;
+        return;
+    };
+    if !*synced_from_server {
+        *synced_from_server = true;
+        *requested = None;
+        if config.dm_privacy.is_none() {
+            config.dm_privacy = Some(client.dm_privacy);
+            return;
+        }
+    }
+    let Some(wanted) = config.dm_privacy else {
+        return;
+    };
+    if wanted == client.dm_privacy {
+        *requested = None;
+        return;
+    }
+    if *requested == Some(wanted) {
+        return;
+    }
+    match client.upsert_social_settings(wanted) {
+        Ok(_) => *requested = Some(wanted),
+        Err(e) => warn!("[social] failed to request dm privacy change: {e}"),
+    }
+}
 
 /// `/dm_privacy` prints the local user's DM privacy; `/dm_privacy all|friends` sets it.
 #[cfg(feature = "social")]

@@ -26,14 +26,18 @@ function isSlider(s: Setting): boolean {
 }
 
 function Control({ s, onSet }: { s: Setting; onSet: (name: string, value: number) => void }): React.JSX.Element {
+  // A negative value is the engine saying the setting is not known yet (e.g. a server-owned
+  // one before the service answers): shown, but not editable.
+  const unset = s.value < 0
   if (isBinary(s)) {
-    return <Toggle checked={s.value >= 1} onChange={(c) => onSet(s.name, c ? 1 : 0)} aria-label={s.name} />
+    return <Toggle checked={s.value >= 1} disabled={unset} onChange={(c) => onSet(s.name, c ? 1 : 0)} aria-label={s.name} />
   }
   if (s.namedVariants.length > 2) {
     return (
       <Select
         variant="light"
-        value={String(s.value)}
+        value={unset ? '' : String(s.value)}
+        disabled={unset}
         options={s.namedVariants.map((v, i) => ({ value: String(i), label: v.name }))}
         onChange={(v) => onSet(s.name, Number(v))}
         aria-label={s.name}
@@ -41,7 +45,7 @@ function Control({ s, onSet }: { s: Setting; onSet: (name: string, value: number
     )
   }
   return (
-    <Slider arrows value={s.value} min={s.minValue} max={s.maxValue} step={s.stepSize || 1} onChange={(v) => onSet(s.name, v)} aria-label={s.name} />
+    <Slider arrows value={s.value} min={s.minValue} max={s.maxValue} step={s.stepSize || 1} disabled={unset} onChange={(v) => onSet(s.name, v)} aria-label={s.name} />
   )
 }
 

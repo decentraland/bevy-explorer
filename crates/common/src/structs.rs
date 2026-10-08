@@ -585,6 +585,11 @@ pub struct AppConfig {
     pub scene_permissions: HashMap<String, HashMap<PermissionType, PermissionValue>>,
     pub inputs: InputMapSerialized,
     pub point_at_marker_visibility: PointAtMarkerVisibility,
+    /// Who may DM the local user. Owned by the social service, so never persisted here: the
+    /// slot mirrors the server value and the social crate upserts user changes to it. `None`
+    /// until either the user or the server has set it.
+    #[serde(skip)]
+    pub dm_privacy: Option<DmPrivacy>,
     pub camera_smoothing: CameraSmoothing,
     // field-level default (0) so configs saved before this field existed read as outdated,
     // rather than taking the current generation from the container-level default
@@ -636,6 +641,7 @@ impl Default for AppConfig {
             scene_permissions: Default::default(),
             inputs: Default::default(),
             point_at_marker_visibility: Default::default(),
+            dm_privacy: None,
             camera_smoothing: Default::default(),
             settings_generation: SETTINGS_GENERATION,
             inputs_generation: INPUTS_GENERATION,
