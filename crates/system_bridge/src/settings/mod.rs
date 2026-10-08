@@ -22,8 +22,9 @@ use bevy::{
 };
 use cache_size::CacheSizeSetting;
 use cel_shading_setting::CelShadingSetting;
+use common::structs::DmPrivacy;
 #[cfg(not(target_arch = "wasm32"))]
-use common::structs::{DmPrivacy, SsaoSetting};
+use common::structs::SsaoSetting;
 use common::{
     sets::SceneSets,
     structs::{
