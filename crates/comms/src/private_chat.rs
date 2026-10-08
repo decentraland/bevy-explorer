@@ -247,7 +247,7 @@ fn participant_payload(
             return;
         }
     };
-    info!(target: "comms::private_chat", "dm from {from:#x}: {}", message.message);
+    debug!(target: "comms::private_chat", "dm from {from:#x}: {}", message.message);
     received.write(PrivateChatReceived {
         from,
         message: message.message,
@@ -284,7 +284,7 @@ fn send_private_chats(
             ..NetworkMessage::targetted_reliable(&packet, NetworkMessageRecipient::Peer(to))
         };
         match room.sender.try_send(message) {
-            Ok(()) => info!(target: "comms::private_chat", "dm to {to:#x}: {}", ev.message),
+            Ok(()) => debug!(target: "comms::private_chat", "dm to {to:#x}: {}", ev.message),
             Err(e) => warn!(target: "comms::private_chat", "failed to queue dm to {to:#x}: {e}"),
         }
     }
