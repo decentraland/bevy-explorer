@@ -68,7 +68,9 @@ impl Plugin for SocialPlugin {
                 pipe_friendship_events_to_scene,
                 pipe_connectivity_events_to_scene,
                 pipe_block_updates_to_scene,
-                sync_dm_privacy,
+                // not in the social dev binary, which has no config or settings
+                sync_dm_privacy
+                    .run_if(resource_exists::<AppConfig>.and(resource_exists::<Settings>)),
             ),
         );
         #[cfg(feature = "social")]

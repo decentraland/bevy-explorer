@@ -146,6 +146,7 @@ pub fn pipe_dm_user_state_to_scene(
     mut presence_changed: EventReader<PrivateChatPresenceChanged>,
     connected: Query<(), (With<PrivateChatRoom>, Added<Connected>)>,
     mut disconnected: RemovedComponents<Connected>,
+    mut room_gone: RemovedComponents<PrivateChatRoom>,
     players_changed: Query<&ForeignPlayer, Changed<ForeignPlayer>>,
     mut players_removed: RemovedComponents<ForeignPlayer>,
     states: DmUserStates,
@@ -166,6 +167,7 @@ pub fn pipe_dm_user_state_to_scene(
     let social_changed = social_changed.read().count() > 0;
     let presence_changed: Vec<Address> = presence_changed.read().map(|e| e.address).collect();
     let room_changed = !connected.is_empty()
+        || room_gone.read().count() > 0
         || disconnected
             .read()
             .filter(|room| states.rooms.contains(*room))
