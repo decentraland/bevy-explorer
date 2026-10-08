@@ -33,7 +33,10 @@ use system_bridge::{
     BlockUpdateData, FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData,
     FriendshipEventUpdate, SystemApi,
 };
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
+use tokio::sync::{
+    mpsc::{unbounded_channel, UnboundedReceiver},
+    oneshot,
+};
 use wallet::Wallet;
 
 pub struct SocialPlugin;
@@ -137,33 +140,60 @@ fn restart_social(
 
 use common::structs::AppConfig;
 pub use common::structs::{DmPrivacy, DmPrivacyOf};
+use system_bridge::settings::Settings;
 
 /// Keeps the DM privacy setting and the social service in step. The config slot is not
 /// persisted. When the client initializes, an unset slot takes the server value and a slot the
 /// user already set is upserted; from then on a slot that differs from the server value is a
 /// user change to upsert. A change is requested once and left pending until the server echoes
-/// it, so a slow or failed upsert is not re-sent every frame. The slot is cleared again when the
-/// client goes away, so the next account does not inherit it.
+/// it; a rejected change reverts the slot to the server value. The slot is cleared again when
+/// the client goes away, so the next account does not inherit it. Engine-driven writes bypass
+/// change detection so they refresh the settings panel without re-applying every setting.
 fn sync_dm_privacy(
     mut config: ResMut<AppConfig>,
+    mut settings: ResMut<Settings>,
     social: Res<SocialClient>,
     mut synced_from_server: Local<bool>,
     mut requested: Local<Option<DmPrivacy>>,
+    mut in_flight: Local<Option<oneshot::Receiver<Result<DmPrivacy, String>>>>,
 ) {
     let Some(client) = social.0.as_ref().filter(|c| c.is_initialized) else {
         if *synced_from_server {
-            config.dm_privacy = None;
+            config.bypass_change_detection().dm_privacy = None;
+            settings.refresh(&config);
             *synced_from_server = false;
         }
         *requested = None;
+        *in_flight = None;
         return;
     };
     if !*synced_from_server {
         *synced_from_server = true;
         *requested = None;
+        *in_flight = None;
         if config.dm_privacy.is_none() {
-            config.dm_privacy = Some(client.dm_privacy);
+            config.bypass_change_detection().dm_privacy = Some(client.dm_privacy);
+            settings.refresh(&config);
             return;
+        }
+    }
+    if let Some(rx) = in_flight.as_mut() {
+        let outcome = match rx.try_recv() {
+            Err(oneshot::error::TryRecvError::Empty) => None,
+            Ok(Ok(_)) => Some(Ok(())),
+            Ok(Err(e)) => Some(Err(e)),
+            Err(oneshot::error::TryRecvError::Closed) => Some(Err("client closed".to_owned())),
+        };
+        match outcome {
+            None => (),
+            Some(Ok(())) => *in_flight = None,
+            Some(Err(e)) => {
+                warn!("[social] dm privacy change rejected: {e}");
+                config.bypass_change_detection().dm_privacy = Some(client.dm_privacy);
+                settings.refresh(&config);
+                *requested = None;
+                *in_flight = None;
+            }
         }
     }
     let Some(wanted) = config.dm_privacy else {
@@ -177,12 +207,16 @@ fn sync_dm_privacy(
         return;
     }
     match client.upsert_social_settings(wanted) {
-        Ok(_) => *requested = Some(wanted),
+        Ok(rx) => {
+            *requested = Some(wanted);
+            *in_flight = Some(rx);
+        }
         Err(e) => warn!("[social] failed to request dm privacy change: {e}"),
     }
 }
 
-/// `/dm_privacy` prints the local user's DM privacy; `/dm_privacy all|friends` sets it.
+/// `/dm_privacy` prints the local user's DM privacy; `/dm_privacy all|friends` sets it through
+/// the setting, so the change goes to the server the same way the settings panel's does.
 #[cfg(feature = "social")]
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/dm_privacy")]
@@ -195,6 +229,7 @@ struct DmPrivacyCommand {
 fn dm_privacy(
     mut input: ConsoleCommand<DmPrivacyCommand>,
     social: Res<SocialClient>,
+    mut config: ResMut<AppConfig>,
     mut pending: ResMut<console::PendingConsoleResponses>,
 ) {
     let Some(Ok(command)) = input.take() else {
@@ -213,11 +248,12 @@ fn dm_privacy(
             return;
         }
     };
-    let rx = match privacy {
-        Some(privacy) => client.upsert_social_settings(privacy),
-        None => client.get_social_settings(),
-    };
-    let rx = match rx {
+    if let Some(privacy) = privacy {
+        config.dm_privacy = Some(privacy);
+        input.reply_ok(format!("dm privacy requested: {privacy:?}"));
+        return;
+    }
+    let rx = match client.get_social_settings() {
         Ok(rx) => rx,
         Err(e) => {
             input.reply_failed(format!("{e}"));
