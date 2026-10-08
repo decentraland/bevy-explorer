@@ -1398,7 +1398,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     friendsOpen || profileOpen || notificationsOpen || emotesOpen || skyboxOpen
   const toggleFriends = useCallback(() => exclusive(setFriendsOpen), [exclusive])
   const loadSettings = useCallback(() => ensure('getSettings'), [ensure])
-  const toggleSettings = useCallback(() => exclusive(setSettingsOpen, () => ensure('getSettings')), [exclusive, ensure])
+  // Re-read on every open: the engine changes settings itself (the DM privacy slot follows the
+  // social service), and settings are local, so there is nothing to spare by caching.
+  const toggleSettings = useCallback(() => exclusive(setSettingsOpen, () => send('getSettings')), [exclusive, send])
   const toggleProfile = useCallback(() => exclusive(setProfileOpen, () => ensure('getProfile')), [exclusive, ensure])
   const toggleNotifications = useCallback(() => exclusive(setNotificationsOpen, () => send('getNotifications')), [exclusive, send])
   const toggleEmotes = useCallback(() => exclusive(setEmotesOpen, () => ensure('getEmotes')), [exclusive, ensure])
