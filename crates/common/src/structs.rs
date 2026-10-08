@@ -15,9 +15,12 @@ use bevy::{
     prelude::*,
     render::{primitives::Aabb, view::RenderLayers},
 };
-use dcl_component::proto_components::sdk::{
-    components::common::CameraTransition,
-    development::{ws_scene_message, UpdateModelType},
+use dcl_component::proto_components::{
+    sdk::{
+        components::common::CameraTransition,
+        development::{ws_scene_message, UpdateModelType},
+    },
+    social_service::v2::PrivateMessagePrivacySetting,
 };
 use serde::{Deserialize, Serialize};
 use system_api_types::SatelliteView;
@@ -1975,13 +1978,30 @@ mod tests {
     }
 }
 
-/// Who may DM a user. Mirrors the social service's `PrivateMessagePrivacySetting`, which the
-/// generated proto only provides behind the `social` feature.
+/// Who may DM a user.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum DmPrivacy {
     #[default]
     All,
     OnlyFriends,
+}
+
+impl From<PrivateMessagePrivacySetting> for DmPrivacy {
+    fn from(value: PrivateMessagePrivacySetting) -> Self {
+        match value {
+            PrivateMessagePrivacySetting::All => DmPrivacy::All,
+            PrivateMessagePrivacySetting::OnlyFriends => DmPrivacy::OnlyFriends,
+        }
+    }
+}
+
+impl From<DmPrivacy> for PrivateMessagePrivacySetting {
+    fn from(value: DmPrivacy) -> Self {
+        match value {
+            DmPrivacy::All => PrivateMessagePrivacySetting::All,
+            DmPrivacy::OnlyFriends => PrivateMessagePrivacySetting::OnlyFriends,
+        }
+    }
 }
 
 /// Another user's DM privacy, as returned by `GetPrivateMessagesSettings`.

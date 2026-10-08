@@ -64,20 +64,6 @@ pub enum SocialQuery {
     },
 }
 
-fn privacy_from_proto(value: PrivateMessagePrivacySetting) -> DmPrivacy {
-    match value {
-        PrivateMessagePrivacySetting::All => DmPrivacy::All,
-        PrivateMessagePrivacySetting::OnlyFriends => DmPrivacy::OnlyFriends,
-    }
-}
-
-fn privacy_to_proto(value: DmPrivacy) -> PrivateMessagePrivacySetting {
-    match value {
-        DmPrivacy::All => PrivateMessagePrivacySetting::All,
-        DmPrivacy::OnlyFriends => PrivateMessagePrivacySetting::OnlyFriends,
-    }
-}
-
 enum FriendData {
     Init {
         sent_requests: HashMap<Address, FriendshipRequestResponse>,
@@ -789,9 +775,11 @@ async fn run_one_connection(
         };
     let dm_privacy = match service_module.get_social_settings().await {
         Ok(resp) => match resp.response {
-            Some(get_social_settings_response::Response::Ok(ok)) => {
-                privacy_from_proto(ok.settings.unwrap_or_default().private_messages_privacy())
-            }
+            Some(get_social_settings_response::Response::Ok(ok)) => ok
+                .settings
+                .unwrap_or_default()
+                .private_messages_privacy()
+                .into(),
             other => {
                 warn!("[social] get_social_settings error: {other:?}");
                 Default::default()
@@ -1087,11 +1075,11 @@ async fn run_one_connection(
                             let result = match service_module.get_social_settings().await {
                                 Ok(resp) => match resp.response {
                                     Some(get_social_settings_response::Response::Ok(ok)) => {
-                                        Ok(privacy_from_proto(
-                                            ok.settings
-                                                .unwrap_or_default()
-                                                .private_messages_privacy(),
-                                        ))
+                                        Ok(ok
+                                            .settings
+                                            .unwrap_or_default()
+                                            .private_messages_privacy()
+                                            .into())
                                     }
                                     other => Err(format!("{other:?}")),
                                 },
@@ -1105,7 +1093,7 @@ async fn run_one_connection(
                         SocialQuery::UpsertSocialSettings { privacy, response } => {
                             debug!("[social] upsertSocialSettings {privacy:?}");
                             let payload = UpsertSocialSettingsPayload {
-                                private_messages_privacy: Some(privacy_to_proto(privacy) as i32),
+                                private_messages_privacy: Some(PrivateMessagePrivacySetting::from(privacy) as i32),
                                 ..Default::default()
                             };
                             let result = match service_module.upsert_social_settings(payload).await
@@ -1114,7 +1102,7 @@ async fn run_one_connection(
                                     Some(upsert_social_settings_response::Response::Ok(
                                         settings,
                                     )) => {
-                                        Ok(privacy_from_proto(settings.private_messages_privacy()))
+                                        Ok(settings.private_messages_privacy().into())
                                     }
                                     other => Err(format!("{other:?}")),
                                 },
@@ -1150,9 +1138,7 @@ async fn run_one_connection(
                                         .settings
                                         .into_iter()
                                         .map(|s| DmPrivacyOf {
-                                            privacy: privacy_from_proto(
-                                                s.private_messages_privacy(),
-                                            ),
+                                            privacy: s.private_messages_privacy().into(),
                                             address: s.user.unwrap_or_default().address,
                                         })
                                         .collect()),
