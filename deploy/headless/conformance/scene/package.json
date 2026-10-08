@@ -1,0 +1,14 @@
+{
+  "name": "headless-conformance-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "sdk-commands build",
+    "server-logs": "sdk-commands sdk-server-logs"
+  },
+  "devDependencies": {
+    "@dcl/js-runtime": "7.21.1-22918726402.commit-ee210ee",
+    "@dcl/sdk": "https://sdk-team-cdn.decentraland.org/@dcl/js-sdk-toolchain/branch/feat/bevy-headless-server/dcl-sdk-7.25.1-31504711957.commit-2da2082.tgz",
+    "@dcl/sdk-commands": "https://sdk-team-cdn.decentraland.org/@dcl/js-sdk-toolchain/branch/feat/bevy-headless-server/dcl-sdk-commands-7.25.1-31504711957.commit-2da2082.tgz"
+  }
+}

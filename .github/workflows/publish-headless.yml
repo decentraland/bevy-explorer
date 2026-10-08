@@ -129,6 +129,16 @@ jobs:
           "$bin" --realm http://127.0.0.1:1 --preview --server-mode --timeout 20 2>&1 | tee smoke.log
           grep -q "\[headless\]" smoke.log
 
+      - name: Scene conformance test
+        if: matrix.platform == 'linux-x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Runs the prebuilt fixture scene in deploy/headless/conformance against the
+          # fresh build via a local stub realm; asserts scene boot, isServer, raycast
+          # and tween behavior end to end (see deploy/headless/conformance/README.md).
+          python3 deploy/headless/conformance/run.py "target/${{ matrix.target }}/release/headless"
+
       - name: Assemble platform package
         shell: bash
         run: |
