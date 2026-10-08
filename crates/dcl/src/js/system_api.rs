@@ -1201,7 +1201,7 @@ struct DmUserStateStreams {
     notifies: HashMap<u32, Arc<Notify>>,
 }
 
-pub async fn op_get_dm_user_state_stream(state: Rc<RefCell<impl State>>, address: String) -> u32 {
+pub fn op_get_dm_user_state_stream(state: Rc<RefCell<impl State>>, address: String) -> u32 {
     let (sx, rx) = RpcStreamSender::channel();
 
     let mut state = state.borrow_mut();

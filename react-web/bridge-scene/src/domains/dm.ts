@@ -20,7 +20,7 @@ export function registerDm(ctx: Ctx): void {
   // One engine stream per watched partner, for as long as the page shows that conversation.
   const watches = new Map<string, { close: () => void }>()
 
-  ctx.on('dmWatch', async (msg) => {
+  ctx.on('dmWatch', (msg) => {
     const key = msg.address.toLowerCase()
     const current = watches.get(key)
     if (!msg.on) {
@@ -29,18 +29,7 @@ export function registerDm(ctx: Ctx): void {
       return
     }
     if (current != null) return
-    let stream: Awaited<ReturnType<typeof social.getDmUserStateStream>>
-    try {
-      stream = await social.getDmUserStateStream(msg.address)
-    } catch (e) {
-      console.error('[dm] state stream failed', e)
-      return
-    }
-    // A watch for the same partner opened while this one was in flight: keep the first.
-    if (watches.has(key)) {
-      stream.close()
-      return
-    }
+    const stream = social.getDmUserStateStream(msg.address)
     watches.set(key, stream)
     void (async () => {
       try {

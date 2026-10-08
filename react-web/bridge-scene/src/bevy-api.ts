@@ -57,7 +57,7 @@ export type SocialApi = {
   blockUser: (address: string) => Promise<void>
   unblockUser: (address: string) => Promise<void>
   /** One stream per address; `close()` ends it. */
-  getDmUserStateStream: (address: string) => Promise<AsyncIterable<DmUserStateData> & { close: () => void }>
+  getDmUserStateStream: (address: string) => AsyncIterable<DmUserStateData> & { close: () => void }
   getDmHistory: (address: string) => Promise<DmHistoryEntryData[]>
   deleteDmHistory: (address: string) => void
 }

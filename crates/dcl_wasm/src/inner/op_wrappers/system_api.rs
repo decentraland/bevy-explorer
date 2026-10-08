@@ -557,8 +557,8 @@ pub async fn op_get_blocking_status(state: &WorkerContext) -> Result<JsValue, Wa
 }
 
 #[wasm_bindgen]
-pub async fn op_get_dm_user_state_stream(state: &WorkerContext, address: String) -> u32 {
-    dcl::js::system_api::op_get_dm_user_state_stream(state.rc(), address).await
+pub fn op_get_dm_user_state_stream(state: &WorkerContext, address: String) -> u32 {
+    dcl::js::system_api::op_get_dm_user_state_stream(state.rc(), address)
 }
 
 #[wasm_bindgen]

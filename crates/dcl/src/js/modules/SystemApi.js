@@ -596,8 +596,8 @@ module.exports.social = {
   // stream's close() ends it (a pending read resolves done); async generator return() would
   // only run after that read, so it is not enough on its own.
   // type DmUserStateData = { address: string, state: string, online: boolean }
-  getDmUserStateStream: async function(address) {
-    const rid = await Deno.core.ops.op_get_dm_user_state_stream(address);
+  getDmUserStateStream: function(address) {
+    const rid = Deno.core.ops.op_get_dm_user_state_stream(address);
 
     async function* streamGenerator() {
       try {

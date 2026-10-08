@@ -661,12 +661,9 @@ pub async fn op_get_blocking_status(
     dcl::js::system_api::op_get_blocking_status(state).await
 }
 
-#[op2(async)]
-pub async fn op_get_dm_user_state_stream(
-    state: Rc<RefCell<OpState>>,
-    #[string] address: String,
-) -> u32 {
-    dcl::js::system_api::op_get_dm_user_state_stream(state, address).await
+#[op2(fast)]
+pub fn op_get_dm_user_state_stream(state: Rc<RefCell<OpState>>, #[string] address: String) -> u32 {
+    dcl::js::system_api::op_get_dm_user_state_stream(state, address)
 }
 
 #[op2(async)]
