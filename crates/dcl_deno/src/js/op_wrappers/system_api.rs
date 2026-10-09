@@ -9,10 +9,11 @@ use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc};
 use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
-    BlockingStatusData, ChatMessage, DmHistoryEntryData, DmUserStateData, FriendConnectivityEvent,
-    FriendData, FriendRequestData, FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent,
-    LiveSceneInfo, PermanentPermissionItem, PermissionRequestEvent, ProfileChangedEvent,
-    ProximityEvent, SatelliteView, SceneLoadingUi, SetAvatarData, VoiceMessage,
+    BlockingStatusData, ChatMessage, ChatReactionData, DmHistoryEntryData, DmUserStateData,
+    FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData,
+    FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo, PermanentPermissionItem,
+    PermissionRequestEvent, ProfileChangedEvent, ProximityEvent, SatelliteView, SceneLoadingUi,
+    SetAvatarData, VoiceMessage,
 };
 
 // list of op declarations
@@ -47,6 +48,9 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_get_chat_stream(),
             op_read_chat_stream(),
             op_send_chat(),
+            op_get_chat_reaction_stream(),
+            op_read_chat_reaction_stream(),
+            op_send_chat_reaction(),
             op_bridge_to_page(),
             op_get_bridge_stream(),
             op_read_bridge_stream(),
@@ -309,6 +313,31 @@ pub fn op_send_chat(
     #[string] channel: String,
 ) {
     dcl::js::system_api::op_send_chat(state, message, channel)
+}
+
+#[op2(async)]
+pub async fn op_get_chat_reaction_stream(state: Rc<RefCell<OpState>>) -> u32 {
+    dcl::js::system_api::op_get_chat_reaction_stream(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_read_chat_reaction_stream(
+    state: Rc<RefCell<OpState>>,
+    rid: u32,
+) -> Result<Option<ChatReactionData>, deno_core::anyhow::Error> {
+    dcl::js::system_api::op_read_chat_reaction_stream(state, rid).await
+}
+
+#[op2(fast)]
+pub fn op_send_chat_reaction(
+    state: Rc<RefCell<OpState>>,
+    #[string] channel: String,
+    #[string] message_id: String,
+    #[string] emoji: String,
+    remove: bool,
+) {
+    dcl::js::system_api::op_send_chat_reaction(state, channel, message_id, emoji, remove)
 }
 
 #[op2(fast)]

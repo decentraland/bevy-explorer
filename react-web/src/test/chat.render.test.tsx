@@ -7,7 +7,7 @@ import { fakeSession } from './harness'
 afterEach(() => vi.restoreAllMocks())
 
 const lines = (n: number): ChatLine[] =>
-  Array.from({ length: n }, (_, i) => ({ sender: `0x${i % 5}`, message: `hi ${i}`, channel: 'Nearby', id: i, ts: 1_700_000_000_000 + i }))
+  Array.from({ length: n }, (_, i) => ({ sender: `0x${i % 5}`, message: `hi ${i}`, channel: 'Nearby', messageId: '', id: i, ts: 1_700_000_000_000 + i }))
 
 describe('Chat rendering', () => {
   it('a new message renders only its own bubble, not the whole history', () => {

@@ -247,7 +247,7 @@ describe('session domain', () => {
     const h = renderSession({ userId: null })
     await enterAsGuest(h)
     const { minimap, map } = h.session()
-    act(() => h.driver.emit({ kind: 'chat', chat: { sender: '0xabc', message: 'hi', channel: 'Nearby' } }))
+    act(() => h.driver.emit({ kind: 'chat', chat: { sender: '0xabc', message: 'hi', channel: 'Nearby', messageId: '' } }))
     await waitFor(() => expect(h.session().chat.messages).toHaveLength(2))
     expect(h.session().minimap).toBe(minimap)
     expect(h.session().map).toBe(map)

@@ -72,6 +72,17 @@ export interface SendChatRequest {
   channel: string
 }
 
+/** Add or remove the local user's reaction to a chat message (page → engine via the scene's
+ *  BevyApi.sendChatReaction). The engine echoes it back as a ChatReactionMessage. */
+export interface SendChatReactionRequest {
+  kind: 'sendChatReaction'
+  /** 'Nearby' or the DM partner's wallet. */
+  channel: string
+  messageId: string
+  emoji: string
+  remove: boolean
+}
+
 /** Reload the current scene(s) — the `/reload` chat command (scene calls SystemApi.reload). */
 export interface ReloadSceneRequest {
   kind: 'reloadScene'
@@ -134,6 +145,7 @@ export type PageToScene =
   | HelloRequest
   | RpcRequest
   | SendChatRequest
+  | SendChatReactionRequest
   | ReloadSceneRequest
   | ConsoleCommandRequest
   | NavActionRequest
@@ -230,6 +242,24 @@ export interface ChatMessage {
   sender: string
   message: string
   channel: string
+  /** What reactions name this message by; empty for system messages. */
+  messageId: string
+}
+
+/** A reaction added to or removed from a chat message, the local user's included. */
+export interface ChatReaction {
+  /** 'Nearby' or the DM partner's wallet. */
+  channel: string
+  messageId: string
+  emoji: string
+  from: string
+  remove: boolean
+}
+
+/** Streamed chat reactions (scene → page). */
+export interface ChatReactionMessage {
+  kind: 'chatReaction'
+  reaction: ChatReaction
 }
 
 /** Streamed incoming chat messages (scene → page). */
@@ -413,6 +443,17 @@ export interface DmHistoryEntry {
   message: string
   /** Unix ms when the local client stored it. */
   receivedAt: number
+  /** What reactions name this DM by; empty for DMs stored before reactions. */
+  messageId: string
+  /** Its reactions, in the order each emoji was first used. */
+  reactions: MessageReaction[]
+}
+
+/** One emoji's reactions to a chat message. */
+export interface MessageReaction {
+  emoji: string
+  /** The wallets that reacted with it. */
+  from: string[]
 }
 
 export interface DmHistoryMessage {
@@ -1359,6 +1400,7 @@ export type SceneToPage =
   | LoginCodeMessage
   | SceneLoadingMessage
   | ChatRelayMessage
+  | ChatReactionMessage
   | ConsoleReplyMessage
   | ChatVisibilityMessage
   | FocusChatMessage

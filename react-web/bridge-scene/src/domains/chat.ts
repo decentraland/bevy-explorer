@@ -1,5 +1,6 @@
-// Chat: incoming messages, sending, and the nearby-players roster.
-//   from: BevyApi.getChatStream() / sendChat(), @dcl/sdk PlayerIdentityData (nearby roster)
+// Chat: incoming messages and reactions, sending both, and the nearby-players roster.
+//   from: BevyApi.getChatStream() / sendChat(), getChatReactionStream() / sendChatReaction(),
+//         @dcl/sdk PlayerIdentityData (nearby roster)
 //         + the ENGINE's profile cache (~system/Players getPlayerData) for faces.
 import { engine, PlayerIdentityData, PointerLock } from '@dcl/sdk/ecs'
 import { getPlayer } from '@dcl/sdk/players'
@@ -28,14 +29,24 @@ export function registerChat(ctx: Ctx): void {
   ctx.on('sendChat', (msg) => {
     BevyApi.sendChat(msg.message, msg.channel)
   })
+  ctx.on('sendChatReaction', (msg) => {
+    BevyApi.sendChatReaction(msg.channel, msg.messageId, msg.emoji, msg.remove)
+  })
 
   // Incoming chat stream → React (we're the only consumer now the SDK7 chat UI is gone).
   relay('chat', async () => await BevyApi.getChatStream(), (m) => {
     if (m.message.indexOf('␑') === 0) return // engine control message
-    ctx.send({ kind: 'chat', chat: { sender: m.sender_address, message: m.message, channel: m.channel } })
+    ctx.send({ kind: 'chat', chat: { sender: m.sender_address, message: m.message, channel: m.channel, messageId: m.message_id } })
     // Pop the speech bubble under this sender's nametag (world-space, engine-positioned). Not for
     // DMs (a wallet channel): those are private.
     if (m.channel === 'Nearby') setChatBubble(m.sender_address, m.message, mentionsMe(m.message))
+  })
+
+  relay('chatReaction', async () => await BevyApi.getChatReactionStream(), (r) => {
+    ctx.send({
+      kind: 'chatReaction',
+      reaction: { channel: r.channel, messageId: r.message_id, emoji: r.emoji, from: r.from, remove: r.remove }
+    })
   })
 
   // Enter → focus chat, on both native (the engine reads keys off the OS window) and web (winit

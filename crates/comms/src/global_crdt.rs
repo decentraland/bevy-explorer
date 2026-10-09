@@ -36,7 +36,11 @@ use dcl_component::{
     DclReader, DclWriter, GlobalCrdtData, Localizer, SceneComponentId, SceneEntityId, SceneOrigin,
 };
 
-use crate::{profile::ProfileMetaCache, Transport};
+use crate::{
+    chat_reaction::{canonical_message_id, received_emoji, ChatReactionEvent},
+    profile::ProfileMetaCache,
+    Transport,
+};
 
 #[cfg(not(target_arch = "wasm32"))]
 use kira::sound::streaming::StreamingSoundData;
@@ -753,7 +757,10 @@ pub fn process_transport_updates(
     mut position_events: EventWriter<PlayerPositionEvent>,
     mut anim_events: EventWriter<PlayerSceneAnimEvent>,
     mut emote_events: EventWriter<EmoteLifecycleEvent>,
-    mut chat_events: EventWriter<ChatEvent>,
+    (mut chat_events, mut reaction_events): (
+        EventWriter<ChatEvent>,
+        EventWriter<ChatReactionEvent>,
+    ),
     mut string_senders: Local<HashMap<String, RpcEventSender>>,
     mut binary_senders: Local<HashMap<String, RpcStreamSender<(String, Vec<u8>)>>>,
     mut subscribers: EventReader<RpcCallEvent>,
@@ -1061,7 +1068,26 @@ pub fn process_transport_updates(
                             debug!("reaction: {reaction:?}");
                         }
                         PlayerMessage::PlayerData(Message::ChatReaction(chat_reaction)) => {
-                            debug!("chat reaction: {chat_reaction:?}");
+                            debug!(
+                                "chat reaction from {:#x}: {chat_reaction:?}",
+                                update.address
+                            );
+                            if let (Some(message_id), Some((emoji, remove))) = (
+                                canonical_message_id(&chat_reaction.message_id),
+                                received_emoji(
+                                    &chat_reaction.emoji,
+                                    chat_reaction.emoji_index,
+                                    chat_reaction.remove,
+                                ),
+                            ) {
+                                reaction_events.write(ChatReactionEvent {
+                                    channel: "Nearby".to_owned(),
+                                    message_id,
+                                    emoji,
+                                    from: update.address,
+                                    remove,
+                                });
+                            }
                         }
                     }
                 }

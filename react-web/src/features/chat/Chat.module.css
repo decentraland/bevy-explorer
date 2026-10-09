@@ -440,6 +440,130 @@
   pointer-events: none;
 }
 
+/* Reactions: a pill per emoji under the time (count, and an orange rim when one is yours), and a
+   react button beside the bubble that shows while the entry is hovered. */
+.reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--r-pill);
+  background: var(--white-10);
+  color: var(--white);
+  font-family: inherit;
+  font-size: var(--type-12);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+}
+.pill:hover {
+  background: var(--chat-hover);
+}
+.pillOwn {
+  border-color: var(--accent);
+}
+.pillEmoji {
+  font-size: var(--type-14);
+  line-height: 1;
+}
+.reactBtn {
+  align-self: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0 4px;
+  padding: 0;
+  border: none;
+  cursor: pointer;
+  background: url('../../assets/chat/emoji-idle.png') center / contain no-repeat;
+  visibility: hidden;
+}
+.entry:hover .reactBtn,
+.reactBtnOn {
+  visibility: visible;
+}
+.reactBtn:hover {
+  background-image: url('../../assets/chat/emoji-hover.png');
+}
+.reactBtnOn,
+.reactBtnOn:hover {
+  background-image: url('../../assets/chat/emoji-selected.png');
+}
+
+/* A reaction pill's tooltip: over the panel, its bottom just above the pill. */
+.pillTip {
+  position: absolute;
+  z-index: 3;
+  max-width: 300px;
+  padding: 8px 12px;
+  box-sizing: border-box;
+  border-radius: var(--r-md);
+  background: var(--panel);
+  box-shadow: var(--shadow-panel);
+  color: var(--text);
+  font-size: var(--type-14);
+  font-weight: var(--fw-semibold);
+  line-height: 17px;
+  overflow-wrap: anywhere;
+  transform: translateY(-100%);
+  pointer-events: none;
+}
+
+/* The reaction bar, over the panel just above the react button that opened it. */
+.reactionLayer {
+  display: contents;
+}
+.reactionBar {
+  position: absolute;
+  left: 8px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 40px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  border-radius: var(--r-md);
+  background: var(--panel);
+}
+.barEmoji,
+.barMore {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--white);
+  font-family: inherit;
+  font-size: var(--type-18);
+  line-height: 1;
+  cursor: pointer;
+}
+.barEmoji:hover,
+.barMore:hover {
+  background: var(--chat-hover);
+}
+.barEmojiOn {
+  background: var(--chat-pressed);
+}
+.barDivider {
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  background: var(--white-10);
+}
+
 /* NEW separator above the first message that arrived while scrolled up. */
 .newRow {
   position: relative;

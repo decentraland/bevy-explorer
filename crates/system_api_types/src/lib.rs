@@ -104,6 +104,20 @@ pub struct ChatMessage {
     pub sender_address: String,
     pub message: String,
     pub channel: String,
+    /// What reactions name this message by; empty for system messages.
+    pub message_id: String,
+}
+
+/// A reaction added to or removed from a chat message, by the local user or a peer. `channel` is
+/// "Nearby" or the DM partner's wallet.
+#[derive(Clone, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
+pub struct ChatReactionData {
+    pub channel: String,
+    pub message_id: String,
+    pub emoji: String,
+    pub from: String,
+    pub remove: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize, ts_rs::TS)]
@@ -338,6 +352,21 @@ pub struct DmHistoryEntryData {
     pub message: String,
     /// Unix seconds when the local client stored it.
     pub received_at: f64,
+    /// What reactions name this DM by; empty for DMs stored before reactions.
+    pub message_id: String,
+    /// Its reactions, in the order each emoji was first used.
+    pub reactions: Vec<DmReactionData>,
+}
+
+/// One emoji's reactions to a stored DM.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(export)]
+pub struct DmReactionData {
+    pub emoji: String,
+    /// The wallets that reacted with it.
+    pub from: Vec<String>,
 }
 
 /// Whether the local user can DM `address`, and why not; emitted for the watched recipient.

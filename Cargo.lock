@@ -3526,6 +3526,7 @@ dependencies = [
  "cpal",
  "dcl",
  "dcl_component",
+ "emojis",
  "futures-channel",
  "futures-lite",
  "futures-util",

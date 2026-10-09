@@ -28,7 +28,11 @@ use tokio::sync::mpsc::Sender;
 use wallet::Wallet;
 
 use crate::{
-    global_crdt::{chat_wire_timestamp, ChannelControl, ChatEvent},
+    chat_reaction::{
+        canonical_message_id, emoji_to_atlas_index, encode_wire_index, received_emoji,
+        ChatReactionEvent,
+    },
+    global_crdt::{ChannelControl, ChatEvent},
     livekit::{
         participant::{
             plugin::InboundRateLimiter, HostedBy, HostingParticipants, LivekitParticipant,
@@ -48,7 +52,14 @@ impl Plugin for PrivateChatPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<PrivateChatReceived>();
         app.add_event::<PrivateChatPresenceChanged>();
-        app.add_systems(Update, (connect_private_chat_room, send_private_chats));
+        app.add_systems(
+            Update,
+            (
+                connect_private_chat_room,
+                send_private_chats,
+                send_private_reactions,
+            ),
+        );
         app.add_observer(participant_added);
         app.add_observer(participant_removed);
         app.add_observer(participant_metadata_changed);
@@ -82,6 +93,8 @@ pub struct PrivateChatPresenceChanged {
 pub struct PrivateChatReceived {
     pub from: Address,
     pub message: String,
+    /// The sender's rfc4 timestamp, which names the message for reactions.
+    pub timestamp: f64,
 }
 
 #[derive(Deserialize)]
@@ -251,8 +264,8 @@ fn participant_metadata_changed(
     }
 }
 
-/// A DM on the private chat room. The sender is the LiveKit-authenticated identity; the topic
-/// must name us, so a packet addressed elsewhere (or to nobody) is dropped.
+/// A DM or a reaction to one on the private chat room. The sender is the LiveKit-authenticated
+/// identity; the topic must name us, so a packet addressed elsewhere (or to nobody) is dropped.
 fn participant_payload(
     trigger: Trigger<ParticipantPayload>,
     rooms: Query<(), With<PrivateChatRoom>>,
@@ -260,6 +273,7 @@ fn participant_payload(
     time: Res<Time>,
     mut rate_limiter: ResMut<InboundRateLimiter>,
     mut received: EventWriter<PrivateChatReceived>,
+    mut reactions: EventWriter<ChatReactionEvent>,
 ) {
     let ParticipantPayload {
         room,
@@ -292,6 +306,25 @@ fn participant_payload(
             message: Some(rfc4::packet::Message::Chat(chat)),
             ..
         }) => chat,
+        Ok(rfc4::Packet {
+            message: Some(rfc4::packet::Message::ChatReaction(reaction)),
+            ..
+        }) => {
+            debug!(target: "comms::private_chat", "dm reaction from {from:#x}: {reaction:?}");
+            if let (Some(message_id), Some((emoji, remove))) = (
+                canonical_message_id(&reaction.message_id),
+                received_emoji(&reaction.emoji, reaction.emoji_index, reaction.remove),
+            ) {
+                reactions.write(ChatReactionEvent {
+                    channel: format!("{from:#x}"),
+                    message_id,
+                    emoji,
+                    from,
+                    remove,
+                });
+            }
+            return;
+        }
         Ok(other) => {
             debug!(target: "comms::private_chat", "ignoring non-chat packet from {from:#x}: {other:?}");
             return;
@@ -305,6 +338,7 @@ fn participant_payload(
     received.write(PrivateChatReceived {
         from,
         message: message.message,
+        timestamp: message.timestamp,
     });
 }
 
@@ -329,7 +363,7 @@ fn send_private_chats(
         let packet = rfc4::Packet {
             message: Some(rfc4::packet::Message::Chat(rfc4::Chat {
                 message: ev.message.clone(),
-                timestamp: chat_wire_timestamp(),
+                timestamp: ev.timestamp,
             })),
             protocol_version: 100,
         };
@@ -340,6 +374,47 @@ fn send_private_chats(
         match room.sender.try_send(message) {
             Ok(()) => debug!(target: "comms::private_chat", "dm to {to:#x}: {}", ev.message),
             Err(e) => warn!(target: "comms::private_chat", "failed to queue dm to {to:#x}: {e}"),
+        }
+    }
+}
+
+/// The local user's reactions to DMs go to the partner the same way the DMs do.
+fn send_private_reactions(
+    mut reactions: EventReader<ChatReactionEvent>,
+    wallet: Res<Wallet>,
+    room: Query<&PrivateChatRoom>,
+) {
+    let Some(me) = wallet.address() else {
+        reactions.clear();
+        return;
+    };
+    for ev in reactions.read().filter(|ev| ev.from == me) {
+        let Some(to) = ev.channel.as_h160() else {
+            continue;
+        };
+        let Ok(room) = room.single() else {
+            warn!(target: "comms::private_chat", "no private chat room, dropping reaction to {to:#x}");
+            continue;
+        };
+        let packet = rfc4::Packet {
+            message: Some(rfc4::packet::Message::ChatReaction(rfc4::ChatReaction {
+                emoji_index: Some(encode_wire_index(
+                    emoji_to_atlas_index(&ev.emoji),
+                    ev.remove,
+                )),
+                message_id: ev.message_id.clone(),
+                address: format!("{me:#x}"),
+                emoji: ev.emoji.clone(),
+                remove: ev.remove,
+            })),
+            protocol_version: 100,
+        };
+        let message = NetworkMessage {
+            topic: Some(format!("{to:#x}")),
+            ..NetworkMessage::targetted_reliable(&packet, NetworkMessageRecipient::Peer(to))
+        };
+        if let Err(e) = room.sender.try_send(message) {
+            warn!(target: "comms::private_chat", "failed to queue reaction to {to:#x}: {e}");
         }
     }
 }

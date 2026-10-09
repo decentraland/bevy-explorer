@@ -21,7 +21,11 @@ use common::{
 };
 use comms::{
     broadcast_to, chat_marker_things,
-    global_crdt::{ChatEvent, ForeignPlayer},
+    chat_reaction::{
+        canonical_emoji, canonical_message_id, chat_message_id, emoji_to_atlas_index,
+        encode_wire_index, ChatReactionEvent,
+    },
+    global_crdt::{chat_wire_timestamp, ChatEvent, ForeignPlayer},
     profile::UserProfile,
     BroadcastTarget, Transport,
 };
@@ -34,7 +38,7 @@ use input_manager::{InputManager, InputPriority};
 use scene_runner::{renderer_context::RendererSceneContext, ContainingScene};
 use shlex::Shlex;
 use social::FriendshipEvent;
-use system_bridge::{ChatMessage, NativeUi, SystemApi};
+use system_bridge::{ChatMessage, ChatReactionData, NativeUi, SystemApi};
 use ui_core::{
     button::{DuiButton, TabSelection},
     focus::Focus,
@@ -54,6 +58,15 @@ impl Plugin for ChatPanelPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Update, (emit_user_chat, broadcast_nearby_chats).chain());
         app.add_systems(Update, (pipe_chats_to_scene, pipe_chats_from_scene));
+        app.add_systems(
+            Update,
+            (
+                emit_user_reactions,
+                (broadcast_nearby_reactions, pipe_chat_reactions_to_scene),
+            )
+                .chain(),
+        );
+        app.add_console_command::<ReactCommand, _>(react);
         #[cfg(feature = "livekit")]
         {
             app.add_console_command::<dm_state::DmStateCommand, _>(dm_state::dm_state);
@@ -69,7 +82,8 @@ impl Plugin for ChatPanelPlugin {
                 )
                     .chain()
                     .after(pipe_chats_to_scene)
-                    .after(pipe_chats_from_scene),
+                    .after(pipe_chats_from_scene)
+                    .after(pipe_chat_reactions_to_scene),
             );
             app.init_resource::<dm_history::DmStore>();
             app.add_console_command::<dm_history::DmHistoryCommand, _>(dm_history::dm_history);
@@ -557,7 +571,7 @@ fn emit_user_chat(
             };
 
             chats.write(ChatEvent {
-                timestamp: time.elapsed_secs_f64(),
+                timestamp: chat_wire_timestamp(),
                 sender,
                 channel: output.active_tab.to_owned(),
                 message: message.clone(),
@@ -618,7 +632,7 @@ pub fn broadcast_nearby_chats(
         ));
 
         // we display receive time
-        let timestamp = comms::global_crdt::chat_wire_timestamp();
+        let timestamp = ev.timestamp;
 
         // Nearby chat targets only the realm's byte transports that actually carry it: the websocket
         // dev server and LiveKit (incl. the LiveKit scene room, which rides the LIVEKIT bit). It has
@@ -717,8 +731,8 @@ fn pipe_chats_to_scene(
         // them. Previously these defaulted to the zero address, which the frontend rendered
         // as a fake "0x0000...0000" sender bubble instead of a system message. Send the
         // literal "system" sentinel the chat UI's `isSystem()` check recognizes instead.
-        let sender_address = if chat_event.sender == Entity::PLACEHOLDER {
-            "system".to_owned()
+        let (sender_address, message_id) = if chat_event.sender == Entity::PLACEHOLDER {
+            ("system".to_owned(), String::new())
         } else {
             let player_address = players
                 .get(chat_event.sender)
@@ -737,7 +751,9 @@ fn pipe_chats_to_scene(
                 continue;
             };
 
-            format!("{player_address:#x}")
+            let message_id = chat_message_id(player_address, chat_event.timestamp);
+            debug!("chat {message_id}: {}", chat_event.message);
+            (format!("{player_address:#x}"), message_id)
         };
 
         for sender in senders.iter() {
@@ -745,6 +761,7 @@ fn pipe_chats_to_scene(
                 sender_address: sender_address.clone(),
                 message: chat_event.message.clone(),
                 channel: chat_event.channel.clone(),
+                message_id: message_id.clone(),
             });
         }
     }
@@ -756,13 +773,150 @@ fn pipe_chats_to_scene(
         .filter(|dm| !dm_state::blocked_by_me(&social, dm.from))
     {
         let partner = format!("{:#x}", dm.from);
+        let message_id = chat_message_id(dm.from, dm.timestamp);
+        debug!("dm {message_id}: {}", dm.message);
         for sender in senders.iter() {
             let _ = sender.send(ChatMessage {
                 sender_address: partner.clone(),
                 message: dm.message.clone(),
                 channel: partner.clone(),
+                message_id: message_id.clone(),
             });
         }
+    }
+}
+
+/// The local user's reaction requests become reactions from the local user, which the channel's
+/// transport sends.
+fn emit_user_reactions(
+    mut requests: EventReader<SystemApi>,
+    wallet: Res<Wallet>,
+    mut reactions: EventWriter<ChatReactionEvent>,
+) {
+    for request in requests.read() {
+        let SystemApi::SendChatReaction {
+            channel,
+            message_id,
+            emoji,
+            remove,
+        } = request
+        else {
+            continue;
+        };
+        let Some(from) = wallet.address() else {
+            continue;
+        };
+        if channel != "Nearby" && channel.as_h160().is_none() {
+            warn!("ignoring reaction in channel {channel:?}");
+            continue;
+        }
+        let (Some(message_id), Some(emoji)) =
+            (canonical_message_id(message_id), canonical_emoji(emoji))
+        else {
+            warn!("ignoring reaction {emoji:?} to {message_id:?}");
+            continue;
+        };
+        reactions.write(ChatReactionEvent {
+            channel: channel.clone(),
+            message_id,
+            emoji,
+            from,
+            remove: *remove,
+        });
+    }
+}
+
+/// The local user's reactions to nearby chat go where nearby chat goes.
+fn broadcast_nearby_reactions(
+    mut reactions: EventReader<ChatReactionEvent>,
+    transports: Query<&Transport>,
+    wallet: Res<Wallet>,
+) {
+    let Some(me) = wallet.address() else {
+        reactions.clear();
+        return;
+    };
+    for ev in reactions
+        .read()
+        .filter(|ev| ev.from == me && ev.channel == "Nearby")
+    {
+        broadcast_to(
+            transports.iter(),
+            BroadcastTarget::WEBSOCKET | BroadcastTarget::LIVEKIT,
+            false,
+            &rfc4::Packet {
+                message: Some(rfc4::packet::Message::ChatReaction(rfc4::ChatReaction {
+                    emoji_index: Some(encode_wire_index(
+                        emoji_to_atlas_index(&ev.emoji),
+                        ev.remove,
+                    )),
+                    message_id: ev.message_id.clone(),
+                    address: format!("{me:#x}"),
+                    emoji: ev.emoji.clone(),
+                    remove: ev.remove,
+                })),
+                protocol_version: 100,
+            },
+        );
+    }
+}
+
+/// Every reaction, the local user's included, except from blocked users.
+fn pipe_chat_reactions_to_scene(
+    mut reactions: EventReader<ChatReactionEvent>,
+    #[cfg(feature = "livekit")] social: Res<social::SocialClient>,
+    mut requests: EventReader<SystemApi>,
+    mut senders: Local<Vec<RpcStreamSender<ChatReactionData>>>,
+) {
+    senders.extend(requests.read().filter_map(|ev| {
+        if let SystemApi::GetChatReactionStream(sender) = ev {
+            Some(sender.clone())
+        } else {
+            None
+        }
+    }));
+    senders.retain(|s| !s.is_closed());
+
+    for ev in reactions.read() {
+        #[cfg(feature = "livekit")]
+        if dm_state::blocked_by_me(&social, ev.from) {
+            continue;
+        }
+        debug!("reaction {ev:?}");
+        let data = ChatReactionData {
+            channel: ev.channel.clone(),
+            message_id: ev.message_id.clone(),
+            emoji: ev.emoji.clone(),
+            from: format!("{:#x}", ev.from),
+            remove: ev.remove,
+        };
+        for sender in senders.iter() {
+            let _ = sender.send(data.clone());
+        }
+    }
+}
+
+/// `/react <channel> <message id> <emoji> [--remove]` adds or removes a reaction, the same way the
+/// HUD does. The channel is "Nearby" or the DM partner's wallet.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/react")]
+struct ReactCommand {
+    channel: String,
+    message_id: String,
+    emoji: String,
+    #[arg(long)]
+    remove: bool,
+}
+
+fn react(mut input: ConsoleCommand<ReactCommand>, mut events: EventWriter<SystemApi>) {
+    if let Some(Ok(command)) = input.take() {
+        events.write(SystemApi::SendChatReaction {
+            channel: command.channel,
+            message_id: command.message_id,
+            emoji: command.emoji,
+            remove: command.remove,
+        });
+        input.reply_ok("");
     }
 }
 
@@ -816,7 +970,7 @@ fn pipe_chats_from_scene(
             }
         } else {
             sender.write(ChatEvent {
-                timestamp: time.elapsed_secs_f64(),
+                timestamp: chat_wire_timestamp(),
                 sender: primary_player.0,
                 channel,
                 message,

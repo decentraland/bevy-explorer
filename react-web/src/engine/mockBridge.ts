@@ -304,14 +304,23 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     ],
     namesForExtraSlots: []
   }
+  // Message ids as the engine makes them: the sender and a timestamp.
+  let mockClock = 46000
+  const messageId = (sender: string): string => `${sender.toLowerCase()}:${(mockClock += 0.001).toFixed(3)}`
   // DM history per partner, as the engine's local store would hold it; one conversation is seeded.
   const mojito = '0x5854cce95d5e25817b41f4c41f06b695a83bc495'
   const dmStores = new Map<string, DmHistoryEntry[]>([
     [
       mojito,
       [
-        { from: mojito, message: 'you around later?', receivedAt: Date.now() - 86_400_000 },
-        { from: o.userId, message: 'yeah, after 8', receivedAt: Date.now() - 86_000_000 }
+        { from: mojito, message: 'you around later?', receivedAt: Date.now() - 86_400_000, messageId: messageId(mojito), reactions: [] },
+        {
+          from: o.userId,
+          message: 'yeah, after 8',
+          receivedAt: Date.now() - 86_000_000,
+          messageId: messageId(o.userId),
+          reactions: [{ emoji: '\u{1f44d}', from: [mojito] }]
+        }
       ]
     ]
   ])
@@ -492,12 +501,15 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       ['0x1e105bb213754519903788022b962fe2b9c4b263', 'this plaza looks great'],
       ['0x6723dcb07f3ca735223cd1c0acfa62dd994a1bb4', '@Mojito meet me at 10,10']
     ]
-    samples.forEach(([sender, message], i) =>
-      setTimeout(
-        () => reply({ kind: 'chat', chat: { sender, message, channel: 'Nearby' } }),
-        2500 + i * 2200
-      )
-    )
+    samples.forEach(([sender, message], i) => {
+      const id = messageId(sender)
+      setTimeout(() => reply({ kind: 'chat', chat: { sender, message, channel: 'Nearby', messageId: id } }), 2500 + i * 2200)
+      // someone reacts to the first one
+      if (i === 0) {
+        const reaction = { channel: 'Nearby', messageId: id, emoji: '\u{1f44b}', from: samples[1][0], remove: false }
+        setTimeout(() => reply({ kind: 'chatReaction', reaction }), 3500)
+      }
+    })
 
     // ?perm=1 → fire a sample scene permission prompt so the dialog is exercisable in the mock.
     if (new URLSearchParams(location.search).get('perm') === '1') {
@@ -538,8 +550,25 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
 
     if (msg.kind === 'sendChat') {
       // Echo the local player's message back (the engine would broadcast it); a DM is stored first.
-      if (msg.channel !== 'Nearby') dmStore(msg.channel).push({ from: o.userId, message: msg.message, receivedAt: Date.now() })
-      reply({ kind: 'chat', chat: { sender: o.userId, message: msg.message, channel: msg.channel } })
+      const id = messageId(o.userId)
+      if (msg.channel !== 'Nearby') dmStore(msg.channel).push({ from: o.userId, message: msg.message, receivedAt: Date.now(), messageId: id, reactions: [] })
+      reply({ kind: 'chat', chat: { sender: o.userId, message: msg.message, channel: msg.channel, messageId: id } })
+      return
+    }
+
+    if (msg.kind === 'sendChatReaction') {
+      // Echo the local player's reaction back; a DM's is stored with it first.
+      const from = o.userId.toLowerCase()
+      const dm = msg.channel !== 'Nearby' ? dmStore(msg.channel).find((e) => e.messageId === msg.messageId) : undefined
+      if (dm != null) {
+        const group = dm.reactions.find((r) => r.emoji === msg.emoji)
+        if (msg.remove) {
+          if (group != null) group.from = group.from.filter((f) => f !== from)
+          dm.reactions = dm.reactions.filter((r) => r.from.length > 0)
+        } else if (group == null) dm.reactions.push({ emoji: msg.emoji, from: [from] })
+        else if (!group.from.includes(from)) group.from.push(from)
+      }
+      reply({ kind: 'chatReaction', reaction: { channel: msg.channel, messageId: msg.messageId, emoji: msg.emoji, from, remove: msg.remove } })
       return
     }
 
@@ -555,7 +584,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       return
     }
     if (msg.kind === 'dmHistory') {
-      reply({ kind: 'dmHistory', address: msg.address, entries: [...dmStore(msg.address)] })
+      reply({ kind: 'dmHistory', address: msg.address, entries: dmStore(msg.address).map((e) => ({ ...e, reactions: e.reactions.map((r) => ({ ...r, from: [...r.from] })) })) })
       return
     }
     if (msg.kind === 'dmDelete') {
@@ -880,7 +909,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     }
     // Slash-command effects (no engine in mock): echo a system chat line so the flow is testable in ?mock=1.
     if (msg.kind === 'reloadScene') {
-      reply({ kind: 'chat', chat: { sender: '', message: 'Reloading the current scene…', channel: 'Nearby' } })
+      reply({ kind: 'chat', chat: { sender: '', message: 'Reloading the current scene…', channel: 'Nearby', messageId: '' } })
       return
     }
     if (msg.kind === 'consoleCommand') {

@@ -38,7 +38,7 @@ describe('chat domain', () => {
   it('relayed chat messages append to the log', async () => {
     const h = renderSession()
     await enterAsGuest(h)
-    h.driver.emit({ kind: 'chat', chat: { sender: '0xabc', message: 'gm', channel: 'Nearby' } })
+    h.driver.emit({ kind: 'chat', chat: { sender: '0xabc', message: 'gm', channel: 'Nearby', messageId: '' } })
     const msgs = h.session().chat.messages
     expect(msgs).toHaveLength(2)
     expect(msgs[0]).toMatchObject({ sender: '', message: 'Type /help for available commands.' })
