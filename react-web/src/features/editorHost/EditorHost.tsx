@@ -10,7 +10,7 @@ import { CreatePage } from './CreatePage'
 import { confirmDeployment, confirmUndeploy } from './DeployConfirm'
 import { bridgeScene, bridgeTravel } from './host/bridge'
 import { guardUrlSync, loadEditor, type EditorPackage } from './host/host'
-import { editorEntry, editorSource } from './source'
+import { editorEntry, editorSource, hasEditor, type EditorSource } from './source'
 
 type HostWindow = Window & {
   engine_console_command?: (line: string) => Promise<string>
@@ -28,27 +28,32 @@ export interface EditorEntry {
 export function useEditorHost(entrySearch: string, session: EngineSession): EditorEntry | null {
   const latest = useRef(session)
   latest.current = session
-  const [{ source, entry }] = useState(() => ({
-    source: editorSource(entrySearch, location.hostname, PAGE_DIR, BASE_DOMAIN),
-    entry: editorEntry(entrySearch)
-  }))
+  const [{ offered, entry }] = useState(() => ({ offered: hasEditor(location.hostname), entry: editorEntry(entrySearch) }))
   const flag = entry.project ?? entry.open
   const [loading, setLoading] = useState(false)
+  // resolved once per page; a failed resolution is retried by the next load
+  const source = useRef<Promise<EditorSource | null> | null>(null)
 
   // with `?editor`, before the engine's first url sync would drop the flag
   const engineUp = session.login.engineReady
   useEffect(() => {
-    if (source != null && entry.open && engineUp) guardUrlSync(PAGE_DIR, flag)
-  }, [source, entry, flag, engineUp])
+    if (offered && entry.open && engineUp) guardUrlSync(PAGE_DIR, flag)
+  }, [offered, entry, flag, engineUp])
 
   const load = useCallback(
     async (): Promise<EditorPackage> => {
-      if (source == null) throw new Error('no editor on this page')
+      if (!offered) throw new Error('no editor on this page')
       setLoading(true)
       bridgeChannelName() // seeds __bridgeSession when nothing has yet
       try {
+        source.current ??= editorSource(entrySearch, location.hostname, PAGE_DIR, BASE_DOMAIN)
+        const resolved = await source.current.catch((e: unknown) => {
+          source.current = null
+          throw e
+        })
+        if (resolved == null) throw new Error('no editor on this page')
         return await loadEditor(
-          source,
+          resolved,
           PAGE_DIR,
           {
             busSession: (window as HostWindow).__bridgeSession ?? '',
@@ -78,19 +83,19 @@ export function useEditorHost(entrySearch: string, session: EngineSession): Edit
         setLoading(false)
       }
     },
-    [source, flag]
+    [offered, entrySearch, flag]
   )
 
   // once: Create opens when the player is first in-world
   const auto = useRef(entry.open)
   const inWorld = session.phase === 'world'
   useEffect(() => {
-    if (source == null || !auto.current || !inWorld) return
+    if (!offered || !auto.current || !inWorld) return
     auto.current = false
     latest.current.create.show(true)
-  }, [source, inWorld])
+  }, [offered, inWorld])
 
-  return useMemo(() => (source == null ? null : { load, loading }), [source, load, loading])
+  return useMemo(() => (offered ? { load, loading } : null), [offered, load, loading])
 }
 
 export default function EditorHost({

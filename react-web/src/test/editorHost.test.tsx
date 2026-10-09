@@ -39,14 +39,14 @@ describe('editor host', () => {
     expect(editorOffered(hostname)).toBe(false)
   })
 
-  it('reads the project and the local service overrides from the entry url', () => {
+  it('reads the project and the local service overrides from the entry url', async () => {
     expect(editorEntry('?realm=x')).toEqual({ open: false, project: null })
     expect(editorEntry('?editor')).toEqual({ open: true, project: null })
     // what the engine's url sync turns a bare flag into
     expect(editorEntry('?editor=true')).toEqual({ open: true, project: null })
     expect(editorEntry('?editor=my-scene')).toEqual({ open: true, project: 'my-scene' })
     expect(editorEntry('?editor=../x')).toEqual({ open: true, project: null })
-    expect(editorSource('?editor-projects=http://localhost:9000/&editor-worlds=javascript:alert(1)', 'localhost', PAGE_DIR, 'decentraland.org')?.services).toEqual({
+    expect((await editorSource('?editor-projects=http://localhost:9000/&editor-worlds=javascript:alert(1)', 'localhost', PAGE_DIR, 'decentraland.org'))?.services).toEqual({
       projects: 'http://localhost:9000',
       worldsContent: 'https://worlds-content-server.decentraland.org',
       signed: {
@@ -58,14 +58,27 @@ describe('editor host', () => {
       }
     })
     // a local Worlds server: nothing else is signed for
-    expect(editorSource('?editor-projects=https://evil.example/v1&editor-worlds=http://127.0.0.1:8799', 'localhost', PAGE_DIR, 'decentraland.org')?.services).toEqual({
+    expect((await editorSource('?editor-projects=https://evil.example/v1&editor-worlds=http://127.0.0.1:8799', 'localhost', PAGE_DIR, 'decentraland.org'))?.services).toEqual({
       projects: 'http://localhost:8787',
       worldsContent: 'http://127.0.0.1:8799'
     })
   })
 
-  it("deploys to the session's base domain, not the page's", () => {
-    expect(editorSource('?baseDomain=decentraland.org', 'decentraland.zone', PAGE_DIR, 'decentraland.org')?.services).toEqual({
+  it("follows the released package's tag through the registry, and deploys to the session's base domain, not the page's", async () => {
+    let version = '0.2.0-ci.commit-abc1234'
+    const asked: string[] = []
+    vi.stubGlobal('fetch', async (url: string) => {
+      asked.push(url)
+      return Response.json({ version })
+    })
+    const source = await editorSource('?baseDomain=decentraland.org', 'decentraland.zone', PAGE_DIR, 'decentraland.org')
+    expect(asked).toEqual(['https://registry.npmjs.org/@dcl-regenesislabs/web-editor/latest'])
+    expect(source).toMatchObject({ base: 'https://cdn.jsdelivr.net/npm/@dcl-regenesislabs/web-editor@0.2.0-ci.commit-abc1234/', editorJsIntegrity: null, editorSceneEntity: null })
+    // the registry's answer builds a url: nothing but a version gets in
+    version = '../../evil.example/'
+    await expect(editorSource('', 'decentraland.zone', PAGE_DIR, 'decentraland.org')).rejects.toThrow(/names no version/)
+    vi.unstubAllGlobals()
+    expect(source?.services).toEqual({
       projects: 'https://web-editor-dev.dclregenesislabs.xyz',
       worldsContent: 'https://worlds-content-server.decentraland.org',
       signed: {
