@@ -18,11 +18,14 @@ const KEY_BINDINGS_TAB = 'Key Bindings'
 function humanize(s: string): string {
   return s.replace(/[_-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
+// A toggle only reads right for an off/on pair; any other pair of names (Everyone / Only friends)
+// needs its names on screen, so it is a select like the longer lists.
 function isBinary(s: Setting): boolean {
-  return s.namedVariants.length === 2 || (s.namedVariants.length === 0 && s.maxValue - s.minValue <= 1 && s.stepSize >= 1)
+  if (s.namedVariants.length === 2) return s.namedVariants.every((v) => /^(off|on)$/i.test(v.name))
+  return s.namedVariants.length === 0 && s.maxValue - s.minValue <= 1 && s.stepSize >= 1
 }
 function isSlider(s: Setting): boolean {
-  return !isBinary(s) && s.namedVariants.length <= 2
+  return !isBinary(s) && s.namedVariants.length < 2
 }
 
 function Control({ s, onSet }: { s: Setting; onSet: (name: string, value: number) => void }): React.JSX.Element {
@@ -32,7 +35,7 @@ function Control({ s, onSet }: { s: Setting; onSet: (name: string, value: number
   if (isBinary(s)) {
     return <Toggle checked={s.value >= 1} disabled={unset} onChange={(c) => onSet(s.name, c ? 1 : 0)} aria-label={s.name} />
   }
-  if (s.namedVariants.length > 2) {
+  if (s.namedVariants.length >= 2) {
     return (
       <Select
         variant="light"

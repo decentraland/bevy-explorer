@@ -25,7 +25,7 @@ impl AppSetting for DmPrivacy {
     type Param = ();
 
     fn title() -> String {
-        "Direct messages".to_owned()
+        "Receive direct messages from".to_owned()
     }
 
     fn category() -> SettingCategory {
