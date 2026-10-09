@@ -406,8 +406,15 @@ export interface ChatState {
   pendingMention: string | null
   /** Clear the queued mention once Chat has inserted it. */
   consumeMention: () => void
-  /** Messages received while closed, reset to 0 on open (drives the sidebar badge). */
+  /** Lines that landed where they could not be seen: with the chat closed, or open but idle on
+   *  another channel (the rail and its counts are hidden while idle). Reset when the chat opens or
+   *  becomes active. Drives the sidebar badge. */
   unread: number
+  /** The panel reports whether it is active (hovered or focused, chrome shown). */
+  setActive: (active: boolean) => void
+  /** Nearby lines that landed while Nearby was not on screen (chat closed or a DM tab shown);
+   *  reset when it is. Drives the badge on the rail's Nearby tab. */
+  nearbyUnread: number
   /** Bumped on every engine "focus chat" request (Enter, even while idle-open) — Chat watches
    *  this to (re)focus the input beyond the open-transition case. */
   focusTick: number
@@ -671,10 +678,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const cursorLockedRef = useRef(false)
   const [chatOpen, setChatOpen] = useState(true)
   const [chatUnread, setChatUnread] = useState(0)
+  const [nearbyUnread, setNearbyUnread] = useState(0)
   const [chatFocusTick, setChatFocusTick] = useState(0)
   // Read inside the message-subscription closure (mounted once), not via a stale `chatOpen` capture.
   const chatOpenRef = useRef(chatOpen)
   chatOpenRef.current = chatOpen
+  const chatActiveRef = useRef(false)
   // True while something is covering the chat (see the assignment below for what counts). Read by
   // requestFocusChat from a callback that would otherwise close over a stale value. Popups aren't in
   // here — they live in their own module store, so requestFocusChat asks it directly.
@@ -845,8 +854,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         }
         case 'chat': {
-          if (!chatOpenRef.current) setChatUnread((n) => n + 1)
-          if (!isDmChannel(msg.chat.channel)) {
+          const key = isDmChannel(msg.chat.channel) ? channelKey(msg.chat.channel) : 'Nearby'
+          const shown = chatOpenRef.current && channelRef.current === key
+          if (!shown && !(chatOpenRef.current && chatActiveRef.current)) setChatUnread((n) => n + 1)
+          if (key === 'Nearby') {
+            if (!shown) setNearbyUnread((n) => n + 1)
             setMessages((prev) =>
               [...prev, { ...msg.chat, id: chatId.current++, ts: Date.now() }].slice(
                 -MAX_CHAT_LINES
@@ -856,9 +868,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           }
           // A DM (theirs, or the echo of ours) is already in the store by the time it is relayed:
           // the shown tab re-reads it, any other tab counts it.
-          const key = channelKey(msg.chat.channel)
           ensureConversation(key)
-          if (chatOpenRef.current && channelRef.current === key) {
+          if (shown) {
             driverRef.current?.send({ kind: 'dmHistory', address: key })
           } else {
             setConversations((prev) => prev.map((c) => (c.address === key ? { ...c, unread: c.unread + 1 } : c)))
@@ -1316,11 +1327,18 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     if (!chatOpen) return
     setChatUnread(0)
     const key = channelRef.current
-    if (key !== 'Nearby') {
+    if (key === 'Nearby') {
+      setNearbyUnread(0)
+    } else {
       setConversations((prev) => prev.map((c) => (c.address === key ? { ...c, unread: 0 } : c)))
       driverRef.current?.send({ kind: 'dmHistory', address: key })
     }
   }, [chatOpen])
+  // Active, the panel shows its rail and the per-channel counts, so the sidebar's can go.
+  const setChatActive = useCallback((active: boolean) => {
+    chatActiveRef.current = active
+    if (active) setChatUnread(0)
+  }, [])
   // "Mention" from a profile card opens chat and queues the @name; Chat consumes it into its draft.
   const mentionInChat = useCallback((name: string) => {
     panelSetters.forEach((set) => set(false))
@@ -1340,7 +1358,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const selectChannel = useCallback((next: string) => {
     const key = channelKey(next)
     setChannel(key)
-    if (key !== 'Nearby') {
+    if (key === 'Nearby') {
+      setNearbyUnread(0)
+    } else {
       setConversations((prev) => prev.map((c) => (c.address === key ? { ...c, unread: 0 } : c)))
       // with chat closed, opening it reads the tab
       if (chatOpenRef.current) driverRef.current?.send({ kind: 'dmHistory', address: key })
@@ -1999,6 +2019,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setConversations([])
     setDmLines({})
     setChatUnread(0)
+    setNearbyUnread(0)
   }, [closeAllPanels])
 
   // Where the Backpack's avatar shows through, so the lobby under its modal can open the same hole.
@@ -2479,6 +2500,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       pendingMention,
       consumeMention,
       unread: chatUnread,
+      setActive: setChatActive,
+      nearbyUnread,
       focusTick: chatFocusTick,
       requestFocus: requestFocusChat
     },

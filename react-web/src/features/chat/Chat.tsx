@@ -362,6 +362,7 @@ function ConversationRail({ chat, onClose }: { chat: ChatState; onClose: () => v
           onClick={() => chat.select('Nearby')}
         >
           <DclLogo size={28} />
+          {chat.nearbyUnread > 0 && <span className={styles.railBadge}>{chat.nearbyUnread > 9 ? '9+' : chat.nearbyUnread}</span>}
         </button>
       </Tooltip>
       {chat.conversations.map((c) => (
@@ -505,6 +506,7 @@ export function Chat({
   const [cardOpen, setCardOpen] = useState(false)
   const active = open && (hovered || focused || picker || cardOpen)
   const bare = !active // collapsed or idle-open → borderless translucent input only
+  useEffect(() => chat.setActive(active), [active, chat.setActive])
   // The DM shown, if the channel is one; the rail appears once any DM tab exists.
   const conversation = chat.channel === 'Nearby' ? null : (chat.conversations.find((c) => c.address === chat.channel) ?? null)
   const hasRail = open && chat.conversations.length > 0

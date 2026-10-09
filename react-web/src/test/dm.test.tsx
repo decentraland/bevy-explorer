@@ -98,6 +98,49 @@ describe('dm domain', () => {
     expect(h.driver.sentOf('dmHistory').length).toBe(reads + 1)
   })
 
+  it('Nearby lines count on the rail while a DM tab is shown, and clear when Nearby is shown', async () => {
+    const h = renderSession()
+    await enterAsGuest(h)
+    h.driver.emit({ kind: 'chat', chat: { sender: '0x1', message: 'seen', channel: 'Nearby' } })
+    expect(h.session().chat.nearbyUnread).toBe(0)
+    act(() => h.session().chat.openConversation(BOB))
+    h.driver.emit({ kind: 'chat', chat: { sender: '0x1', message: 'missed', channel: 'Nearby' } })
+    h.driver.emit({ kind: 'chat', chat: { sender: 'system', message: 'Realm set to foo', channel: 'System' } })
+    expect(h.session().chat.nearbyUnread).toBe(2)
+    expect(h.session().chat.conversations[0].unread).toBe(0)
+    act(() => h.session().chat.select('Nearby'))
+    expect(h.session().chat.nearbyUnread).toBe(0)
+  })
+
+  it('reopening chat on Nearby clears its rail count', async () => {
+    const h = renderSession()
+    await enterAsGuest(h)
+    act(() => h.session().chat.toggle())
+    h.driver.emit({ kind: 'chat', chat: { sender: '0x1', message: 'while closed', channel: 'Nearby' } })
+    expect(h.session().chat.nearbyUnread).toBe(1)
+    expect(h.session().chat.unread).toBe(1)
+    act(() => h.session().chat.toggle())
+    expect(h.session().chat.nearbyUnread).toBe(0)
+    expect(h.session().chat.unread).toBe(0)
+  })
+
+  it('the sidebar counts lines for other channels while the chat is open but idle', async () => {
+    const h = renderSession()
+    await enterAsGuest(h)
+    expect(h.session().chat.open).toBe(true)
+    // idle on Nearby: a Nearby line is visible, a DM is not
+    h.driver.emit({ kind: 'chat', chat: { sender: '0x1', message: 'seen', channel: 'Nearby' } })
+    expect(h.session().chat.unread).toBe(0)
+    h.driver.emit({ kind: 'chat', chat: { sender: BOB, message: 'hidden', channel: BOB } })
+    expect(h.session().chat.unread).toBe(1)
+    // active: the rail shows the tab's count, so the sidebar's clears and nothing more counts
+    act(() => h.session().chat.setActive(true))
+    expect(h.session().chat.unread).toBe(0)
+    h.driver.emit({ kind: 'chat', chat: { sender: BOB, message: 'on the rail', channel: BOB } })
+    expect(h.session().chat.unread).toBe(0)
+    expect(h.session().chat.conversations[0].unread).toBe(2)
+  })
+
   it('closing a tab drops its lines and a late answer for it', async () => {
     const h = renderSession()
     await enterAsGuest(h)
