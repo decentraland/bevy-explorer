@@ -676,6 +676,7 @@ fn change_realm(
 fn external_url(
     mut events: EventReader<RpcCallEvent>,
     mut perms: Permission<(RpcResultSender<Result<(), String>>, String)>,
+    _js: common::util::JsThread,
 ) {
     for (scene, url, response) in events.read().filter_map(|ev| match (&ev.origin, &ev.call) {
         (RpcOrigin::Scene { entity: scene, .. }, RpcCall::ExternalUrl { url, response }) => {
