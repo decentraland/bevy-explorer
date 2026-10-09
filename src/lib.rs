@@ -50,6 +50,7 @@ use input_manager::InputManagerPlugin;
 use ipfs::{map_realm_name, IpfsIoPlugin, RealmInitialLocation};
 use livestream_manager::plugin::LivestreamManagerPlugin;
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
+use notifications::plugin::NotificationsPlugin;
 use particle_system::plugin::ParticleSystemPlugin;
 use platform::default_camera_components;
 use restricted_actions::process_startup_scenes;
@@ -592,6 +593,7 @@ impl DecentralandApp {
             .add_plugins(SystemBridgePlugin { bare: false })
             .add_plugins(SceneInspectorPlugin)
             .add_plugins(EmbedAssetsPlugin)
+            .add_plugins(NotificationsPlugin)
             .add_plugins(ParticleSystemPlugin)
             .add_plugins(LivestreamManagerPlugin)
             .add_plugins(media::plugin::MediaPlugin);

@@ -23,6 +23,7 @@ use common::structs::DebugInfo;
 use common::util::AsH160;
 #[cfg(feature = "social")]
 use console::DoAddConsoleCommand;
+use notifications::PushNotification;
 #[cfg(feature = "social")]
 use system_bridge::BlockedUserData;
 #[cfg(feature = "social")]
@@ -1093,6 +1094,7 @@ fn pipe_block_updates_to_scene(
 fn pipe_friendship_events_to_scene(
     mut requests: EventReader<SystemApi>,
     mut friendship_events: EventReader<FriendshipEvent>,
+    mut push_notifications: EventWriter<PushNotification>,
     mut senders: Local<Vec<RpcStreamSender<FriendshipEventUpdate>>>,
 ) {
     senders.extend(requests.read().filter_map(|ev| {
@@ -1105,9 +1107,14 @@ fn pipe_friendship_events_to_scene(
     senders.retain(|s| !s.is_closed());
 
     for ev in friendship_events.read() {
-        if let Some(update) = friendship_event_to_update(&ev.0) {
+        if let Some((update, maybe_notification)) =
+            friendship_event_to_update_and_notification(&ev.0)
+        {
             for sender in senders.iter() {
                 let _ = sender.send(update.clone());
+            }
+            if let Some(notification) = maybe_notification {
+                push_notifications.write(notification);
             }
         }
     }
@@ -1176,7 +1183,9 @@ fn pipe_connectivity_events_to_scene(
     }
 }
 
-fn friendship_event_to_update(body: &Option<FriendshipEventBody>) -> Option<FriendshipEventUpdate> {
+fn friendship_event_to_update_and_notification(
+    body: &Option<FriendshipEventBody>,
+) -> Option<(FriendshipEventUpdate, Option<PushNotification>)> {
     #[cfg(feature = "social")]
     {
         use dcl_component::proto_components::social_service::v2::friendship_update;
@@ -1184,46 +1193,75 @@ fn friendship_event_to_update(body: &Option<FriendshipEventBody>) -> Option<Frie
             friendship_update::Update::Request(r) => {
                 let profile = r.friend.as_ref()?;
                 let addr = profile.address.as_h160()?;
-                Some(FriendshipEventUpdate::Request {
-                    address: format!("{addr:#x}"),
-                    name: profile.name.clone(),
-                    has_claimed_name: profile.has_claimed_name,
-                    profile_picture_url: profile.profile_picture_url.clone(),
-                    name_color: convert_name_color(&profile.name_color),
-                    created_at: r.created_at,
-                    message: r.message.clone(),
-                    id: r.id.clone(),
-                })
+                Some((
+                    FriendshipEventUpdate::Request {
+                        address: format!("{addr:#x}"),
+                        name: profile.name.clone(),
+                        has_claimed_name: profile.has_claimed_name,
+                        profile_picture_url: profile.profile_picture_url.clone(),
+                        name_color: convert_name_color(&profile.name_color),
+                        created_at: r.created_at,
+                        message: r.message.clone(),
+                        id: r.id.clone(),
+                    },
+                    Some(PushNotification {
+                        title: "Friend Request".into(),
+                        icon: Some(profile.profile_picture_url.clone()),
+                        body: Some(format!("{} wants to be friends with you!", profile.name)),
+                        timeout: 10.,
+                    }),
+                ))
             }
             friendship_update::Update::Accept(r) => {
-                let addr = r.user.as_ref()?.address.as_h160()?;
-                Some(FriendshipEventUpdate::Accept {
-                    address: format!("{addr:#x}"),
-                })
+                let user = r.user.as_ref()?;
+                let addr = &user.address.as_h160()?;
+                Some((
+                    FriendshipEventUpdate::Accept {
+                        address: format!("{addr:#x}"),
+                    },
+                    Some(PushNotification {
+                        title: "New friend".into(),
+                        icon: None,
+                        body: Some("You have a new friend!".to_string()),
+                        timeout: 10.,
+                    }),
+                ))
             }
             friendship_update::Update::Reject(r) => {
                 let addr = r.user.as_ref()?.address.as_h160()?;
-                Some(FriendshipEventUpdate::Reject {
-                    address: format!("{addr:#x}"),
-                })
+                Some((
+                    FriendshipEventUpdate::Reject {
+                        address: format!("{addr:#x}"),
+                    },
+                    None,
+                ))
             }
             friendship_update::Update::Delete(r) => {
                 let addr = r.user.as_ref()?.address.as_h160()?;
-                Some(FriendshipEventUpdate::Delete {
-                    address: format!("{addr:#x}"),
-                })
+                Some((
+                    FriendshipEventUpdate::Delete {
+                        address: format!("{addr:#x}"),
+                    },
+                    None,
+                ))
             }
             friendship_update::Update::Cancel(r) => {
                 let addr = r.user.as_ref()?.address.as_h160()?;
-                Some(FriendshipEventUpdate::Cancel {
-                    address: format!("{addr:#x}"),
-                })
+                Some((
+                    FriendshipEventUpdate::Cancel {
+                        address: format!("{addr:#x}"),
+                    },
+                    None,
+                ))
             }
             friendship_update::Update::Block(r) => {
                 let addr = r.user.as_ref()?.address.as_h160()?;
-                Some(FriendshipEventUpdate::Block {
-                    address: format!("{addr:#x}"),
-                })
+                Some((
+                    FriendshipEventUpdate::Block {
+                        address: format!("{addr:#x}"),
+                    },
+                    None,
+                ))
             }
         }
     }
@@ -1231,47 +1269,71 @@ fn friendship_event_to_update(body: &Option<FriendshipEventBody>) -> Option<Frie
     {
         match body.as_ref()? {
             FriendshipEventBody::Request(r) => {
-                let addr = &r.friend.as_ref()?.address;
-                Some(FriendshipEventUpdate::Request {
-                    address: addr.clone(),
-                    name: String::new(),
-                    has_claimed_name: false,
-                    profile_picture_url: String::new(),
-                    name_color: None,
-                    created_at: 0,
-                    message: None,
-                    id: String::new(),
-                })
+                let profile = r.friend.as_ref()?;
+                let addr = &profile.address;
+                Some((
+                    FriendshipEventUpdate::Request {
+                        address: addr.clone(),
+                        name: String::new(),
+                        has_claimed_name: false,
+                        profile_picture_url: String::new(),
+                        name_color: None,
+                        created_at: 0,
+                        message: None,
+                        id: String::new(),
+                    },
+                    Some(PushNotification {
+                        title: "Friend Request".into(),
+                        icon: None,
+                        body: Some("Someone wants to be friends with you!".to_string()),
+                        timeout: 10.,
+                    }),
+                ))
             }
             FriendshipEventBody::Accept(r) => {
                 let addr = &r.user.as_ref()?.address;
-                Some(FriendshipEventUpdate::Accept {
-                    address: addr.clone(),
-                })
+                Some((
+                    FriendshipEventUpdate::Accept {
+                        address: addr.clone(),
+                    },
+                    None,
+                ))
             }
             FriendshipEventBody::Reject(r) => {
                 let addr = &r.user.as_ref()?.address;
-                Some(FriendshipEventUpdate::Reject {
-                    address: addr.clone(),
-                })
+                Some((
+                    FriendshipEventUpdate::Reject {
+                        address: addr.clone(),
+                    },
+                    None,
+                ))
             }
             FriendshipEventBody::Delete(r) => {
                 let addr = &r.user.as_ref()?.address;
-                Some(FriendshipEventUpdate::Delete {
-                    address: addr.clone(),
-                })
+                Some((
+                    FriendshipEventUpdate::Delete {
+                        address: addr.clone(),
+                    },
+                    None,
+                ))
             }
             FriendshipEventBody::Cancel(r) => {
                 let addr = &r.user.as_ref()?.address;
-                Some(FriendshipEventUpdate::Cancel {
-                    address: addr.clone(),
-                })
+                Some((
+                    FriendshipEventUpdate::Cancel {
+                        address: addr.clone(),
+                    },
+                    None,
+                ))
             }
             FriendshipEventBody::Block(r) => {
                 let addr = &r.user.as_ref()?.address;
-                Some(FriendshipEventUpdate::Block {
-                    address: addr.clone(),
-                })
+                Some((
+                    FriendshipEventUpdate::Block {
+                        address: addr.clone(),
+                    },
+                    None,
+                ))
             }
         }
     }
