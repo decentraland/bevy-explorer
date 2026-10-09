@@ -20,7 +20,8 @@ use std::marker::PhantomData;
 
 use alloy_core::primitives::Address;
 use bevy::{
-    ecs::system::SystemParam,
+    ecs::{component::HookContext, system::SystemParam, world::DeferredWorld},
+    platform::collections::HashMap,
     prelude::*,
     tasks::{IoTaskPool, Task},
 };
@@ -89,6 +90,7 @@ impl Plugin for CommsPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<SetCurrentScene>()
             .init_resource::<SceneRoomConnection>()
+            .init_resource::<SceneRoomMap>()
             .init_resource::<ServerSceneRooms>()
             .init_resource::<DisableSceneRoomGatekeeper>()
             .insert_resource(SceneRoomAdapterOverride(
@@ -554,7 +556,28 @@ pub(crate) async fn mint_gatekeeper_adapter(
 }
 
 #[derive(Component)]
+#[component(immutable, on_add=Self::on_add, on_remove=Self::on_remove)]
 pub struct SceneRoom(pub String);
+
+impl SceneRoom {
+    fn on_add(mut deferred_world: DeferredWorld, hook_context: HookContext) {
+        let entity = hook_context.entity;
+        let scene_id = deferred_world.get::<SceneRoom>(entity).unwrap().0.clone();
+        let mut scene_room_map = deferred_world.resource_mut::<SceneRoomMap>();
+        scene_room_map.0.insert(scene_id, entity);
+    }
+
+    fn on_remove(mut deferred_world: DeferredWorld, hook_context: HookContext) {
+        let entity = hook_context.entity;
+        let scene_id = deferred_world.get::<SceneRoom>(entity).unwrap().0.clone();
+        let mut scene_room_map = deferred_world.resource_mut::<SceneRoomMap>();
+        scene_room_map.0.remove(&scene_id);
+    }
+}
+
+/// Inverse mapping between a scene id and the transport entity
+#[derive(Default, Resource, Deref)]
+pub struct SceneRoomMap(HashMap<String, Entity>);
 
 #[derive(Resource, Default)]
 pub struct SceneRoomConnection(pub Option<(SetCurrentScene, String, Entity)>);
