@@ -1,7 +1,7 @@
 use alloy_core::primitives::Address;
-use bevy::platform::collections::HashMap;
+use bevy::platform::collections::{HashMap, HashSet};
 
-use crate::DirectChatMessage;
+use crate::{DirectChatMessage, DmPrivacy, DmPrivacyOf};
 
 /// `(addresses I blocked, addresses that blocked me)` — mirrors the real
 /// client's `BlockingStatus` so signatures match across feature flags.
@@ -43,6 +43,9 @@ pub struct SocialClientHandler {
     pub received_requests: HashMap<Address, FriendshipRequestResponse>,
     pub friends: HashMap<Address, FriendProfile>,
     pub friend_status: HashMap<Address, ConnectivityStatus>,
+    pub blocked: HashSet<Address>,
+    pub blocked_by: HashSet<Address>,
+    pub dm_privacy: DmPrivacy,
 
     pub unread_messages: HashMap<Address, usize>,
 }
@@ -58,7 +61,9 @@ impl SocialClientHandler {
         Some(Self::default())
     }
 
-    pub fn update(&self) {}
+    pub fn update(&self) -> bool {
+        false
+    }
 
     pub fn live(&self) -> bool {
         false
@@ -148,6 +153,33 @@ impl SocialClientHandler {
     ) -> Result<tokio::sync::oneshot::Receiver<BlockingStatusResult>, anyhow::Error> {
         let (tx, rx) = tokio::sync::oneshot::channel();
         let _ = tx.send(Ok((Vec::new(), Vec::new())));
+        Ok(rx)
+    }
+
+    pub fn get_social_settings(
+        &self,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<DmPrivacy, String>>, anyhow::Error> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(Ok(DmPrivacy::All));
+        Ok(rx)
+    }
+
+    pub fn upsert_social_settings(
+        &self,
+        privacy: DmPrivacy,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<DmPrivacy, String>>, anyhow::Error> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(Ok(privacy));
+        Ok(rx)
+    }
+
+    pub fn get_private_messages_settings(
+        &self,
+        _addresses: Vec<String>,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<Vec<DmPrivacyOf>, String>>, anyhow::Error>
+    {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(Ok(Vec::new()));
         Ok(rx)
     }
 

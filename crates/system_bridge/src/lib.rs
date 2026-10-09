@@ -160,6 +160,13 @@ pub enum SystemApi {
     GetBlockedUsers(RpcResultSender<Vec<BlockedUserData>>),
     GetBlockingStatus(RpcResultSender<Result<BlockingStatusData, String>>),
     GetBlockUpdateStream(RpcStreamSender<BlockUpdateData>),
+    // Social / DMs
+    /// Emits the given recipient's DM state now and whenever it changes, until dropped.
+    GetDmUserStateStream(String, RpcStreamSender<DmUserStateData>),
+    /// The stored DMs with a partner, oldest first.
+    GetDmHistory(String, RpcResultSender<Vec<DmHistoryEntryData>>),
+    /// Deletes the stored DMs with a partner.
+    DeleteDmHistory(String),
 }
 
 #[derive(Resource)]

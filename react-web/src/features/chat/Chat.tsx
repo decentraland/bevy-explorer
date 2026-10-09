@@ -5,9 +5,10 @@
 // Incoming messages come from the bridge getChatStream relay; sends go via BevyApi.sendChat.
 
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ChatLine, ChatState } from '../session/useEngineSession'
-import type { NearbyMember } from '../../engine/protocol'
-import { Avatar, ControlButton, DclLogo, MaskIcon, VerifiedBadge, VoiceBars } from '../../design'
+import type { ChatLine, ChatState, Conversation } from '../session/useEngineSession'
+import type { DmUserState, NearbyMember } from '../../engine/protocol'
+import { Avatar, ContextMenu, ControlButton, DclLogo, Kebab, MaskIcon, Tooltip, VerifiedBadge, VoiceBars } from '../../design'
+import { registerCancelLayer } from '../../lib/cancelLayers'
 import { EmojiPicker } from './EmojiPicker'
 import { searchByShortcode, type Emoji } from './emojiData'
 import { MessageText, mentionsMe } from './chatText'
@@ -317,12 +318,165 @@ function MembersOverlay({
   )
 }
 
+/** A DM partner's name and face, from the profile store (the address until it answers). */
+function usePartner(address: string): { name: string; picture?: string; claimed: boolean; color: string } {
+  const known = useProfile(address)
+  const name = known?.name != null && known.name !== '' ? displayName(known.name, address, known.hasClaimedName) : shortAddr(address)
+  return { name, picture: known?.picture, claimed: known?.hasClaimedName === true, color: senderColor(address, name) }
+}
+
+/** One DM tab on the rail: face, online dot, unread count; faded while the partner is unavailable. */
+function RailTab({ conversation, active, onSelect, onClose }: { conversation: Conversation; active: boolean; onSelect: () => void; onClose: () => void }): React.JSX.Element {
+  const { name, picture, color } = usePartner(conversation.address)
+  const { base } = splitName(name)
+  return (
+    <Tooltip label={base} side="left" variant="rail">
+      <div className={`${styles.railTab} ${active ? styles.railActive : ''} ${conversation.online ? '' : styles.railOff}`.trim()}>
+        <button type="button" className={styles.railBtn} aria-label={`Chat with ${base}`} aria-pressed={active} onClick={onSelect}>
+          <Avatar src={picture} name={name} color={color} size={32} status={conversation.online ? 'online' : 'offline'} dotPosition="top" />
+          {conversation.unread > 0 && <span className={styles.railBadge}>{conversation.unread > 9 ? '9+' : conversation.unread}</span>}
+        </button>
+        <button type="button" className={styles.railClose} aria-label={`Close chat with ${base}`} onClick={onClose}>
+          <MaskIcon src={closeIcon} size={8} />
+        </button>
+      </div>
+    </Tooltip>
+  )
+}
+
+/** The conversation rail: the chat's close button, Nearby pinned first, then the open DM tabs. */
+function ConversationRail({ chat, onClose }: { chat: ChatState; onClose: () => void }): React.JSX.Element {
+  return (
+    <nav className={styles.rail} aria-label="Conversations">
+      <div className={styles.railHead}>
+        <ControlButton variant="dark" aria-label="Close chat" onClick={onClose}>
+          <MaskIcon src={closeIcon} size={10} />
+        </ControlButton>
+      </div>
+      <Tooltip label="Nearby" side="left" variant="rail">
+        <button
+          type="button"
+          className={`${styles.railBtn} ${styles.railNearby} ${chat.channel === 'Nearby' ? styles.railActive : ''}`.trim()}
+          aria-label="Nearby chat"
+          aria-pressed={chat.channel === 'Nearby'}
+          onClick={() => chat.select('Nearby')}
+        >
+          <DclLogo size={28} />
+          {chat.nearbyUnread > 0 && <span className={styles.railBadge}>{chat.nearbyUnread > 9 ? '9+' : chat.nearbyUnread}</span>}
+        </button>
+      </Tooltip>
+      {chat.conversations.map((c) => (
+        <RailTab key={c.address} conversation={c} active={chat.channel === c.address} onSelect={() => chat.select(c.address)} onClose={() => chat.closeConversation(c.address)} />
+      ))}
+    </nav>
+  )
+}
+
+/** Why a DM cannot be sent right now, in unity-explorer's words. */
+const BLOCKED_COPY: Record<Exclude<DmUserState, 'connected'>, string> = {
+  notConnected: 'You are not connected to chat.',
+  disconnected: 'The user you are trying to message is offline.',
+  privateMessagesBlocked: 'The user you are trying to message only accepts DMs from friends.',
+  blockedByOwnUser: 'To message this user you must first unblock them.',
+  privateMessagesBlockedByOwnUser: 'Add this user as a friend to chat, or update your DM settings to connect with everyone.',
+  otherClient: 'User is not connected to chat. They may be using a client without DM support.'
+}
+
+/** The words in the own-privacy copy that become the settings link. */
+const SETTINGS_LINK = 'DM settings'
+
+/** Replaces the input while the partner cannot be messaged. The own-setting case links to settings. */
+function BlockedInput({ state, onSettings }: { state: Exclude<DmUserState, 'connected'>; onSettings?: () => void }): React.JSX.Element {
+  const copy = BLOCKED_COPY[state]
+  const [before, after] = copy.split(SETTINGS_LINK)
+  const linked = state === 'privateMessagesBlockedByOwnUser' && onSettings && after != null
+  return (
+    <div className={`${styles.input} ${styles.blocked}`} role="status">
+      {linked ? (
+        <>
+          {before}
+          <button type="button" className={styles.blockedLink} onClick={onSettings}>
+            {SETTINGS_LINK}
+          </button>
+          {after}
+        </>
+      ) : (
+        copy
+      )}
+    </div>
+  )
+}
+
+/** The DM title bar: the partner, their reachability, and the conversation menu. */
+function DmHeader({ conversation, onClose, onDelete, onOpenProfile }: {
+  conversation: Conversation
+  onClose: () => void
+  onDelete: () => void
+  onOpenProfile: (user: ChatUser, x: number, y: number) => void
+}): React.JSX.Element {
+  const { name, picture, claimed, color } = usePartner(conversation.address)
+  const { base, tag } = splitName(name)
+  const [menu, setMenu] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!menu) return
+    const onDown = (e: MouseEvent): void => {
+      if (menuRef.current != null && !menuRef.current.contains(e.target as Node)) setMenu(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    const off = registerCancelLayer(() => setMenu(false))
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      off()
+    }
+  }, [menu])
+  const status = conversation.state == null ? 'Checking…' : conversation.online ? 'Online' : 'Offline'
+  return (
+    <header className={styles.nav}>
+      <button
+        type="button"
+        className={`${styles.navLeft} ${styles.dmPartner}`}
+        aria-label={`View ${base}`}
+        onClick={(e) => onOpenProfile({ address: conversation.address, name, picture }, e.clientX, e.clientY)}
+      >
+        <Avatar src={picture} name={name} color={color} size={28} framed className={styles.channelIcon} />
+        <span className={styles.dmNames}>
+          <span className={styles.navTitle} style={{ color }}>
+            {base}
+            {!claimed && tag && <span className={styles.tag}>{tag}</span>}
+            {claimed && <VerifiedBadge size={14} className={styles.badge} />}
+          </span>
+          <span className={`${styles.dmStatus} ${conversation.online ? styles.dmOnline : ''}`.trim()}>{status}</span>
+        </span>
+      </button>
+      <div className={styles.navRight}>
+        <div ref={menuRef} className={styles.menuWrap}>
+          <ControlButton variant="faint" aria-label="Conversation options" aria-expanded={menu} active={menu} onClick={() => setMenu((m) => !m)}>
+            <Kebab vertical size={18} r={2} />
+          </ControlButton>
+          {menu && (
+            <div className={styles.menu}>
+              <ContextMenu
+                items={[
+                  { label: 'Delete chat history', danger: true, onClick: () => { setMenu(false); onDelete() } },
+                  { label: 'Close conversation', onClick: () => { setMenu(false); onClose() } }
+                ]}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    </header>
+  )
+}
+
 export function Chat({
   chat,
   hidden = false,
   me,
   onTeleport,
-  onVisitWorld
+  onVisitWorld,
+  onOpenSettings
 }: {
   chat: ChatState
   hidden?: boolean
@@ -332,6 +486,8 @@ export function Chat({
   onTeleport?: (x: number, y: number) => void
   /** A world name (e.g. boedo.dcl.eth) in a message was clicked → prompt to jump there. */
   onVisitWorld?: (name: string) => void
+  /** The blocked-input "DM settings" link. */
+  onOpenSettings?: () => void
 }): React.JSX.Element | null {
   const [draft, setDraft] = useState('')
   const [picker, setPicker] = useState(false)
@@ -350,6 +506,11 @@ export function Chat({
   const [cardOpen, setCardOpen] = useState(false)
   const active = open && (hovered || focused || picker || cardOpen)
   const bare = !active // collapsed or idle-open → borderless translucent input only
+  useEffect(() => chat.setActive(active), [active, chat.setActive])
+  // The DM shown, if the channel is one; the rail appears once any DM tab exists.
+  const conversation = chat.channel === 'Nearby' ? null : (chat.conversations.find((c) => c.address === chat.channel) ?? null)
+  const hasRail = open && chat.conversations.length > 0
+  const blockedState = conversation?.state != null && conversation.state !== 'connected' ? conversation.state : null
 
   // Lines already in the log when the list mounts are history; only later ones fade in.
   const lastId = chat.messages.length > 0 ? chat.messages[chat.messages.length - 1].id : -Infinity
@@ -407,6 +568,14 @@ export function Chat({
   }, [unread])
   const seenId = useRef(lastId)
   const heightBefore = useRef(0)
+  // Switching tabs shows a different list: nothing in it is new, and nothing fades in.
+  useEffect(() => {
+    seenId.current = lastId
+    liveFrom.current = lastId + 1
+    setUnread(0)
+    setNewFrom(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat.channel])
   useEffect(() => {
     const el = listRef.current
     if (!el) return
@@ -607,12 +776,21 @@ export function Chat({
   return (
     <div
       ref={hudInsetRef}
-      className={`${styles.root} ${open ? styles.open : ''} ${active ? styles.active : ''} ${focused ? styles.focused : ''} ${active && showMembers ? styles.membersOpen : ''}`.trim()}
+      className={`${styles.root} ${open ? styles.open : ''} ${active ? styles.active : ''} ${focused ? styles.focused : ''} ${active && showMembers ? styles.membersOpen : ''} ${hasRail ? styles.withRail : ''}`.trim()}
       onClick={focusFromPanel}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      {open && (
+      <div className={styles.main}>
+      {open && conversation != null && (
+        <DmHeader
+          conversation={conversation}
+          onClose={() => chat.closeConversation(conversation.address)}
+          onDelete={() => chat.deleteHistory(conversation.address)}
+          onOpenProfile={openProfile}
+        />
+      )}
+      {open && conversation == null && (
         <header className={styles.nav}>
           <div className={styles.navLeft}>
             <DclLogo size={28} className={styles.channelIcon} />
@@ -630,10 +808,14 @@ export function Chat({
               <MaskIcon src={playersIcon} size={18} />
               {chat.members.length}
             </ControlButton>
-            <span className={styles.navDivider} aria-hidden="true" />
-            <ControlButton variant="dark" aria-label="Close chat" onClick={chat.toggle}>
-              <MaskIcon src={closeIcon} size={10} />
-            </ControlButton>
+            {!hasRail && (
+              <>
+                <span className={styles.navDivider} aria-hidden="true" />
+                <ControlButton variant="dark" aria-label="Close chat" onClick={chat.toggle}>
+                  <MaskIcon src={closeIcon} size={10} />
+                </ControlButton>
+              </>
+            )}
           </div>
         </header>
       )}
@@ -726,6 +908,9 @@ export function Chat({
             {shownUnread > 9 ? '+9' : shownUnread}
           </button>
         )}
+        {blockedState != null ? (
+          <BlockedInput state={blockedState} onSettings={onOpenSettings} />
+        ) : (
         <textarea
           ref={inputRef}
           rows={1}
@@ -745,8 +930,9 @@ export function Chat({
           maxLength={MAX_LEN}
           onKeyDown={onKeyDown}
         />
+        )}
         {focused && draft.length > 0 && <CharRing len={draft.length} />}
-        {!bare && (
+        {!bare && blockedState == null && (
           <button
             type="button"
             className={`${styles.emojiBtn} ${picker ? styles.emojiOn : ''}`.trim()}
@@ -758,7 +944,7 @@ export function Chat({
         )}
       </form>
 
-      {open && active && showMembers && (
+      {open && active && showMembers && conversation == null && (
         <MembersOverlay
           members={chat.members}
           speaking={chat.speaking}
@@ -770,6 +956,8 @@ export function Chat({
           }}
         />
       )}
+      </div>
+      {hasRail && <ConversationRail chat={chat} onClose={chat.toggle} />}
     </div>
   )
 }

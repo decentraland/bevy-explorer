@@ -48,6 +48,13 @@ function ViewProfileIcon(): React.JSX.Element {
     </svg>
   )
 }
+function MessageIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
+      <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v8a2.5 2.5 0 0 1-2.5 2.5H9l-4.2 3.2A.5.5 0 0 1 4 19.8V6.5Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+    </svg>
+  )
+}
 function MentionIcon(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
@@ -93,6 +100,7 @@ export function ProfileCardPresentation({
   onBlock,
   onReport,
   onMention,
+  onMessage,
   onViewProfile,
   onClose
 }: {
@@ -113,6 +121,8 @@ export function ProfileCardPresentation({
   onBlock?: (user: ChatUser) => void
   onReport?: (user: ChatUser) => void
   onMention?: (name: string) => void
+  /** Open a DM with the user. */
+  onMessage?: (user: ChatUser) => void
   onViewProfile?: (user: ChatUser) => void
   onClose: () => void
 }): React.JSX.Element {
@@ -155,6 +165,7 @@ export function ProfileCardPresentation({
   const canBlock = other && relationship !== 'blocked' && !!onBlock
   const canReport = other && !!onReport
   const showMention = context !== 'request' && context !== 'blocked' && !!onMention
+  const showMessage = other && relationship !== 'blocked' && context !== 'blocked' && !!onMessage
 
   let cta: React.ReactNode = null
   if (other && relationship !== 'blocked') {
@@ -206,7 +217,7 @@ export function ProfileCardPresentation({
     </button>
   )
   const hasDestructive = !!block || !!report
-  const hasMenu = !isMe && (!!viewProfile || showMention || hasDestructive)
+  const hasMenu = !isMe && (!!viewProfile || showMention || showMessage || hasDestructive)
 
   // The backdrop (and click-outside-to-close) is owned by the popup layer (openPopup default
   // options); this just renders the positioned card. The stopPropagation keeps a click on the card
@@ -247,6 +258,12 @@ export function ProfileCardPresentation({
             viewProfile
           ) : (
             <>
+              {showMessage && (
+                <button type="button" className={styles.row} onClick={run(onMessage)}>
+                  <MessageIcon />
+                  <span>Chat</span>
+                </button>
+              )}
               {showMention && (
                 <button type="button" className={styles.row} onClick={() => { onMention?.(mentionName(user.name, user.address, peekProfile(user.address)?.hasClaimedName)); onClose() }}>
                   <MentionIcon />

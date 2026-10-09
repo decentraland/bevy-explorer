@@ -252,6 +252,9 @@ num-traits = "0.2"
 async-compat = "0.2"
 async-fs = "2.0"
 base64 = "0.22"
+aes = "0.8"
+cbc = { version = "0.1", features = ["alloc"] }
+sha2 = "0.10"
 multihash-codetable = { version = "0.1.1", features = ["digest", "sha2"] }
 mimalloc = { version = "*", default-features = false }
 # pinned: alpha releases make no api stability promises between versions

@@ -7,7 +7,7 @@ edition = "2021"
 
 [features]
 inspect = []
-livekit = []
+livekit = ["comms/livekit"]
 
 [dependencies]
 common = { workspace = true }

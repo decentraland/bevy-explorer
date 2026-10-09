@@ -11,16 +11,17 @@ use common::{
 };
 use dcl_component::proto_components::common::Vector2;
 use serde::{Deserialize, Serialize};
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use strum::IntoEnumIterator;
 use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
-    BlockingStatusData, ChatMessage, FriendConnectivityEvent, FriendData, FriendRequestData,
-    FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo,
-    PermanentPermissionItem, PermissionRequestEvent, ProfileChangedEvent, ProximityEvent,
-    SatelliteView, SceneLoadingUi, SetAvatarData, SetPermanentPermission, SetSinglePermission,
-    SystemApi, VoiceMessage,
+    BlockingStatusData, ChatMessage, DmHistoryEntryData, DmUserStateData, FriendConnectivityEvent,
+    FriendData, FriendRequestData, FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent,
+    LiveSceneInfo, PermanentPermissionItem, PermissionRequestEvent, ProfileChangedEvent,
+    ProximityEvent, SatelliteView, SceneLoadingUi, SetAvatarData, SetPermanentPermission,
+    SetSinglePermission, SystemApi, VoiceMessage,
 };
+use tokio::sync::Notify;
 
 use crate::{interface::crdt_context::CrdtContext, js::player_identity, RpcCalls};
 
@@ -1186,6 +1187,108 @@ pub async fn op_get_blocking_status(
     rx.await
         .map_err(|e| anyhow::anyhow!(e))?
         .map_err(|e| anyhow::anyhow!(e))
+}
+
+/// Open DM user-state streams by stream id. Several can be open at once (one per
+/// conversation the HUD shows), so unlike the single-slot streams they are keyed rather than
+/// stored by type. A receiver is out of `receivers` while a read awaits it; `notifies` holds an
+/// entry for every open stream, and closing removes it and wakes a parked read so the receiver
+/// drops and the engine sees the stream closed.
+#[derive(Default)]
+struct DmUserStateStreams {
+    next_id: u32,
+    receivers: HashMap<u32, RpcStreamReceiver<DmUserStateData>>,
+    notifies: HashMap<u32, Arc<Notify>>,
+}
+
+pub fn op_get_dm_user_state_stream(state: Rc<RefCell<impl State>>, address: String) -> u32 {
+    let (sx, rx) = RpcStreamSender::channel();
+
+    let mut state = state.borrow_mut();
+    if !state.has::<DmUserStateStreams>() {
+        state.put(DmUserStateStreams::default());
+    }
+    let streams = state.borrow_mut::<DmUserStateStreams>();
+    streams.next_id += 1;
+    let rid = streams.next_id;
+    streams.receivers.insert(rid, rx);
+    streams.notifies.insert(rid, Arc::new(Notify::new()));
+
+    state
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetDmUserStateStream(address, sx))
+        .unwrap();
+
+    rid
+}
+
+pub async fn op_read_dm_user_state_stream(
+    state: Rc<RefCell<impl State>>,
+    rid: u32,
+) -> Result<Option<DmUserStateData>, anyhow::Error> {
+    let Some((mut receiver, notify)) = state
+        .borrow_mut()
+        .try_borrow_mut::<DmUserStateStreams>()
+        .and_then(|streams| {
+            let receiver = streams.receivers.remove(&rid)?;
+            let notify = streams.notifies.get(&rid)?.clone();
+            Some((receiver, notify))
+        })
+    else {
+        return Ok(None);
+    };
+
+    let res = tokio::select! {
+        item = receiver.recv() => item,
+        _ = notify.notified() => None,
+    };
+
+    let mut state = state.borrow_mut();
+    let streams = state.borrow_mut::<DmUserStateStreams>();
+    if !streams.notifies.contains_key(&rid) {
+        // closed while the read was parked: drop the receiver
+        return Ok(None);
+    }
+    match res {
+        Some(_) => {
+            streams.receivers.insert(rid, receiver);
+        }
+        // the engine dropped its sender
+        None => {
+            streams.notifies.remove(&rid);
+        }
+    }
+    Ok(res)
+}
+
+/// Ends the stream: wakes a parked read, and drops the receiver so the engine's sender closes.
+pub fn op_close_dm_user_state_stream(state: Rc<RefCell<impl State>>, rid: u32) {
+    if let Some(streams) = state.borrow_mut().try_borrow_mut::<DmUserStateStreams>() {
+        streams.receivers.remove(&rid);
+        if let Some(notify) = streams.notifies.remove(&rid) {
+            notify.notify_one();
+        }
+    }
+}
+
+pub async fn op_get_dm_history(
+    state: Rc<RefCell<impl State>>,
+    address: String,
+) -> Result<Vec<DmHistoryEntryData>, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetDmHistory(address, sx))?;
+    rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+pub fn op_delete_dm_history(state: Rc<RefCell<impl State>>, address: String) {
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::DeleteDmHistory(address))
+        .unwrap();
 }
 
 pub async fn op_get_block_update_stream(state: Rc<RefCell<impl State>>) -> u32 {

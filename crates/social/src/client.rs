@@ -2,20 +2,23 @@ use alloy_core::primitives::Address;
 use anyhow::anyhow;
 use bevy::{
     log::{debug, error, info, warn},
-    platform::collections::HashMap,
+    platform::collections::{HashMap, HashSet},
 };
 use common::util::AsH160;
 #[cfg(target_arch = "wasm32")]
 use dcl_component::proto_components::social_service::v2::GetFriendshipStatusPayload;
 use dcl_component::proto_components::social_service::v2::{
-    friendship_update, paginated_friendship_requests_response,
+    friendship_update, get_private_messages_settings_response, get_social_settings_response,
+    paginated_friendship_requests_response,
     upsert_friendship_payload::{
         self, AcceptPayload, CancelPayload, DeletePayload, RejectPayload, RequestPayload,
     },
-    upsert_friendship_response, BlockUserPayload, ConnectivityStatus, FriendProfile,
-    FriendshipRequestResponse, GetBlockedUsersPayload, GetFriendsPayload,
-    GetFriendshipRequestsPayload, GetMutualFriendsPayload, Pagination, SocialServiceClient,
-    SocialServiceClientDefinition, UnblockUserPayload, UpsertFriendshipPayload, User,
+    upsert_friendship_response, upsert_social_settings_response, BlockUserPayload,
+    ConnectivityStatus, FriendProfile, FriendshipRequestResponse, GetBlockedUsersPayload,
+    GetFriendsPayload, GetFriendshipRequestsPayload, GetMutualFriendsPayload,
+    GetPrivateMessagesSettingsPayload, Pagination, PrivateMessagePrivacySetting,
+    SocialServiceClient, SocialServiceClientDefinition, UnblockUserPayload,
+    UpsertFriendshipPayload, UpsertSocialSettingsPayload, User,
 };
 use dcl_rpc::{
     client::RpcClient,
@@ -27,7 +30,7 @@ use web_time::Duration;
 
 use crate::rpc_websocket::PlatformRpcWebSocket;
 use crate::runtime::SocialRuntime;
-use crate::DirectChatMessage;
+use crate::{DirectChatMessage, DmPrivacy, DmPrivacyOf};
 
 pub enum SocialQuery {
     GetMutualFriends {
@@ -48,6 +51,17 @@ pub enum SocialQuery {
     GetBlockingStatus {
         response: tokio::sync::oneshot::Sender<BlockingStatusResult>,
     },
+    GetSocialSettings {
+        response: tokio::sync::oneshot::Sender<Result<DmPrivacy, String>>,
+    },
+    UpsertSocialSettings {
+        privacy: DmPrivacy,
+        response: tokio::sync::oneshot::Sender<Result<DmPrivacy, String>>,
+    },
+    GetPrivateMessagesSettings {
+        addresses: Vec<String>,
+        response: tokio::sync::oneshot::Sender<Result<Vec<DmPrivacyOf>, String>>,
+    },
 }
 
 enum FriendData {
@@ -55,6 +69,9 @@ enum FriendData {
         sent_requests: HashMap<Address, FriendshipRequestResponse>,
         received_requests: HashMap<Address, FriendshipRequestResponse>,
         friends: HashMap<Address, FriendProfile>,
+        blocked: HashSet<Address>,
+        blocked_by: HashSet<Address>,
+        dm_privacy: DmPrivacy,
     },
     FriendshipEvent(friendship_update::Update),
     ConnectivityEvent {
@@ -72,6 +89,11 @@ enum FriendData {
     OwnBlock {
         address: Address,
     },
+    OwnUnblock {
+        address: Address,
+    },
+    /// The local user's DM privacy as the server stored it.
+    OwnDmPrivacy(DmPrivacy),
     /// Someone blocked / unblocked the local user (from SubscribeToBlockUpdates).
     BlockUpdate {
         address: String,
@@ -109,6 +131,12 @@ pub struct SocialClientHandler {
     pub received_requests: HashMap<Address, FriendshipRequestResponse>,
     pub friends: HashMap<Address, FriendProfile>,
     pub friend_status: HashMap<Address, ConnectivityStatus>,
+    /// Addresses the local user has blocked.
+    pub blocked: HashSet<Address>,
+    /// Addresses that have blocked the local user.
+    pub blocked_by: HashSet<Address>,
+    /// The local user's own DM privacy.
+    pub dm_privacy: DmPrivacy,
 
     pub unread_messages: HashMap<Address, usize>,
 
@@ -151,6 +179,9 @@ impl SocialClientHandler {
             received_requests: Default::default(),
             friends: Default::default(),
             friend_status: Default::default(),
+            blocked: Default::default(),
+            blocked_by: Default::default(),
+            dm_privacy: Default::default(),
             unread_messages: Default::default(),
             friend_event_callback: Box::new(friend_callback),
             connectivity_callback: Box::new(connectivity_callback),
@@ -310,6 +341,44 @@ impl SocialClientHandler {
         Ok(rx)
     }
 
+    /// The local user's own DM privacy setting.
+    pub fn get_social_settings(
+        &self,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<DmPrivacy, String>>, anyhow::Error> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.query_sender
+            .send(SocialQuery::GetSocialSettings { response: tx })?;
+        Ok(rx)
+    }
+
+    /// Sets the local user's DM privacy; resolves to the setting the server stored.
+    pub fn upsert_social_settings(
+        &self,
+        privacy: DmPrivacy,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<DmPrivacy, String>>, anyhow::Error> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.query_sender.send(SocialQuery::UpsertSocialSettings {
+            privacy,
+            response: tx,
+        })?;
+        Ok(rx)
+    }
+
+    /// DM privacy of other users, batched.
+    pub fn get_private_messages_settings(
+        &self,
+        addresses: Vec<String>,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<Vec<DmPrivacyOf>, String>>, anyhow::Error>
+    {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.query_sender
+            .send(SocialQuery::GetPrivateMessagesSettings {
+                addresses,
+                response: tx,
+            })?;
+        Ok(rx)
+    }
+
     pub fn chat(&self, _address: Address, _message: String) -> Result<(), anyhow::Error> {
         // DM chat not supported in V2 (no Matrix)
         Err(anyhow!("chat not available in V2"))
@@ -331,17 +400,26 @@ impl SocialClientHandler {
         &self.unread_messages
     }
 
-    pub fn update(&mut self) {
+    /// Applies pending updates; true if any arrived.
+    pub fn update(&mut self) -> bool {
+        let mut changed = false;
         while let Ok(rec) = self.friendship_receiver.try_recv() {
+            changed = true;
             match rec {
                 FriendData::Init {
                     sent_requests,
                     received_requests,
                     friends,
+                    blocked,
+                    blocked_by,
+                    dm_privacy,
                 } => {
                     self.received_requests = received_requests;
                     self.sent_requests = sent_requests;
                     self.friends = friends;
+                    self.blocked = blocked;
+                    self.blocked_by = blocked_by;
+                    self.dm_privacy = dm_privacy;
                     self.is_initialized = true;
                 }
                 FriendData::FriendshipEvent(ev) => {
@@ -437,6 +515,7 @@ impl SocialClientHandler {
                     self.friends.insert(address, profile);
                 }
                 FriendData::OwnBlock { address } => {
+                    self.blocked.insert(address);
                     self.friends.remove(&address);
                     // Synthesize an offline transition for subscribers (UI online
                     // list) since the server doesn't echo own actions over the
@@ -447,10 +526,23 @@ impl SocialClientHandler {
                     self.sent_requests.remove(&address);
                     self.received_requests.remove(&address);
                 }
+                FriendData::OwnUnblock { address } => {
+                    self.blocked.remove(&address);
+                }
+                FriendData::OwnDmPrivacy(privacy) => {
+                    self.dm_privacy = privacy;
+                }
                 FriendData::BlockUpdate {
                     address,
                     is_blocked,
                 } => {
+                    if let Some(address) = address.as_h160() {
+                        if is_blocked {
+                            self.blocked_by.insert(address);
+                        } else {
+                            self.blocked_by.remove(&address);
+                        }
+                    }
                     (self.block_update_callback)(&address, is_blocked);
                 }
                 FriendData::Disconnected => {
@@ -459,6 +551,7 @@ impl SocialClientHandler {
                 }
             }
         }
+        changed
     }
 }
 
@@ -661,16 +754,58 @@ async fn run_one_connection(
     }
     debug!("[social] Sent requests loaded: {}", sent_requests.len());
 
+    // Gather initial data: blocking status and own DM privacy. Both are tolerated failing: the
+    // DM gate then treats nobody as blocked and the local user as accepting DMs from everyone.
+    let (blocked, blocked_by): (HashSet<Address>, HashSet<Address>) =
+        match service_module.get_blocking_status().await {
+            Ok(resp) => (
+                resp.blocked_users
+                    .iter()
+                    .filter_map(|a| a.as_h160())
+                    .collect(),
+                resp.blocked_by_users
+                    .iter()
+                    .filter_map(|a| a.as_h160())
+                    .collect(),
+            ),
+            Err(e) => {
+                warn!("[social] get_blocking_status error: {e:?}");
+                Default::default()
+            }
+        };
+    let dm_privacy = match service_module.get_social_settings().await {
+        Ok(resp) => match resp.response {
+            Some(get_social_settings_response::Response::Ok(ok)) => ok
+                .settings
+                .unwrap_or_default()
+                .private_messages_privacy()
+                .into(),
+            other => {
+                warn!("[social] get_social_settings error: {other:?}");
+                Default::default()
+            }
+        },
+        Err(e) => {
+            warn!("[social] get_social_settings error: {e:?}");
+            Default::default()
+        }
+    };
+
     debug!(
-        "[social] Init complete — friends: {}, received_requests: {}, sent_requests: {}",
+        "[social] Init complete — friends: {}, received_requests: {}, sent_requests: {}, blocked: {}, blocked by: {}, dm privacy: {dm_privacy:?}",
         friends.len(),
         received_requests.len(),
-        sent_requests.len()
+        sent_requests.len(),
+        blocked.len(),
+        blocked_by.len(),
     );
     response_sx.send(FriendData::Init {
         sent_requests,
         received_requests,
         friends,
+        blocked,
+        blocked_by,
+        dm_privacy,
     })?;
 
     // Subscribe to friendship updates
@@ -848,6 +983,9 @@ async fn run_one_connection(
                                     match resp.response {
                                         Some(Response::Ok(_)) => {
                                             debug!("[social] unblockUser success for {address}");
+                                            if let Some(addr) = address.as_h160() {
+                                                let _ = response_sx.send(FriendData::OwnUnblock { address: addr });
+                                            }
                                             let _ = response.send(Ok(()));
                                         }
                                         Some(Response::InternalServerError(e)) => {
@@ -931,6 +1069,87 @@ async fn run_one_connection(
                                     let _ = response.send(Err(format!("{e:?}")));
                                 }
                             }
+                        }
+                        SocialQuery::GetSocialSettings { response } => {
+                            debug!("[social] getSocialSettings request");
+                            let result = match service_module.get_social_settings().await {
+                                Ok(resp) => match resp.response {
+                                    Some(get_social_settings_response::Response::Ok(ok)) => {
+                                        Ok(ok
+                                            .settings
+                                            .unwrap_or_default()
+                                            .private_messages_privacy()
+                                            .into())
+                                    }
+                                    other => Err(format!("{other:?}")),
+                                },
+                                Err(e) => Err(format!("{e:?}")),
+                            };
+                            if let Err(e) = &result {
+                                warn!("[social] getSocialSettings error: {e}");
+                            }
+                            let _ = response.send(result);
+                        }
+                        SocialQuery::UpsertSocialSettings { privacy, response } => {
+                            debug!("[social] upsertSocialSettings {privacy:?}");
+                            let payload = UpsertSocialSettingsPayload {
+                                private_messages_privacy: Some(PrivateMessagePrivacySetting::from(privacy) as i32),
+                                ..Default::default()
+                            };
+                            let result = match service_module.upsert_social_settings(payload).await
+                            {
+                                Ok(resp) => match resp.response {
+                                    Some(upsert_social_settings_response::Response::Ok(
+                                        settings,
+                                    )) => {
+                                        Ok(settings.private_messages_privacy().into())
+                                    }
+                                    other => Err(format!("{other:?}")),
+                                },
+                                Err(e) => Err(format!("{e:?}")),
+                            };
+                            match &result {
+                                Ok(privacy) => {
+                                    let _ = response_sx.send(FriendData::OwnDmPrivacy(*privacy));
+                                }
+                                Err(e) => warn!("[social] upsertSocialSettings error: {e}"),
+                            }
+                            let _ = response.send(result);
+                        }
+                        SocialQuery::GetPrivateMessagesSettings {
+                            addresses,
+                            response,
+                        } => {
+                            debug!("[social] getPrivateMessagesSettings for {addresses:?}");
+                            let payload = GetPrivateMessagesSettingsPayload {
+                                user: addresses
+                                    .into_iter()
+                                    .map(|address| User { address })
+                                    .collect(),
+                            };
+                            let result = match service_module
+                                .get_private_messages_settings(payload)
+                                .await
+                            {
+                                Ok(resp) => match resp.response {
+                                    Some(get_private_messages_settings_response::Response::Ok(
+                                        ok,
+                                    )) => Ok(ok
+                                        .settings
+                                        .into_iter()
+                                        .map(|s| DmPrivacyOf {
+                                            privacy: s.private_messages_privacy().into(),
+                                            address: s.user.unwrap_or_default().address,
+                                        })
+                                        .collect()),
+                                    other => Err(format!("{other:?}")),
+                                },
+                                Err(e) => Err(format!("{e:?}")),
+                            };
+                            if let Err(e) = &result {
+                                warn!("[social] getPrivateMessagesSettings error: {e}");
+                            }
+                            let _ = response.send(result);
                         }
                     }
                 }

@@ -38,6 +38,7 @@ import type {
   ChangeRealmRequest,
   ChatMessage,
   Community,
+  DmUserState,
   CommunityAction,
   CommunityDetailMessage,
   Emote,
@@ -354,9 +355,44 @@ export interface PermissionsState {
 
 export type ChatLine = ChatMessage & { id: number; ts: number }
 
+/** An open DM tab. Tabs are HUD state only: nothing opens on boot, a tab appears when a DM
+ *  arrives or is sent, or from Message on a profile, and closing it is local. */
+export interface Conversation {
+  /** Partner wallet, lowercase. */
+  address: string
+  /** DMs received on this tab while it was not the one shown (or chat was closed). */
+  unread: number
+  /** From the engine's per-tab state stream; null until the first report. */
+  state: DmUserState | null
+  online: boolean
+}
+
+/** A chat line's tab: 'Nearby', or the partner wallet in lowercase. */
+export function channelKey(channel: string): string {
+  return channel === 'Nearby' ? channel : channel.toLowerCase()
+}
+
+/** A DM rides a wallet-named channel; anything else (Nearby, System) belongs to the Nearby list. */
+export function isDmChannel(channel: string): boolean {
+  return /^0x[0-9a-f]{40}$/i.test(channel)
+}
+
 export interface ChatState {
+  /** The lines of the channel shown (`channel`). */
   messages: ChatLine[]
+  /** Sends to the channel shown: Nearby, or the open DM. */
   send: (text: string) => void
+  /** 'Nearby' or a partner wallet (lowercase). */
+  channel: string
+  select: (channel: string) => void
+  /** Open DM tabs, in the order they appeared. */
+  conversations: Conversation[]
+  /** Show a DM tab for `address` (adding it if needed), select it, and open chat. */
+  openConversation: (address: string) => void
+  /** Drop a DM tab; its history stays stored. */
+  closeConversation: (address: string) => void
+  /** Delete the stored history with a partner and clear their lines. */
+  deleteHistory: (address: string) => void
   /** Visibility, toggled by the React sidebar chat icon. */
   open: boolean
   toggle: () => void
@@ -370,8 +406,15 @@ export interface ChatState {
   pendingMention: string | null
   /** Clear the queued mention once Chat has inserted it. */
   consumeMention: () => void
-  /** Messages received while closed, reset to 0 on open (drives the sidebar badge). */
+  /** Lines that landed where they could not be seen: with the chat closed, or open but idle on
+   *  another channel (the rail and its counts are hidden while idle). Reset when the chat opens or
+   *  becomes active. Drives the sidebar badge. */
   unread: number
+  /** The panel reports whether it is active (hovered or focused, chrome shown). */
+  setActive: (active: boolean) => void
+  /** Nearby lines that landed while Nearby was not on screen (chat closed or a DM tab shown);
+   *  reset when it is. Drives the badge on the rail's Nearby tab. */
+  nearbyUnread: number
   /** Bumped on every engine "focus chat" request (Enter, even while idle-open) — Chat watches
    *  this to (re)focus the input beyond the open-transition case. */
   focusTick: number
@@ -618,6 +661,16 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [proximity, setProximity] = useState<ProximityTip[]>([])
   const [cursorLocked, setCursorLocked] = useState(false)
   const [messages, setMessages] = useState<ChatLine[]>(initialMessages)
+  const [channel, setChannel] = useState('Nearby')
+  const channelRef = useRef(channel)
+  channelRef.current = channel
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  // Which tabs are open, for the message handler and for de-duplicating opens within a batch;
+  // `conversations` carries what the tabs show.
+  const openTabsRef = useRef<Set<string>>(new Set())
+  // A DM tab shows the engine's stored history and nothing else: `messages` holds Nearby only.
+  // The store is re-read when the tab is shown and whenever a line lands on the shown tab.
+  const [dmLines, setDmLines] = useState<Record<string, ChatLine[]>>({})
   const [members, setMembers] = useState<NearbyMember[]>([])
   const [speaking, setSpeaking] = useState<ReadonlySet<string>>(() => new Set())
   // Mirror cursor-lock into a ref so the run-once message handler reads it without a stale closure —
@@ -625,10 +678,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const cursorLockedRef = useRef(false)
   const [chatOpen, setChatOpen] = useState(true)
   const [chatUnread, setChatUnread] = useState(0)
+  const [nearbyUnread, setNearbyUnread] = useState(0)
   const [chatFocusTick, setChatFocusTick] = useState(0)
   // Read inside the message-subscription closure (mounted once), not via a stale `chatOpen` capture.
   const chatOpenRef = useRef(chatOpen)
   chatOpenRef.current = chatOpen
+  const chatActiveRef = useRef(false)
   // True while something is covering the chat (see the assignment below for what counts). Read by
   // requestFocusChat from a callback that would otherwise close over a stale value. Popups aren't in
   // here — they live in their own module store, so requestFocusChat asks it directly.
@@ -798,14 +853,51 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           openProfileCard(msg.address, p.x, p.y)
           break
         }
-        case 'chat':
-          setMessages((prev) =>
-            [...prev, { ...msg.chat, id: chatId.current++, ts: Date.now() }].slice(
-              -MAX_CHAT_LINES
+        case 'chat': {
+          const key = isDmChannel(msg.chat.channel) ? channelKey(msg.chat.channel) : 'Nearby'
+          const shown = chatOpenRef.current && channelRef.current === key
+          if (!shown && !(chatOpenRef.current && chatActiveRef.current)) setChatUnread((n) => n + 1)
+          if (key === 'Nearby') {
+            if (!shown) setNearbyUnread((n) => n + 1)
+            setMessages((prev) =>
+              [...prev, { ...msg.chat, id: chatId.current++, ts: Date.now() }].slice(
+                -MAX_CHAT_LINES
+              )
             )
-          )
-          if (!chatOpenRef.current) setChatUnread((n) => n + 1)
+            break
+          }
+          // A DM (theirs, or the echo of ours) is already in the store by the time it is relayed:
+          // the shown tab re-reads it, any other tab counts it.
+          ensureConversation(key)
+          if (shown) {
+            driverRef.current?.send({ kind: 'dmHistory', address: key })
+          } else {
+            setConversations((prev) => prev.map((c) => (c.address === key ? { ...c, unread: c.unread + 1 } : c)))
+          }
           break
+        }
+        case 'dmHistory': {
+          const key = channelKey(msg.address)
+          // a late answer for a tab closed meanwhile
+          if (!openTabsRef.current.has(key)) break
+          // Ids are the row's place in the store, so a re-read keeps every row it already showed
+          // and only the rows added since read as new.
+          const skipped = Math.max(0, msg.entries.length - MAX_CHAT_LINES)
+          const lines: ChatLine[] = msg.entries.slice(skipped).map((e, i) => ({
+            sender: e.from,
+            message: e.message,
+            channel: key,
+            id: skipped + i,
+            ts: e.receivedAt
+          }))
+          setDmLines((prev) => ({ ...prev, [key]: lines }))
+          break
+        }
+        case 'dmUserState': {
+          const key = channelKey(msg.address)
+          setConversations((prev) => prev.map((c) => (c.address === key ? { ...c, state: msg.state, online: msg.online } : c)))
+          break
+        }
         case 'focusChat':
           requestFocusChat()
           break
@@ -1154,7 +1246,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       const cmd = parseChatCommand(text)
       switch (cmd.kind) {
         case 'send':
-          if (cmd.text) driverRef.current?.send({ kind: 'sendChat', message: cmd.text, channel: 'Nearby' })
+          if (cmd.text) driverRef.current?.send({ kind: 'sendChat', message: cmd.text, channel: channelRef.current })
           break
         case 'goto':
           driverRef.current?.send({ kind: 'teleport', x: cmd.x, y: cmd.y })
@@ -1229,10 +1321,24 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setChatOpen((o) => !o)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  // Opening chat (any path — sidebar, Enter, a queued mention) clears the unread badge.
+  // Opening chat (any path — sidebar, Enter, a queued mention) clears the unread badge, and the
+  // shown DM tab's: its lines are on screen again, re-read in case any landed while it was closed.
   useEffect(() => {
-    if (chatOpen) setChatUnread(0)
+    if (!chatOpen) return
+    setChatUnread(0)
+    const key = channelRef.current
+    if (key === 'Nearby') {
+      setNearbyUnread(0)
+    } else {
+      setConversations((prev) => prev.map((c) => (c.address === key ? { ...c, unread: 0 } : c)))
+      driverRef.current?.send({ kind: 'dmHistory', address: key })
+    }
   }, [chatOpen])
+  // Active, the panel shows its rail and the per-channel counts, so the sidebar's can go.
+  const setChatActive = useCallback((active: boolean) => {
+    chatActiveRef.current = active
+    if (active) setChatUnread(0)
+  }, [])
   // "Mention" from a profile card opens chat and queues the @name; Chat consumes it into its draft.
   const mentionInChat = useCallback((name: string) => {
     panelSetters.forEach((set) => set(false))
@@ -1241,6 +1347,56 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const consumeMention = useCallback(() => setPendingMention(null), [])
+  // A DM tab for `key` (lowercase wallet), added on first sight: the engine follows the partner's
+  // state while the tab is open. Its lines load when it is shown.
+  const ensureConversation = useCallback((key: string) => {
+    if (openTabsRef.current.has(key)) return
+    openTabsRef.current.add(key)
+    setConversations((prev) => [...prev, { address: key, unread: 0, state: null, online: false }])
+    driverRef.current?.send({ kind: 'dmWatch', address: key, on: true })
+  }, [])
+  const selectChannel = useCallback((next: string) => {
+    const key = channelKey(next)
+    setChannel(key)
+    if (key === 'Nearby') {
+      setNearbyUnread(0)
+    } else {
+      setConversations((prev) => prev.map((c) => (c.address === key ? { ...c, unread: 0 } : c)))
+      // with chat closed, opening it reads the tab
+      if (chatOpenRef.current) driverRef.current?.send({ kind: 'dmHistory', address: key })
+    }
+  }, [])
+  const openConversation = useCallback((address: string) => {
+    const key = channelKey(address)
+    panelSetters.forEach((set) => set(false))
+    setChatOpen(true)
+    ensureConversation(key)
+    selectChannel(key)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const closeConversation = useCallback((address: string) => {
+    const key = channelKey(address)
+    openTabsRef.current.delete(key)
+    setConversations((prev) => prev.filter((c) => c.address !== key))
+    setDmLines((prev) => {
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+    driverRef.current?.send({ kind: 'dmWatch', address: key, on: false })
+    if (channelRef.current === key) setChannel('Nearby')
+  }, [])
+  const deleteHistory = useCallback((address: string) => {
+    const key = channelKey(address)
+    driverRef.current?.send({ kind: 'dmDelete', address: key })
+    setDmLines((prev) => ({ ...prev, [key]: [] }))
+    // a read queued before the delete would answer with the old rows: this one answers after it
+    driverRef.current?.send({ kind: 'dmHistory', address: key })
+  }, [])
+  const channelMessages = useMemo(
+    () => (channel === 'Nearby' ? messages : (dmLines[channel] ?? [])),
+    [messages, dmLines, channel]
+  )
 
   // The full-screen main menu — mirrors App's `pageOpen`.
   const menuPageOpen =
@@ -1262,7 +1418,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     friendsOpen || profileOpen || notificationsOpen || emotesOpen || skyboxOpen
   const toggleFriends = useCallback(() => exclusive(setFriendsOpen), [exclusive])
   const loadSettings = useCallback(() => ensure('getSettings'), [ensure])
-  const toggleSettings = useCallback(() => exclusive(setSettingsOpen, () => ensure('getSettings')), [exclusive, ensure])
+  // Re-read on every open: the engine changes settings itself (the DM privacy slot follows the
+  // social service), and settings are local, so there is nothing to spare by caching.
+  const toggleSettings = useCallback(() => exclusive(setSettingsOpen, () => send('getSettings')), [exclusive, send])
   const toggleProfile = useCallback(() => exclusive(setProfileOpen, () => ensure('getProfile')), [exclusive, ensure])
   const toggleNotifications = useCallback(() => exclusive(setNotificationsOpen, () => send('getNotifications')), [exclusive, send])
   const toggleEmotes = useCallback(() => exclusive(setEmotesOpen, () => ensure('getEmotes')), [exclusive, ensure])
@@ -1856,7 +2014,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setFriendPending(new Set())
     setMutualFriends({})
     setMessages(initialMessages)
+    setChannel('Nearby')
+    openTabsRef.current.clear()
+    setConversations([])
+    setDmLines({})
     setChatUnread(0)
+    setNearbyUnread(0)
   }, [closeAllPanels])
 
   // Where the Backpack's avatar shows through, so the lobby under its modal can open the same hole.
@@ -2321,8 +2484,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     cursorLocked,
     proximity,
     chat: {
-      messages,
+      messages: channelMessages,
       send: sendChat,
+      channel,
+      select: selectChannel,
+      conversations,
+      openConversation,
+      closeConversation,
+      deleteHistory,
       open: chatOpen,
       toggle: toggleChat,
       members,
@@ -2331,6 +2500,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       pendingMention,
       consumeMention,
       unread: chatUnread,
+      setActive: setChatActive,
+      nearbyUnread,
       focusTick: chatFocusTick,
       requestFocus: requestFocusChat
     },

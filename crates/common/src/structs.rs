@@ -15,9 +15,12 @@ use bevy::{
     prelude::*,
     render::{primitives::Aabb, view::RenderLayers},
 };
-use dcl_component::proto_components::sdk::{
-    components::common::CameraTransition,
-    development::{ws_scene_message, UpdateModelType},
+use dcl_component::proto_components::{
+    sdk::{
+        components::common::CameraTransition,
+        development::{ws_scene_message, UpdateModelType},
+    },
+    social_service::v2::PrivateMessagePrivacySetting,
 };
 use serde::{Deserialize, Serialize};
 use system_api_types::SatelliteView;
@@ -585,6 +588,11 @@ pub struct AppConfig {
     pub scene_permissions: HashMap<String, HashMap<PermissionType, PermissionValue>>,
     pub inputs: InputMapSerialized,
     pub point_at_marker_visibility: PointAtMarkerVisibility,
+    /// Who may DM the local user. Owned by the social service, so never persisted here: the
+    /// slot mirrors the server value and the social crate upserts user changes to it. `None`
+    /// until either the user or the server has set it.
+    #[serde(skip)]
+    pub dm_privacy: Option<DmPrivacy>,
     pub camera_smoothing: CameraSmoothing,
     // field-level default (0) so configs saved before this field existed read as outdated,
     // rather than taking the current generation from the container-level default
@@ -636,6 +644,7 @@ impl Default for AppConfig {
             scene_permissions: Default::default(),
             inputs: Default::default(),
             point_at_marker_visibility: Default::default(),
+            dm_privacy: None,
             camera_smoothing: Default::default(),
             settings_generation: SETTINGS_GENERATION,
             inputs_generation: INPUTS_GENERATION,
@@ -1967,4 +1976,37 @@ mod tests {
         assert!(parse(r#"{"sizes":[],"satelliteView":{"topLeftOffset":{"x":1}}}"#).is_none());
         assert!(parse(r#"{"sizes":[],"satelliteView":{"version":1}}"#).is_none());
     }
+}
+
+/// Who may DM a user.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DmPrivacy {
+    #[default]
+    All,
+    OnlyFriends,
+}
+
+impl From<PrivateMessagePrivacySetting> for DmPrivacy {
+    fn from(value: PrivateMessagePrivacySetting) -> Self {
+        match value {
+            PrivateMessagePrivacySetting::All => DmPrivacy::All,
+            PrivateMessagePrivacySetting::OnlyFriends => DmPrivacy::OnlyFriends,
+        }
+    }
+}
+
+impl From<DmPrivacy> for PrivateMessagePrivacySetting {
+    fn from(value: DmPrivacy) -> Self {
+        match value {
+            DmPrivacy::All => PrivateMessagePrivacySetting::All,
+            DmPrivacy::OnlyFriends => PrivateMessagePrivacySetting::OnlyFriends,
+        }
+    }
+}
+
+/// Another user's DM privacy, as returned by `GetPrivateMessagesSettings`.
+#[derive(Clone, Debug)]
+pub struct DmPrivacyOf {
+    pub address: String,
+    pub privacy: DmPrivacy,
 }

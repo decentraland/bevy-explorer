@@ -19,6 +19,188 @@
 .open {
   height: 689px; /* 738 less the 49px voice-chat bar shown above it */
 }
+/* With DM tabs the conversation rail sits on the panel's right, inside its outline: the column
+   keeps its width and place, so the collapsed input does not move, and squares its corners
+   against the rail. */
+.root {
+  flex-direction: row;
+}
+.withRail {
+  width: 404px;
+}
+.withRail .nav {
+  border-radius: var(--r-md) 0 0 0;
+}
+.withRail.open::before {
+  right: 48px;
+  border-bottom-right-radius: 0;
+}
+.main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 48px;
+  flex: none;
+  padding: 6px 0;
+  box-sizing: border-box;
+  background: var(--rail-bg);
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+  transition:
+    opacity var(--chat-dur-chrome) var(--ease-outquad),
+    visibility 0s;
+}
+.open:not(.active) .rail {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--chat-dur-chrome) var(--ease-outquad),
+    visibility 0s var(--chat-dur-chrome);
+}
+.railHead {
+  display: flex;
+  align-items: center;
+  height: 34px; /* with the rail's padding and gap, Nearby starts under the title bar */
+  flex: none;
+}
+.railTab {
+  position: relative;
+}
+.railBtn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-md);
+  background: transparent;
+  cursor: pointer;
+  transition: background var(--dur-hover) var(--ease-outquad);
+}
+.railBtn:hover {
+  background: var(--white-10);
+}
+.railActive .railBtn,
+.railBtn.railActive {
+  background: var(--rail-selected);
+}
+/* The shown conversation is marked by a bar on the rail's edge, as in unity-explorer. */
+.railActive .railBtn::before,
+.railBtn.railActive::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--white);
+}
+.railNearby {
+  margin-bottom: 4px;
+}
+.railOff .railBtn {
+  opacity: 0.45;
+}
+.railBadge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: var(--r-pill);
+  background: var(--brand);
+  color: var(--white);
+  font-size: var(--type-11);
+  font-weight: var(--fw-bold);
+  line-height: 16px;
+  text-align: center;
+}
+.railClose {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+.railTab:hover .railClose {
+  display: flex;
+}
+/* DM title bar: the partner (opens their card), reachability, and the menu. */
+.dmPartner {
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.dmNames {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 16px;
+}
+.dmNames .navTitle {
+  line-height: 16px;
+}
+.dmStatus {
+  font-size: var(--type-11);
+  color: var(--text-dim);
+}
+.dmOnline {
+  color: var(--online);
+}
+.menuWrap {
+  position: relative;
+}
+.menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  z-index: 1;
+}
+/* The input while the partner cannot be messaged: the reason, in the input's box. */
+.blocked {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 10px 14px;
+  font-weight: var(--fw-regular);
+  color: var(--text-dim);
+}
+.blockedLink {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+  text-decoration: underline;
+  cursor: pointer;
+}
 
 /* The messages column below the title bar, tinted only while hovered/focused. */
 .open::before {
@@ -465,7 +647,7 @@
 }
 
 /* Members view: covers the panel with its own title bar and list; the feed and input hide under it. */
-.membersOpen > .nav,
+.membersOpen .main > .nav,
 .membersOpen .messages,
 .membersOpen .inputRow,
 .membersOpen .suggest,

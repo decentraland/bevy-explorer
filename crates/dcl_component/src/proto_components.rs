@@ -61,7 +61,6 @@ pub mod social {
     ));
 }
 
-#[cfg(feature = "social")]
 pub mod social_service {
     include!(concat!(env!("OUT_DIR"), "/decentraland.social_service.rs"));
 

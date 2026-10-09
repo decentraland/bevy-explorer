@@ -33,7 +33,10 @@ use system_bridge::{
     BlockUpdateData, FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData,
     FriendshipEventUpdate, SystemApi,
 };
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
+use tokio::sync::{
+    mpsc::{unbounded_channel, UnboundedReceiver},
+    oneshot,
+};
 use wallet::Wallet;
 
 pub struct SocialPlugin;
@@ -48,11 +51,15 @@ impl Plugin for SocialPlugin {
         app.add_event::<DirectChatEvent>();
         app.init_resource::<SocialClient>();
         app.init_resource::<SocialConsumerRequested>();
-        app.add_systems(PostUpdate, |mut client: ResMut<SocialClient>| {
-            if let Some(client) = client.0.as_mut() {
-                client.update();
-            }
-        });
+        app.add_event::<SocialStateChanged>();
+        app.add_systems(
+            PostUpdate,
+            |mut client: ResMut<SocialClient>, mut changed: EventWriter<SocialStateChanged>| {
+                if client.0.as_mut().is_some_and(|client| client.update()) {
+                    changed.write(SocialStateChanged);
+                }
+            },
+        );
         app.add_systems(PostUpdate, init_social_client);
         app.add_systems(
             PostUpdate,
@@ -61,6 +68,9 @@ impl Plugin for SocialPlugin {
                 pipe_friendship_events_to_scene,
                 pipe_connectivity_events_to_scene,
                 pipe_block_updates_to_scene,
+                // not in the social dev binary, which has no config or settings
+                sync_dm_privacy
+                    .run_if(resource_exists::<AppConfig>.and(resource_exists::<Settings>)),
             ),
         );
         #[cfg(feature = "social")]
@@ -69,6 +79,8 @@ impl Plugin for SocialPlugin {
             app.init_resource::<RestartSocialRequested>();
             app.add_preview_console_command::<DebugSocialCommand, _>(toggle_debug_social);
             app.add_console_command::<RestartSocialCommand, _>(restart_social);
+            app.add_console_command::<DmPrivacyCommand, _>(dm_privacy);
+            app.add_console_command::<DmPrivacyOfCommand, _>(dm_privacy_of);
             app.add_systems(
                 PostUpdate,
                 debug_write_social.run_if(|e: Res<DebugSocialEnabled>| e.0),
@@ -104,6 +116,7 @@ fn is_social_consumer_request(event: &SystemApi) -> bool {
             | SystemApi::GetBlockedUsers(_)
             | SystemApi::GetBlockingStatus(_)
             | SystemApi::GetBlockUpdateStream(_)
+            | SystemApi::GetDmUserStateStream(_, _)
     )
 }
 
@@ -125,6 +138,181 @@ fn restart_social(
         restart.0 = true;
         input.reply_ok("social client restart requested");
     }
+}
+
+use common::structs::AppConfig;
+pub use common::structs::{DmPrivacy, DmPrivacyOf};
+use system_bridge::settings::Settings;
+
+/// Keeps the DM privacy setting and the social service in step. The config slot is not
+/// persisted. When the client initializes, an unset slot takes the server value and a slot the
+/// user already set is upserted; from then on a slot that differs from the server value is a
+/// user change to upsert. A change is requested once and left pending until the server echoes
+/// it; a rejected change reverts the slot to the server value. The slot is cleared again when
+/// the client goes away, so the next account does not inherit it. Engine-driven writes bypass
+/// change detection so they refresh the settings panel without re-applying every setting.
+fn sync_dm_privacy(
+    mut config: ResMut<AppConfig>,
+    mut settings: ResMut<Settings>,
+    social: Res<SocialClient>,
+    mut synced_from_server: Local<bool>,
+    mut requested: Local<Option<DmPrivacy>>,
+    mut in_flight: Local<Option<oneshot::Receiver<Result<DmPrivacy, String>>>>,
+) {
+    let Some(client) = social.0.as_ref().filter(|c| c.is_initialized) else {
+        if *synced_from_server {
+            config.bypass_change_detection().dm_privacy = None;
+            settings.refresh(&config);
+            *synced_from_server = false;
+        }
+        *requested = None;
+        *in_flight = None;
+        return;
+    };
+    if !*synced_from_server {
+        *synced_from_server = true;
+        *requested = None;
+        *in_flight = None;
+        if config.dm_privacy.is_none() {
+            config.bypass_change_detection().dm_privacy = Some(client.dm_privacy);
+            settings.refresh(&config);
+            return;
+        }
+    }
+    if let Some(rx) = in_flight.as_mut() {
+        let outcome = match rx.try_recv() {
+            Err(oneshot::error::TryRecvError::Empty) => None,
+            Ok(Ok(_)) => Some(Ok(())),
+            Ok(Err(e)) => Some(Err(e)),
+            Err(oneshot::error::TryRecvError::Closed) => Some(Err("client closed".to_owned())),
+        };
+        match outcome {
+            None => (),
+            Some(Ok(())) => *in_flight = None,
+            Some(Err(e)) => {
+                warn!("[social] dm privacy change rejected: {e}");
+                config.bypass_change_detection().dm_privacy = Some(client.dm_privacy);
+                settings.refresh(&config);
+                *requested = None;
+                *in_flight = None;
+            }
+        }
+    }
+    let Some(wanted) = config.dm_privacy else {
+        return;
+    };
+    if wanted == client.dm_privacy {
+        *requested = None;
+        return;
+    }
+    if *requested == Some(wanted) {
+        return;
+    }
+    match client.upsert_social_settings(wanted) {
+        Ok(rx) => {
+            *requested = Some(wanted);
+            *in_flight = Some(rx);
+        }
+        Err(e) => warn!("[social] failed to request dm privacy change: {e}"),
+    }
+}
+
+/// `/dm_privacy` prints the local user's DM privacy; `/dm_privacy all|friends` sets it through
+/// the setting, so the change goes to the server the same way the settings panel's does.
+#[cfg(feature = "social")]
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/dm_privacy")]
+struct DmPrivacyCommand {
+    /// `all` or `friends`
+    privacy: Option<String>,
+}
+
+#[cfg(feature = "social")]
+fn dm_privacy(
+    mut input: ConsoleCommand<DmPrivacyCommand>,
+    social: Res<SocialClient>,
+    mut config: ResMut<AppConfig>,
+    mut pending: ResMut<console::PendingConsoleResponses>,
+) {
+    let Some(Ok(command)) = input.take() else {
+        return;
+    };
+    let Some(client) = social.0.as_ref() else {
+        input.reply_failed("social not initialized");
+        return;
+    };
+    let privacy = match command.privacy.as_deref() {
+        None => None,
+        Some("all") => Some(DmPrivacy::All),
+        Some("friends") => Some(DmPrivacy::OnlyFriends),
+        Some(other) => {
+            input.reply_failed(format!("unknown privacy `{other}`: use `all` or `friends`"));
+            return;
+        }
+    };
+    if let Some(privacy) = privacy {
+        config.dm_privacy = Some(privacy);
+        input.reply_ok(format!("dm privacy requested: {privacy:?}"));
+        return;
+    }
+    let rx = match client.get_social_settings() {
+        Ok(rx) => rx,
+        Err(e) => {
+            input.reply_failed(format!("{e}"));
+            return;
+        }
+    };
+    let responder = input.take_responder();
+    pending.push_oneshot(
+        rx,
+        |result| result.map(|privacy| format!("dm privacy: {privacy:?}")),
+        responder,
+    );
+}
+
+/// `/dm_privacy_of <address>...` prints other users' DM privacy and whether they are friends.
+#[cfg(feature = "social")]
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/dm_privacy_of")]
+struct DmPrivacyOfCommand {
+    #[arg(required = true)]
+    addresses: Vec<String>,
+}
+
+#[cfg(feature = "social")]
+fn dm_privacy_of(
+    mut input: ConsoleCommand<DmPrivacyOfCommand>,
+    social: Res<SocialClient>,
+    mut pending: ResMut<console::PendingConsoleResponses>,
+) {
+    let Some(Ok(command)) = input.take() else {
+        return;
+    };
+    let Some(client) = social.0.as_ref() else {
+        input.reply_failed("social not initialized");
+        return;
+    };
+    let rx = match client.get_private_messages_settings(command.addresses) {
+        Ok(rx) => rx,
+        Err(e) => {
+            input.reply_failed(format!("{e}"));
+            return;
+        }
+    };
+    let responder = input.take_responder();
+    pending.push_oneshot(
+        rx,
+        |result| {
+            result.map(|entries| {
+                entries
+                    .iter()
+                    .map(|e| format!("{}: {:?}", e.address, e.privacy))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+        },
+        responder,
+    );
 }
 
 #[cfg(feature = "social")]
@@ -1091,6 +1279,10 @@ fn friendship_event_to_update(body: &Option<FriendshipEventBody>) -> Option<Frie
 
 #[derive(Event)]
 pub struct FriendshipEvent(pub Option<FriendshipEventBody>);
+
+/// The social client applied an update: friends, requests, connectivity, blocks or own settings.
+#[derive(Event)]
+pub struct SocialStateChanged;
 
 #[derive(Event, Clone)]
 pub struct ConnectivityEvent {

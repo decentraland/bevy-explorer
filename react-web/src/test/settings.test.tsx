@@ -17,14 +17,14 @@ describe('settings domain', () => {
     stepSize: 1
   }
 
-  it('fetches settings the first time the panel opens (cached after)', async () => {
+  it('fetches settings every time the panel opens: the engine changes some itself', async () => {
     const h = renderSession()
     await enterAsGuest(h)
     act(() => h.session().settings.toggle())
     expect(h.driver.sentOf('getSettings')).toHaveLength(1)
     act(() => h.session().settings.toggle()) // close
-    act(() => h.session().settings.toggle()) // reopen — cached, no re-fetch
-    expect(h.driver.sentOf('getSettings')).toHaveLength(1)
+    act(() => h.session().settings.toggle()) // reopen
+    expect(h.driver.sentOf('getSettings')).toHaveLength(2)
   })
 
   it('settings stream populates the list', async () => {
