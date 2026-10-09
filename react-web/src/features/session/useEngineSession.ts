@@ -1494,6 +1494,20 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     },
     [skyboxHours, readClock, setClock]
   )
+  // While the day cycle runs, the open menu follows the engine clock (Unity's slider tracks it too).
+  useEffect(() => {
+    if (!skyboxOpen || !skyboxProgressing) return
+    let live = true
+    const id = setInterval(() => {
+      void readClock().then((clock) => {
+        if (live && clock != null && clock.speed !== 0) setSkyboxHoursState(clock.hours)
+      })
+    }, 1000)
+    return () => {
+      live = false
+      clearInterval(id)
+    }
+  }, [skyboxOpen, skyboxProgressing, readClock])
   const toggleGallery = useCallback(() => exclusive(setGalleryOpen, () => ensure('getGallery')), [exclusive, ensure])
   const loadGalleryPhoto = useCallback((id: string) => {
     driverRef.current?.send({ kind: 'getGalleryPhoto', id })

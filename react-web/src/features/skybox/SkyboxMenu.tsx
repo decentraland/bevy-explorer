@@ -1,7 +1,8 @@
 // Skybox menu — Unity's sidebar SkyboxMenu (DCL/UI/Skybox): a time-of-day slider, locked while
 // "Time progression" lets the engine's day cycle run.
 
-import { Panel, Slider, Toggle } from '../../design'
+import { useEffect } from 'react'
+import { Panel, Slider, Toggle, hasOpenPopup } from '../../design'
 import type { SkyboxState } from '../session/useEngineSession'
 import styles from './SkyboxMenu.module.css'
 
@@ -11,7 +12,19 @@ export function formatHours(hours: number): string {
 }
 
 export function SkyboxMenu({ skybox }: { skybox: SkyboxState }): React.JSX.Element | null {
-  if (!skybox.open) return null
+  // Clicking anywhere outside (except the rail, whose Skybox button toggles it) closes it.
+  const { open, toggle } = skybox
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: PointerEvent): void => {
+      if (hasOpenPopup()) return
+      if (e.target instanceof Element && e.target.closest('[role="dialog"][aria-label="Skybox"], nav[aria-label="Main navigation"]')) return
+      toggle()
+    }
+    document.addEventListener('pointerdown', onDown, true)
+    return () => document.removeEventListener('pointerdown', onDown, true)
+  }, [open, toggle])
+  if (!open) return null
   return (
     <Panel className={styles.root} role="dialog" aria-label="Skybox">
       <div className={styles.head}>

@@ -44,6 +44,40 @@ describe('skybox', () => {
     expect(h.driver.sentOf('consoleCommand')).toHaveLength(0)
   })
 
+  it('closes on a click outside it, but not on itself or the rail', async () => {
+    const skybox = { ...fakeSession().skybox, open: true }
+    render(
+      <>
+        <nav aria-label="Main navigation"><button type="button">Skybox</button></nav>
+        <SkyboxMenu skybox={skybox} />
+        <div data-testid="world" />
+      </>
+    )
+    await userEvent.click(screen.getByRole('switch'))
+    await userEvent.click(screen.getByRole('button', { name: 'Skybox' }))
+    expect(skybox.toggle).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByTestId('world'))
+    expect(skybox.toggle).toHaveBeenCalledTimes(1)
+  })
+
+  it('follows the running clock while open, wrapping past midnight', async () => {
+    const h = renderSession()
+    await enterAsGuest(h)
+    h.driver.commandReply = () => 'time 23:45 -> 23:45, speed 12 (elapsed: 85500)'
+    act(() => h.session().skybox.toggle())
+    await waitFor(() => expect(h.session().skybox.hours).toBe(23.75))
+
+    h.driver.commandReply = () => 'time 0:15 -> 0:15, speed 12 (elapsed: 900)'
+    await waitFor(() => expect(h.session().skybox.hours).toBe(0.25), { timeout: 2000 })
+
+    // Frozen: the menu stops reading the clock.
+    act(() => h.session().skybox.setProgressing(false))
+    await waitFor(() => expect(h.driver.commands).toContain('/time 0.25 0'))
+    const reads = h.driver.commands.length
+    await new Promise((r) => setTimeout(r, 1200))
+    expect(h.driver.commands).toHaveLength(reads)
+  })
+
   it('formats hours as HH:MM', () => {
     expect(formatHours(0)).toBe('00:00')
     expect(formatHours(9.75)).toBe('09:45')
