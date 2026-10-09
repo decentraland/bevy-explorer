@@ -2,8 +2,10 @@
 // stores anything. Inside the web shell the app must never touch localStorage: reading it loads the
 // origin's whole storage area into the app's process, and that area holds the sign-in key the shell
 // keeps (src/shell/main.ts). There they live in IndexedDB, read once before the HUD renders and
-// written through; elsewhere (the native CEF HUD, the credentialless embed, app.html opened directly
-// in dev) in localStorage.
+// written through. The native CEF HUD does the same against the engine (hud-prefs.json beside
+// config.json), as CEF's own storage is gone when the client exits. Elsewhere (the credentialless
+// embed, app.html opened directly in dev) in localStorage.
+import { cefPrefs } from './cefNativeBridge'
 import { inShell } from './shell'
 
 // Every key the HUD stores. The shell moves these out of localStorage (migratePrefs).
@@ -28,6 +30,7 @@ export const PREF = {
 const DB = 'hud-prefs'
 const STORE = 'prefs'
 const values = new Map<string, string>()
+const engine = cefPrefs()
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -51,6 +54,12 @@ function store(mode: IDBTransactionMode): Promise<IDBObjectStore> {
 
 // Read every stored value; the HUD renders after this. A failure leaves the defaults.
 export async function loadPrefs(): Promise<void> {
+  if (engine != null) {
+    for (const [key, value] of Object.entries(await engine.load())) {
+      if (typeof value === 'string') values.set(key, value)
+    }
+    return
+  }
   if (!inShell) return
   try {
     const s = await store('readonly')
@@ -70,7 +79,7 @@ export async function loadPrefs(): Promise<void> {
 }
 
 export function getPref(key: string): string | null {
-  if (inShell) return values.get(key) ?? null
+  if (inShell || engine != null) return values.get(key) ?? null
   try {
     return localStorage.getItem(key)
   } catch {
@@ -80,6 +89,11 @@ export function getPref(key: string): string | null {
 
 // Failures (quota, privacy mode, no IndexedDB) are ignored: the value just lasts this session.
 export function setPref(key: string, value: string): void {
+  if (engine != null) {
+    values.set(key, value)
+    engine.set(key, value)
+    return
+  }
   if (!inShell) {
     try {
       localStorage.setItem(key, value)

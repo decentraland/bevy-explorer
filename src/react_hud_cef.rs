@@ -45,6 +45,7 @@ use cef_offscreen::prelude::{
 use common::rpc::{RpcResultReceiver, RpcResultSender, RpcStreamSender};
 use common::structs::{OutOfWorld, PrimaryUser};
 use input_manager::{InputPriorities, MouseInteractionComponent};
+use std::collections::BTreeMap;
 use system_bridge::{SystemApi, SystemBridge};
 
 pub struct ReactHudCefPlugin {
@@ -130,6 +131,8 @@ struct ReactHudCef {
     pending_code: Vec<RpcResultReceiver<Result<Option<i32>, String>>>,
     // The page's `window.engine_console_command` calls awaiting the engine, paired with its call id.
     pending_console: Vec<(u64, RpcResultReceiver<Result<String, String>>)>,
+    // The page's stored values (react-web lib/prefs), kept in hud-prefs.json beside config.json.
+    prefs: BTreeMap<String, String>,
     player_ready_sent: bool,
     // The page's bridge listener is live once it has sent us anything; until then events like
     // playerReady would be fired into the void (the page hasn't subscribed yet).
@@ -265,6 +268,7 @@ fn spawn_hud(
         pending_login: Vec::new(),
         pending_code: Vec::new(),
         pending_console: Vec::new(),
+        prefs: read_prefs(),
         player_ready_sent: false,
         page_seen: false,
         bridge_sender: None,
@@ -579,8 +583,34 @@ fn on_page_envelope(
         state.pending_console.push((id, rx));
         return;
     }
+    // The page's stored values (react-web lib/prefs): read once before it renders, then written
+    // through one at a time.
+    if env.get("to").and_then(|t| t.as_str()) == Some("engine") {
+        match env.get("kind").and_then(|k| k.as_str()) {
+            Some("prefsLoad") => {
+                commands.trigger_targets(
+                    HostEmitEvent {
+                        id: "prefs".to_string(),
+                        payload: serde_json::to_string(&state.prefs).unwrap(),
+                    },
+                    state.hud,
+                );
+            }
+            Some("prefSet") => {
+                if let (Some(key), Some(value)) = (
+                    env.get("key").and_then(|k| k.as_str()),
+                    env.get("value").and_then(|v| v.as_str()),
+                ) {
+                    state.prefs.insert(key.to_owned(), value.to_owned());
+                    write_prefs(&state.prefs);
+                }
+            }
+            _ => {}
+        }
+        return;
+    }
     // HUD focus (incl. text focus) now flows page -> bridge scene -> SystemApi::SetUiFocus,
-    // the same route as on web; the only engine-addressed message is the console command above.
+    // the same route as on web; the only engine-addressed messages are the ones above.
     if env.get("to").and_then(|t| t.as_str()) != Some("scene") {
         return;
     }
@@ -655,6 +685,42 @@ fn on_page_envelope(
             ));
         }
         _ => {} // other domains (profile/friends/...) not relayed yet
+    }
+}
+
+fn prefs_file() -> Option<std::path::PathBuf> {
+    Some(
+        platform::project_directories()?
+            .config_dir()
+            .join("hud-prefs.json"),
+    )
+}
+
+// A missing or unreadable file leaves the page's defaults.
+fn read_prefs() -> BTreeMap<String, String> {
+    let Some(file) = prefs_file() else {
+        return BTreeMap::new();
+    };
+    match std::fs::read(&file) {
+        Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|e| {
+            warn!("[react-hud-cef] failed to parse {file:?}: {e}");
+            BTreeMap::new()
+        }),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => BTreeMap::new(),
+        Err(e) => {
+            warn!("[react-hud-cef] failed to read {file:?}: {e}");
+            BTreeMap::new()
+        }
+    }
+}
+
+fn write_prefs(prefs: &BTreeMap<String, String>) {
+    let Some(file) = prefs_file() else { return };
+    if let Some(folder) = file.parent() {
+        let _ = std::fs::create_dir_all(folder);
+    }
+    if let Err(e) = std::fs::write(&file, serde_json::to_string(prefs).unwrap()) {
+        warn!("[react-hud-cef] failed to write {file:?}: {e}");
     }
 }
 
