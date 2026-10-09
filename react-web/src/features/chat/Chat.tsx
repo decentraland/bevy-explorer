@@ -344,10 +344,15 @@ function RailTab({ conversation, active, onSelect, onClose }: { conversation: Co
   )
 }
 
-/** The conversation rail: Nearby pinned first, then the open DM tabs. */
-function ConversationRail({ chat }: { chat: ChatState }): React.JSX.Element {
+/** The conversation rail: the chat's close button, Nearby pinned first, then the open DM tabs. */
+function ConversationRail({ chat, onClose }: { chat: ChatState; onClose: () => void }): React.JSX.Element {
   return (
     <nav className={styles.rail} aria-label="Conversations">
+      <div className={styles.railHead}>
+        <ControlButton variant="dark" aria-label="Close chat" onClick={onClose}>
+          <MaskIcon src={closeIcon} size={10} />
+        </ControlButton>
+      </div>
       <Tooltip label="Nearby" side="left" variant="rail">
         <button
           type="button"
@@ -402,10 +407,9 @@ function BlockedInput({ state, onSettings }: { state: Exclude<DmUserState, 'conn
 }
 
 /** The DM title bar: the partner, their reachability, and the conversation menu. */
-function DmHeader({ conversation, onClose, onCloseChat, onDelete, onOpenProfile }: {
+function DmHeader({ conversation, onClose, onDelete, onOpenProfile }: {
   conversation: Conversation
   onClose: () => void
-  onCloseChat: () => void
   onDelete: () => void
   onOpenProfile: (user: ChatUser, x: number, y: number) => void
 }): React.JSX.Element {
@@ -460,10 +464,6 @@ function DmHeader({ conversation, onClose, onCloseChat, onDelete, onOpenProfile 
             </div>
           )}
         </div>
-        <span className={styles.navDivider} aria-hidden="true" />
-        <ControlButton variant="dark" aria-label="Close chat" onClick={onCloseChat}>
-          <MaskIcon src={closeIcon} size={10} />
-        </ControlButton>
       </div>
     </header>
   )
@@ -784,7 +784,6 @@ export function Chat({
         <DmHeader
           conversation={conversation}
           onClose={() => chat.closeConversation(conversation.address)}
-          onCloseChat={chat.toggle}
           onDelete={() => chat.deleteHistory(conversation.address)}
           onOpenProfile={openProfile}
         />
@@ -807,10 +806,14 @@ export function Chat({
               <MaskIcon src={playersIcon} size={18} />
               {chat.members.length}
             </ControlButton>
-            <span className={styles.navDivider} aria-hidden="true" />
-            <ControlButton variant="dark" aria-label="Close chat" onClick={chat.toggle}>
-              <MaskIcon src={closeIcon} size={10} />
-            </ControlButton>
+            {!hasRail && (
+              <>
+                <span className={styles.navDivider} aria-hidden="true" />
+                <ControlButton variant="dark" aria-label="Close chat" onClick={chat.toggle}>
+                  <MaskIcon src={closeIcon} size={10} />
+                </ControlButton>
+              </>
+            )}
           </div>
         </header>
       )}
@@ -952,7 +955,7 @@ export function Chat({
         />
       )}
       </div>
-      {hasRail && <ConversationRail chat={chat} />}
+      {hasRail && <ConversationRail chat={chat} onClose={chat.toggle} />}
     </div>
   )
 }

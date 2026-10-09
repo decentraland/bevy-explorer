@@ -19,13 +19,21 @@
 .open {
   height: 689px; /* 738 less the 49px voice-chat bar shown above it */
 }
-/* With DM tabs the conversation rail sits on the panel's right; the column keeps its width and
-   place, so the collapsed input does not move. */
+/* With DM tabs the conversation rail sits on the panel's right, inside its outline: the column
+   keeps its width and place, so the collapsed input does not move, and squares its corners
+   against the rail. */
 .root {
   flex-direction: row;
 }
 .withRail {
   width: 404px;
+}
+.withRail .nav {
+  border-radius: var(--r-md) 0 0 0;
+}
+.withRail.open::before {
+  right: 48px;
+  border-bottom-right-radius: 0;
 }
 .main {
   display: flex;
@@ -56,6 +64,12 @@
     opacity var(--chat-dur-chrome) var(--ease-outquad),
     visibility 0s var(--chat-dur-chrome);
 }
+.railHead {
+  display: flex;
+  align-items: center;
+  height: 34px; /* with the rail's padding and gap, Nearby starts under the title bar */
+  flex: none;
+}
 .railTab {
   position: relative;
 }
@@ -79,6 +93,18 @@
 .railActive .railBtn,
 .railBtn.railActive {
   background: var(--rail-selected);
+}
+/* The shown conversation is marked by a bar on the rail's edge, as in unity-explorer. */
+.railActive .railBtn::before,
+.railBtn.railActive::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--white);
 }
 .railNearby {
   margin-bottom: 4px;
