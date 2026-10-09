@@ -113,7 +113,7 @@ describe('friends panel action clicks', () => {
 
   it("a friend row's envelope opens a DM with them", async () => {
     renderPanel({ list: [{ address: '0xf', name: 'F', status: 'online' }] })
-    await userEvent.click(screen.getByRole('button', { name: /^Message F/ }))
+    await userEvent.click(screen.getByRole('button', { name: /^Chat with F/ }))
     expect(onMessage).toHaveBeenCalledWith('0xf')
   })
 

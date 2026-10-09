@@ -261,7 +261,7 @@ export function ProfileCardPresentation({
               {showMessage && (
                 <button type="button" className={styles.row} onClick={run(onMessage)}>
                   <MessageIcon />
-                  <span>Message</span>
+                  <span>Chat</span>
                 </button>
               )}
               {showMention && (

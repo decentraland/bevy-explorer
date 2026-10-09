@@ -180,11 +180,11 @@ function FriendRow({ friend, menuOpen, onMenu, onMessage }: { friend: Friend; on
         <span className={styles.status}>{STATUS_LABEL[friend.status]}</span>
       </div>
       <div className={styles.hoverActions}>
-        <Tooltip label="Message" side="top" variant="rail">
+        <Tooltip label="Chat" side="top" variant="rail">
           <button
             type="button"
             className={styles.menuBtn}
-            aria-label={`Message ${label(name, friend.address)}`}
+            aria-label={`Chat with ${label(name, friend.address)}`}
             onClick={(e) => {
               e.stopPropagation()
               onMessage(friend.address)

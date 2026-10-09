@@ -229,7 +229,7 @@ export function ProfilePassport({
           <div className={styles.headActions}>
             {!isSelf && relationship !== 'blocked' && onMessage != null && (
               <button type="button" className={styles.headBtn} onClick={() => onMessage(profile.address)}>
-                MESSAGE
+                CHAT
               </button>
             )}
             {!isSelf &&
