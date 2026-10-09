@@ -25,7 +25,7 @@ pub struct LivekitRoom {
 
 /// Marks that a [`LivekitRoom`] as connected
 #[derive(Component)]
-#[component(on_add=Self::on_add, on_remove=Self::on_remove)]
+#[component(on_add=Self::on_add)]
 pub struct Connected;
 
 impl Connected {
@@ -40,22 +40,6 @@ impl Connected {
             .commands()
             .entity(entity)
             .remove::<(Connecting, Reconnecting, Disconnected)>();
-    }
-
-    pub fn on_remove(mut deferred_world: DeferredWorld, hook_context: HookContext) {
-        let entity = hook_context.entity;
-
-        // This hook will also run on despawn
-        // so call `try_despawn` individually
-        if let Some(hosting_participant) = deferred_world
-            .get::<HostingParticipants>(entity)
-            .map(|hosting| hosting.collection().clone())
-        {
-            let mut commands = deferred_world.commands();
-            for entity in hosting_participant.into_iter() {
-                commands.entity(entity).try_despawn();
-            }
-        }
     }
 }
 
@@ -136,10 +120,17 @@ impl Disconnected {
         };
         debug!("Room {} is disconnected.", room.name());
 
-        deferred_world
-            .commands()
+        // The room's participants are gone with it; a reconnect announces them afresh.
+        let participants = deferred_world
+            .get::<HostingParticipants>(entity)
+            .map(|hosting| hosting.collection().clone());
+        let mut commands = deferred_world.commands();
+        commands
             .entity(entity)
             .remove::<(Connected, Connecting, Reconnecting)>();
+        for participant in participants.into_iter().flatten() {
+            commands.entity(participant).try_despawn();
+        }
     }
 
     pub fn on_remove(mut deferred_world: DeferredWorld, hook_context: HookContext) {
