@@ -13,6 +13,7 @@ type EngineWindow = Window & {
   __bevyReadyToLaunch?: boolean
   __bevyLaunch?: (realm?: string, position?: string, host?: LaunchHostOptions) => void
   __bevyHomeScene?: () => { realm: string | null; parcel: string } | null
+  __bevyTermsAccepted?: () => boolean | null
   __bevyLoadProgress?: number
   __bevyLoadStep?: string | null
   __bevyPanic?: { message: string }
@@ -70,6 +71,12 @@ export class EngineRpc {
    *  module is up. */
   homeScene(): { realm: string | null; parcel: string } | null {
     return this.win?.__bevyHomeScene?.() ?? null
+  }
+
+  /** Whether the persisted config has accepted the terms, BEFORE launch (alongside readyToLaunch).
+   *  Null when unknown. */
+  termsAccepted(): boolean | null {
+    return this.win?.__bevyTermsAccepted?.() ?? null
   }
 
   ready(): boolean {

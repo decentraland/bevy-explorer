@@ -52,6 +52,25 @@ export function editLook(change: Partial<AvatarLook>): void {
   draft = { ...from, ...change }
 }
 
+/** Whether the look has unsaved edits. */
+export function hasDraft(): boolean {
+  return draft != null
+}
+
+/** The welcome page's accept: the look (the draft, else the live one) under `name`, in one setAvatar
+ *  that resolves once the deploy lands. Rejects with the engine's error. */
+export async function deployLookAs(name: string): Promise<void> {
+  const look = currentLook()
+  if (look == null) throw new Error('no player')
+  const edited = draft
+  await BevyApi.setAvatar({
+    base: { name, bodyShapeUrn: look.bodyShape, eyesColor: look.eyes, hairColor: look.hair, skinColor: look.skin },
+    equip: { wearableUrns: look.wearables, emoteUrns: look.emotes, forceRender: look.forceRender }
+  })
+  deployed = look
+  if (draft === edited) draft = null
+}
+
 // The look as it deploys: without the wearables that can't render on its body shape (Unity unequips
 // them when the body shape changes). The draft keeps them, so switching the body shape and back while
 // the Backpack is open loses nothing. An item the catalyst can't resolve is kept.

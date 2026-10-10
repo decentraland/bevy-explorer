@@ -379,9 +379,12 @@ impl DecentralandApp {
                 || launch.position.is_some()
                 || decentraland_app_config.boot_server() != AppConfig::default().home_realm())
             .then(|| decentraland_app_config.boot_server());
-            // no destination means the lobby shows, so hold the world until its first realm
+            // no destination means the lobby shows, and terms not yet accepted mean the welcome
+            // page shows (except to a throwaway --guest), so hold the world until its first realm
             // change, as the web page does with `hold_world` (preview refuses realm changes)
-            if server.is_none() && !launch.preview {
+            let welcome = !decentraland_app_config.app_config.terms_accepted()
+                && !decentraland_app_config.arguments.guest;
+            if (server.is_none() || welcome) && !launch.preview {
                 app.insert_resource(common::structs::WorldHold);
             }
             app.add_plugins(react_hud_cef::ReactHudCefPlugin {

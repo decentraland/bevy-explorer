@@ -7,7 +7,7 @@
 // Domain types mirror scene/src/bevy-api/interface.ts so the bridge scene can
 // forward SystemApi results verbatim.
 
-import type { Color3, HomeScene, SatelliteView, SceneLoadingUi } from './generated'
+import type { Color3, HomeScene, SatelliteView, SceneLoadingUi, WelcomeState } from './generated'
 
 export const BRIDGE_CHANNEL = 'bevy-ui-bridge'
 
@@ -203,6 +203,10 @@ export type PageToScene =
   | GetCommunityDetailRequest
   | GetMapRequest
   | GetHomeSceneRequest
+  | GetWelcomeRequest
+  | RerollLookRequest
+  | AcceptWelcomeRequest
+  | OpenLegalRequest
   | TeleportRequest
   | ChangeRealmRequest
   | MinimapConfigRequest
@@ -687,6 +691,41 @@ export interface GetHomeSceneRequest {
 
 export interface HomeSceneMessage extends HomeScene {
   kind: 'homeScene'
+}
+
+/** What the welcome page must show for the signed-in account (answered with `welcome`). */
+export interface GetWelcomeRequest {
+  kind: 'getWelcome'
+}
+
+export interface WelcomeMessage extends WelcomeState {
+  kind: 'welcome'
+}
+
+/** Put another of the curated default looks on the welcome page's avatar (the Backpack's unsaved
+ *  look, so the stage shows it); deployed on `acceptWelcome`. */
+export interface RerollLookRequest {
+  kind: 'rerollLook'
+}
+
+/** The welcome page's accept: the terms, then for a new profile its `name` and look in one
+ *  setAvatar. Answered with `welcomeAccepted` once that lands. */
+export interface AcceptWelcomeRequest {
+  kind: 'acceptWelcome'
+  name?: string
+}
+
+/** Open the terms of use or the privacy policy in the user's browser (the scene's openExternalUrl,
+ *  which works from the native HUD too). */
+export interface OpenLegalRequest {
+  kind: 'openLegal'
+  doc: 'terms' | 'privacy'
+}
+
+export interface WelcomeAcceptedMessage {
+  kind: 'welcomeAccepted'
+  ok: boolean
+  error?: string
 }
 
 /** The local player's live pose, streamed for the minimap. Position is in world metres
@@ -1446,6 +1485,8 @@ export type SceneToPage =
   | CommunityDetailMessage
   | MapMessage
   | HomeSceneMessage
+  | WelcomeMessage
+  | WelcomeAcceptedMessage
   | PlayerPoseMessage
   | RealmInfoMessage
   | SceneInfoMessage

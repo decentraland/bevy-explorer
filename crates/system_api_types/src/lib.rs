@@ -86,6 +86,18 @@ pub struct HomeScene {
     pub parcel: Vector2,
 }
 
+/// What the welcome page must show for the signed-in account.
+#[derive(Serialize, Deserialize, Clone, Debug, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct WelcomeState {
+    /// The terms aren't accepted on this install.
+    pub terms: bool,
+    /// The account had no profile and signed in while the world was held: its new one deploys
+    /// with the page's save (a setAvatar once the terms are accepted).
+    pub new_profile: bool,
+}
+
 /// The satellite map tiles a realm advertises in its `/about` (`configurations.map.satelliteView`).
 /// Only Genesis City realms carry one.
 #[derive(Serialize, Deserialize, Clone, Debug, Default, ts_rs::TS)]

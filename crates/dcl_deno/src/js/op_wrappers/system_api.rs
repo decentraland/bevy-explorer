@@ -13,7 +13,7 @@ use system_bridge::{
     FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData,
     FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo, PermanentPermissionItem,
     PermissionRequestEvent, ProfileChangedEvent, ProximityEvent, SatelliteView, SceneLoadingUi,
-    SetAvatarData, VoiceMessage,
+    SetAvatarData, VoiceMessage, WelcomeState,
 };
 
 // list of op declarations
@@ -42,6 +42,8 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_live_scene_info(),
             op_get_home_scene(),
             op_set_home_scene(),
+            op_get_welcome(),
+            op_accept_terms(),
             op_get_satellite_view(),
             op_get_system_action_stream(),
             op_read_system_action_stream(),
@@ -259,6 +261,17 @@ pub async fn op_live_scene_info(
 #[serde]
 pub async fn op_get_home_scene(state: Rc<RefCell<OpState>>) -> Result<HomeScene, anyhow::Error> {
     dcl::js::system_api::op_get_home_scene(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_welcome(state: Rc<RefCell<OpState>>) -> Result<WelcomeState, anyhow::Error> {
+    dcl::js::system_api::op_get_welcome(state).await
+}
+
+#[op2(async)]
+pub async fn op_accept_terms(state: Rc<RefCell<OpState>>) -> Result<(), anyhow::Error> {
+    dcl::js::system_api::op_accept_terms(state).await
 }
 
 #[op2(async)]

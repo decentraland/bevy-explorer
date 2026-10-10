@@ -24,6 +24,8 @@ export class FakeDriver implements LoginDriver {
   readonly commands: string[] = []
   /** What `command` resolves to for a line (defaults to the engine's `/time` reply at 10:00, 12×). */
   commandReply: (line: string) => string = () => 'time 10:0 -> 10:0, speed 12 (elapsed: 36000)'
+  /** The engine's answer to `getWelcome` (default: no page); null leaves it to the test to emit. */
+  welcome: { terms: boolean; newProfile: boolean } | null = { terms: false, newProfile: false }
 
   private readonly listeners = new Set<(msg: SceneToPage) => void>()
 
@@ -62,6 +64,8 @@ export class FakeDriver implements LoginDriver {
   }
   send(msg: PageToScene): void {
     this.sent.push(msg)
+    const welcome = this.welcome
+    if (msg.kind === 'getWelcome' && welcome != null) queueMicrotask(() => this.emit({ kind: 'welcome', ...welcome }))
   }
   on(fn: (msg: SceneToPage) => void): () => void {
     this.listeners.add(fn)
@@ -175,6 +179,7 @@ export function fakeSession(): EngineSession {
     homeScene: () => null,
     avatarPreviewRect: null,
     pickDestination: vi.fn(),
+    welcome: { terms: false, newProfile: false, pending: false, saving: false, error: null, reroll: vi.fn(), accept: vi.fn(), openLegal: vi.fn() },
     sceneLoading: null,
     loadingProgress: 0,
     travelError: null,

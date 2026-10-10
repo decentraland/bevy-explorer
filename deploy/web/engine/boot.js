@@ -30,7 +30,9 @@
 //       here. The engine itself takes the domain and the overrides as engine_run options.
 //     __bevyHomeScene() — the persisted home scene { realm, parcel: "x,y" } (realm null = none
 //       pinned), for the host's "Skip to Home"; set alongside __bevyReadyToLaunch
-import { initEngine, start, prepareRender, applyOptionsToUrlParams, engine_home_scene } from './engine.js'
+//     __bevyTermsAccepted() — whether the persisted config has accepted the terms (null =
+//       unknown), so the host can hold a link's world for its welcome page; set alongside too
+import { initEngine, start, prepareRender, applyOptionsToUrlParams, engine_home_scene, engine_terms_accepted } from './engine.js'
 
 // ---- boot progress (replaces ui.js's DOM loading steps) -----------------------------------------
 // Weight of each step in the overall bar (sums to 100). Step ids are read by the React login bar
@@ -379,6 +381,9 @@ initEngine()
     // engine_init has loaded the config — the host's places picker targets it from "Skip to
     // Home" before launching.
     window.__bevyHomeScene = () => { try { return JSON.parse(engine_home_scene()) } catch { return null } }
+    // Whether this install has accepted the terms (null = unknown), so a link can launch holding
+    // the world for the welcome page.
+    window.__bevyTermsAccepted = () => { try { return engine_terms_accepted() } catch { return null } }
     window.__bevyReadyToLaunch = true
   })
   .catch((e) => {

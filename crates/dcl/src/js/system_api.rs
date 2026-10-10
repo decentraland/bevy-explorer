@@ -20,6 +20,7 @@ use system_bridge::{
     FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo, PermanentPermissionItem,
     PermissionRequestEvent, ProfileChangedEvent, ProximityEvent, SatelliteView, SceneLoadingUi,
     SetAvatarData, SetPermanentPermission, SetSinglePermission, SystemApi, VoiceMessage,
+    WelcomeState,
 };
 use tokio::sync::Notify;
 
@@ -361,6 +362,30 @@ pub async fn op_get_home_scene(state: Rc<RefCell<impl State>>) -> Result<HomeSce
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
         .send(SystemApi::GetHomeScene(sx))
+        .unwrap();
+
+    rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_get_welcome(state: Rc<RefCell<impl State>>) -> Result<WelcomeState, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetWelcome(sx))
+        .unwrap();
+
+    rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_accept_terms(state: Rc<RefCell<impl State>>) -> Result<(), anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::AcceptTerms(sx))
         .unwrap();
 
     rx.await.map_err(|e| anyhow::anyhow!(e))

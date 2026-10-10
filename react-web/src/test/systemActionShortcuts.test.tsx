@@ -189,7 +189,8 @@ describe('system-action menu shortcuts', () => {
     const h = renderSession({ userId: null })
     await enterAsGuest(h, { keepSent: true })
     const focus = h.driver.sent.filter((m) => m.kind === 'uiFocus').map((m) => m.covered)
-    expect(focus).toEqual([true, true, false])
+    // the welcome stage while sign-in is answered, the lobby, the loading overlay, then the world
+    expect(focus).toEqual([true, true, true, false])
   })
 
   it("declares uiFocus to the engine: panels/popups set ui, a full-screen page sets covered, a focused text field sets text", async () => {

@@ -15,8 +15,8 @@ use common::{
     rpc::{RpcResultReceiver, RpcResultSender},
     sets::SceneSets,
     structs::{
-        ActiveDialog, AppConfig, ChainLink, CurrentRealm, DialogPermit, PreviousLogin, SystemAudio,
-        WorldHold, ZOrder,
+        ActiveDialog, AppConfig, ChainLink, CurrentRealm, DialogPermit, PreviewMode, PreviousLogin,
+        SystemAudio, WorldHold, ZOrder, TERMS_VERSION,
     },
     util::{TaskCompat, TaskExt},
 };
@@ -25,7 +25,7 @@ use comms::profile::{
 };
 use ipfs::{IpfsAssetServer, IpfsIo};
 use scene_runner::Toaster;
-use system_bridge::{NativeUi, SystemApi, PROFILE_FETCH_FAILED};
+use system_bridge::{NativeUi, SystemApi, WelcomeState, PROFILE_FETCH_FAILED};
 use tokio::sync::oneshot::error::TryRecvError;
 use ui_core::{
     button::DuiButton,
@@ -315,6 +315,7 @@ fn update_profile_for_realm(
             Some(Ok(Some(profile))) => {
                 current_profile.profile = Some(profile);
                 current_profile.is_deployed = true;
+                current_profile.deploy_held = false;
             }
             Some(Ok(None)) | Some(Err(_)) => {
                 // keep existing profile
@@ -414,7 +415,7 @@ async fn get_profile_with_retry(
 enum LoginProfile {
     /// On the server.
     Deployed(UserProfile),
-    /// Built here for an account with none; deployed on entry.
+    /// Built here for an account with none; deployed on entry, or by the welcome page.
     New(UserProfile),
 }
 
@@ -422,14 +423,12 @@ async fn login_profile(
     root_address: Address,
     ipfs: std::sync::Arc<IpfsIo>,
     default_on_error: bool,
-    guest_account: bool,
 ) -> Result<LoginProfile, String> {
     match get_profile_with_retry(root_address, ipfs.clone(), default_on_error).await? {
         Some(profile) => Ok(LoginProfile::Deployed(profile)),
-        None if guest_account => Ok(LoginProfile::New(
-            new_guest_profile(root_address, ipfs).await,
+        None => Ok(LoginProfile::New(
+            new_account_profile(root_address, ipfs).await,
         )),
-        None => Ok(LoginProfile::New(new_profile(root_address, &ipfs))),
     }
 }
 
@@ -446,7 +445,7 @@ fn new_profile(address: Address, ipfs: &IpfsIo) -> UserProfile {
     }
 }
 
-/// Name parts for a new guest. Every first + last pair must be alphanumeric and at most 15
+/// Name parts for a new account. Every first + last pair must be alphanumeric and at most 15
 /// characters, the unclaimed-name rule shared by the HUD, the account site and the other
 /// clients (and their `@mention` patterns); see the test below.
 const GUEST_FIRST_NAMES: &[&str] = &[
@@ -477,7 +476,7 @@ const GUEST_LAST_NAMES: &[&str] = &[
     "Windward",
 ];
 
-/// The name and look are derived from the address so a guest comes back the same if the
+/// The name and look are derived from the address so a new account comes back the same if the
 /// first deploy didn't land; an EOA address is a keccak digest, so the bytes are uniform.
 fn guest_name(address: &Address) -> String {
     let bytes = address.as_slice();
@@ -493,10 +492,10 @@ fn guest_look_index(address: &Address) -> u32 {
     u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) % DEFAULT_LOOKS + 1
 }
 
-/// A guest account is created without a profile; give it a name and one of the curated
-/// default looks so it doesn't start as every other new guest. Falls back to the engine's
-/// default look if the catalyst can't provide one.
-async fn new_guest_profile(address: Address, ipfs: std::sync::Arc<IpfsIo>) -> UserProfile {
+/// An account without a profile gets a name and one of the curated default looks, so it
+/// doesn't start as every other new account. Falls back to the engine's default look if the
+/// catalyst can't provide one.
+async fn new_account_profile(address: Address, ipfs: std::sync::Arc<IpfsIo>) -> UserProfile {
     let index = guest_look_index(&address);
     let look = match get_default_look(ipfs.clone(), index).await {
         Ok(Some(look)) => Some(look.content.avatar),
@@ -557,6 +556,7 @@ fn process_login_bridge(
     mut window: Query<&mut Window, With<PrimaryWindow>>,
     mut config: ResMut<AppConfig>,
     world_hold: Option<Res<WorldHold>>,
+    preview: Res<PreviewMode>,
 ) {
     for ev in e.read().cloned() {
         match ev {
@@ -571,6 +571,18 @@ fn process_login_bridge(
             SystemApi::GetPreviousLogin(rpc_result_sender) => {
                 rpc_result_sender
                     .send(get_previous_login(&config).map(|pl| format!("{:#x}", pl.root_address)));
+            }
+            SystemApi::GetWelcome(sender) => sender.send(WelcomeState {
+                terms: !config.terms_accepted() && !preview.is_preview,
+                new_profile: current_profile.deploy_held,
+            }),
+            // the welcome page awaits this before its save, which releases a held new profile
+            SystemApi::AcceptTerms(sender) => {
+                if !config.terms_accepted() {
+                    config.accepted_terms = Some(TERMS_VERSION);
+                    platform::write_config_file(&*config);
+                }
+                sender.send(());
             }
             // the account can only change while the world is held (the lobby): once in
             // world, comms and scenes are bound to the wallet that entered
@@ -604,16 +616,13 @@ fn process_login_bridge(
                         guest_account,
                     } = previous_login;
 
-                    let profile =
-                        match login_profile(root_address, ipfs, default_on_error, guest_account)
-                            .await
-                        {
-                            Ok(profile) => profile,
-                            Err(e) => {
-                                rpc_result_sender.send(Err(e));
-                                return Err(());
-                            }
-                        };
+                    let profile = match login_profile(root_address, ipfs, default_on_error).await {
+                        Ok(profile) => profile,
+                        Err(e) => {
+                            rpc_result_sender.send(Err(e));
+                            return Err(());
+                        }
+                    };
 
                     let local_wallet =
                         PrivateKeySigner::from_bytes(&B256::from_slice(&ephemeral_key)).unwrap();
@@ -654,14 +663,13 @@ fn process_login_bridge(
                             }
                         };
 
-                    let profile =
-                        match login_profile(root_address, ipfs, default_on_error, false).await {
-                            Ok(profile) => profile,
-                            Err(e) => {
-                                result_sender.send(Err(e));
-                                return Err(());
-                            }
-                        };
+                    let profile = match login_profile(root_address, ipfs, default_on_error).await {
+                        Ok(profile) => profile,
+                        Err(e) => {
+                            result_sender.send(Err(e));
+                            return Err(());
+                        }
+                    };
 
                     Ok((
                         root_address,
@@ -692,16 +700,13 @@ fn process_login_bridge(
                         }
                     };
 
-                    let profile =
-                        match login_profile(root_address, ipfs, default_on_error, guest_account)
-                            .await
-                        {
-                            Ok(profile) => profile,
-                            Err(e) => {
-                                rpc_result_sender.send(Err(e));
-                                return Err(());
-                            }
-                        };
+                    let profile = match login_profile(root_address, ipfs, default_on_error).await {
+                        Ok(profile) => profile,
+                        Err(e) => {
+                            rpc_result_sender.send(Err(e));
+                            return Err(());
+                        }
+                    };
 
                     Ok((
                         root_address,
@@ -727,6 +732,7 @@ fn process_login_bridge(
                     base_url: ipfas.ipfs().contents_endpoint().unwrap_or_default(),
                 });
                 current_profile.is_deployed = true;
+                current_profile.deploy_held = false;
             }
             SystemApi::LoginCancel => {
                 *login_task = None;
@@ -735,6 +741,7 @@ fn process_login_bridge(
                 *login_task = None;
                 wallet.disconnect();
                 current_profile.profile = None;
+                current_profile.deploy_held = false;
             }
             _ => (),
         }
@@ -788,6 +795,8 @@ fn process_login_bridge(
                 };
                 current_profile.profile = Some(profile);
                 current_profile.is_deployed = deployed;
+                // held, the host shows its welcome page, which deploys the new profile
+                current_profile.deploy_held = !deployed && world_hold.is_some();
 
                 sender.send(Ok(()));
             }
