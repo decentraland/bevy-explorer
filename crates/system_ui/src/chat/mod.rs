@@ -7,6 +7,10 @@ pub mod friends;
 pub mod history;
 
 use alloy_core::primitives::Address;
+use analytics::{
+    data_definition::{SegmentEvent, SegmentEventChatMessageSent},
+    segment_system::SegmentMetricsEvents,
+};
 use bevy::{color::palettes::css, prelude::*};
 
 use bevy_console::{ConsoleCommand, ConsoleCommandEntered, ConsoleConfiguration, PrintConsoleLine};
@@ -540,6 +544,7 @@ fn emit_user_chat(
     mut command_entered: EventWriter<ConsoleCommandEntered>,
     mut console_lines: EventReader<PrintConsoleLine>,
     f: Query<Entity, With<Focus>>,
+    mut metrics: ResMut<SegmentMetricsEvents>,
 ) {
     let Ok(player) = player.single() else {
         return;
@@ -557,6 +562,10 @@ fn emit_user_chat(
                 commands.entity(e).remove::<Focus>();
             }
         } else {
+            metrics.add_event(SegmentEvent::ChatMessageSent(
+                SegmentEventChatMessageSent::new(message, output.active_tab.is_empty()),
+            ));
+
             if output.active_tab.is_empty() {
                 // private chat (what a hacky approach this is)
                 private.write(PrivateChatEntered(message.clone()));
@@ -920,6 +929,7 @@ fn react(mut input: ConsoleCommand<ReactCommand>, mut events: EventWriter<System
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn pipe_chats_from_scene(
     mut sender: EventWriter<ChatEvent>,
     primary_player: Res<PrimaryPlayerRes>,
@@ -928,6 +938,7 @@ fn pipe_chats_from_scene(
     console_config: Res<ConsoleConfiguration>,
     mut command_entered: EventWriter<ConsoleCommandEntered>,
     mut console_lines: EventReader<PrintConsoleLine>,
+    mut metrics: ResMut<SegmentMetricsEvents>,
 ) {
     for (message, channel) in chats.read().filter_map(|ev| {
         if let SystemApi::SendChat(message, channel) = ev {
@@ -936,6 +947,11 @@ fn pipe_chats_from_scene(
             None
         }
     }) {
+        // a wallet address as the channel is a dm
+        metrics.add_event(SegmentEvent::ChatMessageSent(
+            SegmentEventChatMessageSent::new(&message, channel.as_h160().is_some()),
+        ));
+
         if message.starts_with('/') {
             sender.write(ChatEvent {
                 timestamp: time.elapsed_secs_f64(),
