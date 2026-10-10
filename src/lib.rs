@@ -879,11 +879,22 @@ fn wasm_default_plugins(decentraland_app_config: &DecentralandAppConfig) -> Plug
         .add_before::<IpfsIoPlugin>(NftReaderPlugin)
 }
 
+/// `{os}-{DISTRIBUTION}` natively; wasm32-unknown-unknown has no os name (`std::env::consts::OS`
+/// is empty), so the web is just `web`.
+#[cfg(all(not(debug_assertions), not(target_arch = "wasm32")))]
+fn platform() -> String {
+    format!("{}-{DISTRIBUTION}", std::env::consts::OS)
+}
+#[cfg(all(not(debug_assertions), target_arch = "wasm32"))]
+fn platform() -> String {
+    DISTRIBUTION.to_owned()
+}
+
 pub fn version() -> String {
     #[cfg(not(debug_assertions))]
     return format!(
-        "bevy-{}-{DISTRIBUTION}-{}{}",
-        std::env::consts::OS,
+        "bevy-{}-{}{}",
+        platform(),
         env!("BEVY_EXPLORER_VERSION"),
         (env!("BEVY_EXPLORER_LOCAL_MODIFICATION") == "true")
             .then_some(format!("-{}", build_time_utc!("%Y-%m-%d %H:%M")))
