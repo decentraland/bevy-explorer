@@ -12,7 +12,7 @@ import { KeyBindingsTab } from './KeyBindingsTab'
 import {
   LANGUAGES,
   clearAutoTranslate,
-  languageName,
+  nativeName,
   setAutoTranslateDefault,
   setTranslationLanguage,
   systemLanguage,
@@ -84,6 +84,11 @@ const SettingField = memo(
 function TranslationFields(): React.JSX.Element {
   const prefs = useTranslationPrefs()
   const system = systemLanguage()
+  // each in its own name, so a player finds theirs without reading English
+  const options = useMemo(
+    () => LANGUAGES.map((l) => ({ value: l.code, label: nativeName(l.code) })).sort((a, b) => a.label.localeCompare(b.label)),
+    []
+  )
   return (
     <>
       <div className={styles.field}>
@@ -93,7 +98,7 @@ function TranslationFields(): React.JSX.Element {
         <Select
           variant="light"
           value={prefs.languageChosen ? prefs.language : ''}
-          options={[{ value: '', label: `System (${languageName(system)})` }, ...LANGUAGES.map((l) => ({ value: l.code, label: l.name }))]}
+          options={[{ value: '', label: `System (${nativeName(system)})` }, ...options]}
           onChange={(v) => setTranslationLanguage(v === '' ? null : v)}
           aria-label="Translation Language"
         />

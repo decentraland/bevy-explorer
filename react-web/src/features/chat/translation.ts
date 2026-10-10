@@ -9,56 +9,57 @@ import { BASE_DOMAIN } from '../../lib/baseDomain'
 import { PREF, getPref, setPref } from '../../lib/prefs'
 import { parseMessage } from './chatText'
 
-/** The server's target languages (GET /languages). */
-export const LANGUAGES: readonly { code: string; name: string }[] = [
-  { code: 'sq', name: 'Albanian' },
-  { code: 'ar', name: 'Arabic' },
-  { code: 'az', name: 'Azerbaijani' },
-  { code: 'eu', name: 'Basque' },
-  { code: 'bn', name: 'Bengali' },
-  { code: 'bg', name: 'Bulgarian' },
-  { code: 'ca', name: 'Catalan' },
-  { code: 'zh-Hans', name: 'Chinese (Simplified)' },
-  { code: 'zh-Hant', name: 'Chinese (Traditional)' },
-  { code: 'cs', name: 'Czech' },
-  { code: 'da', name: 'Danish' },
-  { code: 'nl', name: 'Dutch' },
-  { code: 'en', name: 'English' },
-  { code: 'eo', name: 'Esperanto' },
-  { code: 'et', name: 'Estonian' },
-  { code: 'fi', name: 'Finnish' },
-  { code: 'fr', name: 'French' },
-  { code: 'gl', name: 'Galician' },
-  { code: 'de', name: 'German' },
-  { code: 'el', name: 'Greek' },
-  { code: 'he', name: 'Hebrew' },
-  { code: 'hi', name: 'Hindi' },
-  { code: 'hu', name: 'Hungarian' },
-  { code: 'id', name: 'Indonesian' },
-  { code: 'ga', name: 'Irish' },
-  { code: 'it', name: 'Italian' },
-  { code: 'ja', name: 'Japanese' },
-  { code: 'ko', name: 'Korean' },
-  { code: 'ky', name: 'Kyrgyz' },
-  { code: 'lv', name: 'Latvian' },
-  { code: 'lt', name: 'Lithuanian' },
-  { code: 'ms', name: 'Malay' },
-  { code: 'nb', name: 'Norwegian' },
-  { code: 'fa', name: 'Persian' },
-  { code: 'pl', name: 'Polish' },
-  { code: 'pt', name: 'Portuguese' },
-  { code: 'pt-BR', name: 'Portuguese (Brazil)' },
-  { code: 'ro', name: 'Romanian' },
-  { code: 'ru', name: 'Russian' },
-  { code: 'sk', name: 'Slovak' },
-  { code: 'sl', name: 'Slovenian' },
-  { code: 'es', name: 'Spanish' },
-  { code: 'sv', name: 'Swedish' },
-  { code: 'tl', name: 'Tagalog' },
-  { code: 'th', name: 'Thai' },
-  { code: 'tr', name: 'Turkish' },
-  { code: 'uk', name: 'Ukrainian' },
-  { code: 'ur', name: 'Urdu' }
+/** The server's target languages (GET /languages), with each one's name in itself (CLDR). Kept
+ *  here rather than asked of Intl.DisplayNames: Chromium's trimmed locale data lacks some. */
+export const LANGUAGES: readonly { code: string; name: string; native: string }[] = [
+  { code: 'sq', name: 'Albanian', native: 'Shqip' },
+  { code: 'ar', name: 'Arabic', native: 'العربية' },
+  { code: 'az', name: 'Azerbaijani', native: 'Azərbaycan' },
+  { code: 'eu', name: 'Basque', native: 'Euskara' },
+  { code: 'bn', name: 'Bengali', native: 'বাংলা' },
+  { code: 'bg', name: 'Bulgarian', native: 'Български' },
+  { code: 'ca', name: 'Catalan', native: 'Català' },
+  { code: 'zh-Hans', name: 'Chinese (Simplified)', native: '简体中文' },
+  { code: 'zh-Hant', name: 'Chinese (Traditional)', native: '繁體中文' },
+  { code: 'cs', name: 'Czech', native: 'Čeština' },
+  { code: 'da', name: 'Danish', native: 'Dansk' },
+  { code: 'nl', name: 'Dutch', native: 'Nederlands' },
+  { code: 'en', name: 'English', native: 'English' },
+  { code: 'eo', name: 'Esperanto', native: 'Esperanto' },
+  { code: 'et', name: 'Estonian', native: 'Eesti' },
+  { code: 'fi', name: 'Finnish', native: 'Suomi' },
+  { code: 'fr', name: 'French', native: 'Français' },
+  { code: 'gl', name: 'Galician', native: 'Galego' },
+  { code: 'de', name: 'German', native: 'Deutsch' },
+  { code: 'el', name: 'Greek', native: 'Ελληνικά' },
+  { code: 'he', name: 'Hebrew', native: 'עברית' },
+  { code: 'hi', name: 'Hindi', native: 'हिन्दी' },
+  { code: 'hu', name: 'Hungarian', native: 'Magyar' },
+  { code: 'id', name: 'Indonesian', native: 'Indonesia' },
+  { code: 'ga', name: 'Irish', native: 'Gaeilge' },
+  { code: 'it', name: 'Italian', native: 'Italiano' },
+  { code: 'ja', name: 'Japanese', native: '日本語' },
+  { code: 'ko', name: 'Korean', native: '한국어' },
+  { code: 'ky', name: 'Kyrgyz', native: 'Кыргызча' },
+  { code: 'lv', name: 'Latvian', native: 'Latviešu' },
+  { code: 'lt', name: 'Lithuanian', native: 'Lietuvių' },
+  { code: 'ms', name: 'Malay', native: 'Melayu' },
+  { code: 'nb', name: 'Norwegian', native: 'Norsk bokmål' },
+  { code: 'fa', name: 'Persian', native: 'فارسی' },
+  { code: 'pl', name: 'Polish', native: 'Polski' },
+  { code: 'pt', name: 'Portuguese', native: 'Português' },
+  { code: 'pt-BR', name: 'Portuguese (Brazil)', native: 'Português (Brasil)' },
+  { code: 'ro', name: 'Romanian', native: 'Română' },
+  { code: 'ru', name: 'Russian', native: 'Русский' },
+  { code: 'sk', name: 'Slovak', native: 'Slovenčina' },
+  { code: 'sl', name: 'Slovenian', native: 'Slovenščina' },
+  { code: 'es', name: 'Spanish', native: 'Español' },
+  { code: 'sv', name: 'Swedish', native: 'Svenska' },
+  { code: 'tl', name: 'Tagalog', native: 'Filipino' },
+  { code: 'th', name: 'Thai', native: 'ไทย' },
+  { code: 'tr', name: 'Turkish', native: 'Türkçe' },
+  { code: 'uk', name: 'Ukrainian', native: 'Українська' },
+  { code: 'ur', name: 'Urdu', native: 'اردو' }
 ]
 
 /** The server language for a BCP 47 tag ("pt-BR", "zh-TW", "de-AT"), or null if it has none. */
@@ -80,6 +81,11 @@ export function systemLanguage(tags: readonly string[] = navigator.languages ?? 
     if (code != null) return code
   }
   return 'en'
+}
+
+/** "Español" for "es": the language's name in itself, for choosing one. */
+export function nativeName(code: string): string {
+  return LANGUAGES.find((l) => l.code === code)?.native ?? languageName(code)
 }
 
 /** "Spanish" for "es"; the code itself for one we have no name for. */
