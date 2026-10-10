@@ -15,8 +15,8 @@ use common::{
     rpc::{RpcResultReceiver, RpcResultSender},
     sets::SceneSets,
     structs::{
-        ActiveDialog, AppConfig, ChainLink, CurrentRealm, DialogPermit, PreviousLogin, SystemAudio,
-        WorldHold, ZOrder, TERMS_VERSION,
+        ActiveDialog, AppConfig, ChainLink, CurrentRealm, DialogPermit, PreviewMode, PreviousLogin,
+        SystemAudio, WorldHold, ZOrder, TERMS_VERSION,
     },
     util::{TaskCompat, TaskExt},
 };
@@ -556,6 +556,7 @@ fn process_login_bridge(
     mut window: Query<&mut Window, With<PrimaryWindow>>,
     mut config: ResMut<AppConfig>,
     world_hold: Option<Res<WorldHold>>,
+    preview: Res<PreviewMode>,
 ) {
     for ev in e.read().cloned() {
         match ev {
@@ -572,7 +573,7 @@ fn process_login_bridge(
                     .send(get_previous_login(&config).map(|pl| format!("{:#x}", pl.root_address)));
             }
             SystemApi::GetWelcome(sender) => sender.send(WelcomeState {
-                terms: !config.terms_accepted(),
+                terms: !config.terms_accepted() && !preview.is_preview,
                 new_profile: current_profile.deploy_held,
             }),
             // the welcome page awaits this before its save, which releases a held new profile

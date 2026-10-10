@@ -145,6 +145,19 @@ describe('welcome page', () => {
     })
   })
 
+  it("doesn't hold a web link in preview, which can't release it", async () => {
+    await withUrl('/?position=10,20&preview', async () => {
+      const driver = new LaunchRecordingDriver(false)
+      const h = renderSession({ userId: null }, driver)
+      await signIn(h)
+      expect(driver.hosts).toEqual([undefined])
+      // the engine doesn't ask for the terms in preview
+      h.driver.emit({ kind: 'welcome', terms: false, newProfile: false })
+      await waitFor(() => expect(h.session().welcome.terms).toBe(false))
+      expect(h.driver.sentOf('teleport')).toHaveLength(0)
+    })
+  })
+
   it('neither holds nor asks for the sites embed', async () => {
     await withUrl('/?hud=0&guest=1', async () => {
       const driver = new LaunchRecordingDriver(false)

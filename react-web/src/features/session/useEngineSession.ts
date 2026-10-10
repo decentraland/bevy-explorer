@@ -1885,8 +1885,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // The welcome page needs a HUD to show it, and the sites embed's auto guest skips it.
   const welcomeShown = (): boolean => !boot.current.hideHud && boot.current.autoLogin !== 'guest'
   // A destination launched straight in (a link) holds the world while the terms wait for the page.
+  // Not in preview, which refuses the realm change that would release it.
   const holdForTerms = (driver: LoginDriver, dest: Destination): LaunchHostOptions | undefined => {
-    if (!welcomeShown() || driver.termsAccepted?.() !== false) return undefined
+    if (!welcomeShown() || new URLSearchParams(location.search).has('preview') || driver.termsAccepted?.() !== false) return undefined
     heldDest.current = dest
     return { holdWorld: true }
   }
