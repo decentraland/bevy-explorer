@@ -334,6 +334,10 @@ fn participant_payload(
             return;
         }
     };
+    if !message.timestamp.is_finite() {
+        warn!(target: "comms::private_chat", "dropping dm from {from:#x} with timestamp {}", message.timestamp);
+        return;
+    }
     debug!(target: "comms::private_chat", "dm from {from:#x}: {}", message.message);
     received.write(PrivateChatReceived {
         from,

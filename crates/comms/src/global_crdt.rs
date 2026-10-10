@@ -936,7 +936,8 @@ pub fn process_transport_updates(
                         PlayerMessage::PlayerData(Message::Chat(chat)) => {
                             let last = duplicate_chat_filter.entry(entity).or_default();
 
-                            if *last < chat.timestamp {
+                            // a non-finite timestamp can't name the message for reactions
+                            if chat.timestamp.is_finite() && *last < chat.timestamp {
                                 debug!("chat data: `{chat:#?}`");
                                 chat_events.write(ChatEvent {
                                     sender: entity,

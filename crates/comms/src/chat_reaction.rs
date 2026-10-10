@@ -185,7 +185,8 @@ pub fn chat_message_id(sender: Address, timestamp: f64) -> String {
 /// re-printing the timestamp matches however the sending client printed it.
 pub fn canonical_message_id(id: &str) -> Option<String> {
     let (sender, timestamp) = id.split_once(':')?;
-    Some(chat_message_id(sender.as_h160()?, timestamp.parse().ok()?))
+    let timestamp = timestamp.parse().ok().filter(|t: &f64| t.is_finite())?;
+    Some(chat_message_id(sender.as_h160()?, timestamp))
 }
 
 /// A reaction added or removed, by the local user or a peer. `channel` is "Nearby" or the DM
@@ -241,6 +242,10 @@ mod tests {
             Some(id.as_str())
         );
         assert_eq!(canonical_message_id("not-an-id"), None);
+        for timestamp in ["inf", "-infinity", "nan", "1e999"] {
+            let id = format!("0xABCDEF0123456789abcdef0123456789abcdef01:{timestamp}");
+            assert_eq!(canonical_message_id(&id), None, "{timestamp}");
+        }
     }
 
     #[test]
