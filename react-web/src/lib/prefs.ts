@@ -11,6 +11,9 @@ import { inShell } from './shell'
 // Every key the HUD stores. The shell moves these out of localStorage (migratePrefs).
 export const PREF = {
   emojiRecents: 'dcl-emoji-recents',
+  chatTranslateLanguage: 'chat.translate.language',
+  chatAutoTranslateDefault: 'chat.translate.autoDefault',
+  chatAutoTranslateChannels: 'chat.translate.channels',
   lobbyRecents: 'lobby.recentPlaces',
   minimapPlaces: 'dcl-minimap-places',
   minimapStyle: 'dcl-minimap-style',

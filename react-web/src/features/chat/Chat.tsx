@@ -7,11 +7,24 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ChatLine, ChatState, Conversation } from '../session/useEngineSession'
 import type { DmUserState, MessageReaction, NearbyMember } from '../../engine/protocol'
-import { Avatar, ContextMenu, ControlButton, DclLogo, Kebab, MaskIcon, Tooltip, VerifiedBadge, VoiceBars } from '../../design'
+import { Avatar, ContextMenu, ControlButton, DclLogo, Kebab, MaskIcon, Tooltip, Translate, VerifiedBadge, VoiceBars } from '../../design'
 import { registerCancelLayer } from '../../lib/cancelLayers'
 import { EmojiPicker } from './EmojiPicker'
 import { EMOJI_BY_CODE, EMOJI_BY_GLYPH, QUICK_REACTIONS, loadRecents, searchByShortcode, type Emoji } from './emojiData'
 import { MessageText, mentionsMe } from './chatText'
+import {
+  autoTranslates,
+  clearAutoTranslate,
+  getTranslation,
+  hasTranslatableText,
+  languageName,
+  requestTranslation,
+  setAutoTranslate,
+  showOriginal,
+  useTranslationPrefs,
+  useTranslations,
+  type Translation
+} from './translation'
 import { type ChatUser } from './ProfileCardPresentation'
 import { openProfileCard } from '../profileCard/ProfileCard'
 import { knownUserColor, peekProfile, useProfile } from '../session/profileStore'
@@ -55,6 +68,82 @@ function splitName(label: string): { base: string; tag: string } {
 function senderColor(sender: string, name: string): string {
   if (isSystem(sender)) return SYSTEM_COLOR
   return knownUserColor(sender, name)
+}
+
+/** What a line's translation is filed under. */
+function lineKey(line: ChatLine): string {
+  return line.messageId !== '' ? line.messageId : `${line.sender.toLowerCase()}|${line.ts}`
+}
+
+/** The newest lines of a conversation translated when it auto-translates (older ones by hand). */
+const AUTO_TRANSLATE_RECENT = 20
+
+/** The icon by a message's time saying where its translation stands; its tooltip says what a click does. */
+function TranslationMark({ line, translation, onTranslate, onShowOriginal, onHover }: {
+  line: ChatLine
+  translation: Translation
+  onTranslate: (line: ChatLine) => void
+  onShowOriginal: (line: ChatLine, original: boolean) => void
+  onHover?: (label: string | null, anchor?: HTMLElement) => void
+}): React.JSX.Element | null {
+  const ref = useRef<HTMLElement | null>(null)
+  const hovered = useRef(false)
+  let label: string | null = null
+  let lit = false
+  let act: (() => void) | null = null
+  if (translation.status === 'pending') label = 'Waiting for translation'
+  else if (translation.status === 'failed' && translation.manual) {
+    label = "Couldn't translate · Retry"
+    act = () => onTranslate(line)
+  } else if (translation.status === 'done' && translation.showOriginal) {
+    label = 'See translation'
+    act = () => onShowOriginal(line, false)
+  } else if (translation.status === 'done') {
+    label = `${translation.from !== '' ? `From ${languageName(translation.from)}` : 'Translated'} · See original`
+    lit = true
+    act = () => onShowOriginal(line, true)
+  }
+  // The state can change under the pointer (a click, a translation arriving): the tooltip follows,
+  // and goes with the icon.
+  useEffect(() => {
+    if (hovered.current && ref.current != null) onHover?.(label, ref.current)
+  }, [label, onHover])
+  useEffect(() => () => {
+    if (hovered.current) onHover?.(null)
+  }, [onHover])
+  if (label == null) return null
+  const hover = {
+    onMouseEnter: (e: React.MouseEvent<HTMLElement>) => {
+      hovered.current = true
+      onHover?.(label, e.currentTarget)
+    },
+    onMouseLeave: () => {
+      hovered.current = false
+      onHover?.(null)
+    }
+  }
+  const className = `${styles.translationMark} ${lit ? styles.translationLit : ''}`.trim()
+  return act == null ? (
+    <span ref={(el) => { ref.current = el }} className={className} role="img" aria-label={label} {...hover}>
+      <Translate size={12} />
+    </span>
+  ) : (
+    <button ref={(el) => { ref.current = el }} type="button" className={className} aria-label={label} onClick={act} {...hover}>
+      <Translate size={12} />
+    </button>
+  )
+}
+
+/** Switches the conversation's auto-translation on or off. */
+function AutoTranslateButton({ channel }: { channel: string }): React.JSX.Element {
+  const on = autoTranslates(useTranslationPrefs(), channel)
+  return (
+    <Tooltip label={on ? 'Auto-translate: on' : 'Auto-translate: off'} side="bottom">
+      <ControlButton variant="faint" active={on} aria-label="Auto-translate" onClick={() => setAutoTranslate(channel, !on)}>
+        <Translate size={18} />
+      </ControlButton>
+    </Tooltip>
+  )
 }
 
 type Suggestions =
@@ -216,9 +305,21 @@ export const ChatBubble = memo(function ChatBubble({
   onToggleReaction,
   onReactionHover,
   reacting = false,
-  arrive = false
+  arrive = false,
+  translation,
+  onTranslate,
+  onShowOriginal,
+  onTranslationHover
 }: {
   line: ChatLine
+  /** This line's translation, if one was asked for. */
+  translation?: Translation
+  /** Translate this line by hand. */
+  onTranslate?: (line: ChatLine) => void
+  /** Show a translated line in its original words, or its translation again. */
+  onShowOriginal?: (line: ChatLine, original: boolean) => void
+  /** Hovering the translation icon: its tooltip, anchored at the icon; null on leave. */
+  onTranslationHover?: (label: string | null, anchor?: HTMLElement) => void
   /** A live message (not history): fades in on mount. */
   arrive?: boolean
   /** Open the reaction bar for this line, anchored at its reaction button. */
@@ -251,6 +352,8 @@ export const ChatBubble = memo(function ChatBubble({
   const highlight = !own && mentionsMe(line.message, me ?? null)
   const clickable = !own && !system && onOpenProfile != null
   const reactable = !system && line.messageId !== '' && onReact != null
+  const translatable = useMemo(() => !system && !own && hasTranslatableText(line.message), [system, own, line.message])
+  const text = translation?.status === 'done' && !translation.showOriginal ? translation.text : line.message
 
   const openSender = (e: React.MouseEvent): void => {
     if (e.type === 'contextmenu') e.preventDefault()
@@ -296,13 +399,23 @@ export const ChatBubble = memo(function ChatBubble({
             </span>
           )}
           <span className={styles.text}>
-            <MessageText text={line.message} members={members} styles={MSG_STYLES} onMention={onMention} onLocation={(x, y) => onLocation?.(x, y)} onWorld={onVisitWorld} />
+            <MessageText text={text} members={members} styles={MSG_STYLES} onMention={onMention} onLocation={(x, y) => onLocation?.(x, y)} onWorld={onVisitWorld} />
           </span>
-          <span className={styles.time}>{formatTime(line.ts)}</span>
+          <span className={styles.time}>
+            {formatTime(line.ts)}
+            {translation != null && onTranslate != null && onShowOriginal != null && (
+              <TranslationMark line={line} translation={translation} onTranslate={onTranslate} onShowOriginal={onShowOriginal} onHover={onTranslationHover} />
+            )}
+          </span>
           {onToggleReaction != null && <ReactionPills line={line} me={me?.address} onToggle={onToggleReaction} onHover={onReactionHover} />}
         </div>
         <span className={styles.spacer} aria-hidden="true" />
       </div>
+      {translatable && onTranslate != null && (translation == null || translation.status === 'failed') && (
+        <button type="button" className={styles.translateBtn} aria-label="Translate" title="Translate" onClick={() => onTranslate(line)}>
+          <Translate size={16} />
+        </button>
+      )}
       {reactable && (
         <button
           type="button"
@@ -592,6 +705,7 @@ function DmHeader({ conversation, onClose, onDelete, onOpenProfile }: {
         </span>
       </button>
       <div className={styles.navRight}>
+        <AutoTranslateButton channel={conversation.address} />
         <div ref={menuRef} className={styles.menuWrap}>
           <ControlButton variant="faint" aria-label="Conversation options" aria-expanded={menu} active={menu} onClick={() => setMenu((m) => !m)}>
             <Kebab vertical size={18} r={2} />
@@ -827,6 +941,21 @@ export function Chat({
     },
     [meAddress]
   )
+  // Translation: the conversation's newest lines when it auto-translates, any line by hand.
+  const translationPrefs = useTranslationPrefs()
+  useTranslations()
+  const target = translationPrefs.language
+  const autoTranslate = autoTranslates(translationPrefs, chat.channel)
+  useEffect(() => {
+    if (!autoTranslate) return
+    const mine = meAddress?.toLowerCase()
+    for (const line of chat.messages.slice(-AUTO_TRANSLATE_RECENT)) {
+      if (isSystem(line.sender) || line.sender.toLowerCase() === mine || !hasTranslatableText(line.message)) continue
+      requestTranslation(lineKey(line), line.message, target, false)
+    }
+  }, [autoTranslate, chat.messages, target, meAddress])
+  const translateLine = useCallback((line: ChatLine) => requestTranslation(lineKey(line), line.message, target, true), [target])
+  const showLineOriginal = useCallback((line: ChatLine, original: boolean) => showOriginal(lineKey(line), target, original), [target])
   const BAR_HEIGHT = 40
   const BAR_GAP = 4
   const openReactionBar = useCallback((line: ChatLine, anchor: HTMLElement) => {
@@ -1019,7 +1148,10 @@ export function Chat({
         <DmHeader
           conversation={conversation}
           onClose={() => chat.closeConversation(conversation.address)}
-          onDelete={() => chat.deleteHistory(conversation.address)}
+          onDelete={() => {
+            chat.deleteHistory(conversation.address)
+            clearAutoTranslate(conversation.address)
+          }}
           onOpenProfile={openProfile}
         />
       )}
@@ -1030,6 +1162,7 @@ export function Chat({
             <span className={styles.navTitle}>Nearby</span>
           </div>
           <div className={styles.navRight}>
+            <AutoTranslateButton channel="Nearby" />
             <ControlButton
               variant="faint"
               shape="pill"
@@ -1072,7 +1205,11 @@ export function Chat({
                   onReact={openReactionBar}
                   onToggleReaction={toggleReaction}
                   onReactionHover={hoverReaction}
+                  onTranslationHover={hoverReaction}
                   reacting={reacting?.line.id === r.line.id}
+                  translation={getTranslation(lineKey(r.line), target)}
+                  onTranslate={translateLine}
+                  onShowOriginal={showLineOriginal}
                 />
               </Fragment>
             )
