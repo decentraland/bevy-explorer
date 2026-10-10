@@ -112,15 +112,25 @@ const EMOJI_FONT = 62
 const MSG_GAP = 2
 const MSG_TRUNCATE = 100
 const MENTION_BORDER = Color4.create(1, 45 / 255, 85 / 255, 1) // brand #ff2d55
+const TRANSLATED_ICON = 26 // beside a message the HUD translated
 
-type Bubble = { message: string; mention: boolean; ttl: number }
+type Bubble = { message: string; mention: boolean; ttl: number; messageId: string; translated: boolean }
 const bubbles = new Map<string, Bubble>() // lowercased address → its live bubble
 
 /** Show (or refresh) a player's chat bubble. Called by the chat domain for each incoming message. */
-export function setChatBubble(address: string, message: string, mention: boolean): void {
+export function setChatBubble(address: string, message: string, mention: boolean, messageId: string): void {
   const text = message.trim()
   if (address === '' || text === '') return
-  bubbles.set(address.toLowerCase(), { message: text, mention, ttl: BUBBLE_TTL })
+  bubbles.set(address.toLowerCase(), { message: text, mention, ttl: BUBBLE_TTL, messageId, translated: false })
+}
+
+/** Show a bubble's message in other words (its translation) and start its time again, if it is still
+ *  up and still that message: a later message, or one gone, is left alone. */
+export function retextChatBubble(address: string, messageId: string, message: string): void {
+  const text = message.trim()
+  const bubble = bubbles.get(address.toLowerCase())
+  if (bubble == null || messageId === '' || bubble.messageId !== messageId || text === '') return
+  bubbles.set(address.toLowerCase(), { ...bubble, message: text, ttl: BUBBLE_TTL, translated: true })
 }
 
 // Single-emoji detection (renders bigger, like the reference). Codepoint-range based so it works in
@@ -234,16 +244,25 @@ function tagElement(userId: string): () => ReactEcs.JSX.Element | null {
             {isSpeaking(userId) && <VoiceBadge />}
           </UiEntity>
           {bubble != null && (
-            <UiEntity
-              uiTransform={{ maxWidth: BUBBLE_MAX_W, margin: { top: MSG_GAP } }}
-              uiText={{
-                value: truncateMessage(bubble.message, MSG_TRUNCATE),
-                fontSize: isSingleEmoji(bubble.message) ? EMOJI_FONT : MSG_FONT,
-                color: Color4.White(),
-                textAlign: 'top-center',
-                textWrap: 'wrap'
-              }}
-            />
+            <UiEntity uiTransform={{ flexDirection: 'row', alignItems: 'center', margin: { top: MSG_GAP } }}>
+              <UiEntity
+                // a translated message gives up the icon's width, so a wrapped one keeps the pill's width
+                uiTransform={{ maxWidth: bubble.translated ? BUBBLE_MAX_W - TRANSLATED_ICON - GAP : BUBBLE_MAX_W }}
+                uiText={{
+                  value: truncateMessage(bubble.message, MSG_TRUNCATE),
+                  fontSize: isSingleEmoji(bubble.message) ? EMOJI_FONT : MSG_FONT,
+                  color: Color4.White(),
+                  textAlign: 'top-center',
+                  textWrap: 'wrap'
+                }}
+              />
+              {bubble.translated && (
+                <UiEntity
+                  uiTransform={{ width: TRANSLATED_ICON, height: TRANSLATED_ICON, flexShrink: 0, margin: { left: GAP } }}
+                  uiBackground={{ textureMode: 'stretch', texture: { src: 'images/icon-translate.png' } }}
+                />
+              )}
+            </UiEntity>
           )}
         </UiEntity>
       </UiEntity>

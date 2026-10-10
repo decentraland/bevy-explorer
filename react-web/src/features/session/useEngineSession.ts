@@ -405,6 +405,10 @@ export interface ChatState {
   send: (text: string) => void
   /** Adds or removes the local user's reaction to a message on the channel shown. */
   react: (messageId: string, emoji: string, remove: boolean) => void
+  /** The Nearby lines, whichever channel is shown. */
+  nearby: ChatLine[]
+  /** Redraws the bubble over a Nearby sender's head with other words, while it is still that message's. */
+  bubbleText: (sender: string, messageId: string, message: string) => void
   /** 'Nearby' or a partner wallet (lowercase). */
   channel: string
   select: (channel: string) => void
@@ -1457,6 +1461,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   )
   const reactInChat = useCallback((messageId: string, emoji: string, remove: boolean) => {
     driverRef.current?.send({ kind: 'sendChatReaction', channel: channelRef.current, messageId, emoji, remove })
+  }, [])
+  const bubbleText = useCallback((sender: string, messageId: string, message: string) => {
+    driverRef.current?.send({ kind: 'chatBubbleText', sender, messageId, message })
   }, [])
 
   // The full-screen main menu — mirrors App's `pageOpen`.
@@ -2562,6 +2569,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       messages: channelMessages,
       send: sendChat,
       react: reactInChat,
+      nearby: messages,
+      bubbleText,
       channel,
       select: selectChannel,
       conversations,

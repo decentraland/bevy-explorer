@@ -9,11 +9,22 @@ import { MainMenuShell } from '../menu/MainMenuShell'
 import type { Setting } from '../../engine/protocol'
 import type { BindingsState, ProfileState, SettingsState } from '../session/useEngineSession'
 import { KeyBindingsTab } from './KeyBindingsTab'
+import {
+  LANGUAGES,
+  clearAutoTranslate,
+  nativeName,
+  setAutoTranslateDefault,
+  setTranslationLanguage,
+  systemLanguage,
+  useTranslationPrefs
+} from '../chat/translation'
 import styles from './SettingsPanel.module.css'
 
 // Appended after the engine-derived categories: bindings are (action, keys[]) rows from the
 // bindings relay, not numeric engine settings, so they get their own tab + body.
 const KEY_BINDINGS_TAB = 'Key Bindings'
+// The HUD's own chat settings (translation) join the engine's in this tab.
+const CHAT_TAB = 'Chat'
 
 function humanize(s: string): string {
   return s.replace(/[_-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
@@ -69,6 +80,39 @@ const SettingField = memo(
   (prev, next) => prev.s.name === next.s.name && prev.s.value === next.s.value && prev.onSet === next.onSet
 )
 
+/** Chat translation, kept by the HUD rather than the engine. */
+function TranslationFields(): React.JSX.Element {
+  const prefs = useTranslationPrefs()
+  const system = systemLanguage()
+  // each in its own name, so a player finds theirs without reading English
+  const options = useMemo(
+    () => LANGUAGES.map((l) => ({ value: l.code, label: nativeName(l.code) })).sort((a, b) => a.label.localeCompare(b.label)),
+    []
+  )
+  return (
+    <>
+      <div className={styles.field}>
+        <div className={styles.fieldHead}>
+          <span className={styles.label}>Translation Language</span>
+        </div>
+        <Select
+          variant="light"
+          value={prefs.languageChosen ? prefs.language : ''}
+          options={[{ value: '', label: `System (${nativeName(system)})` }, ...options]}
+          onChange={(v) => setTranslationLanguage(v === '' ? null : v)}
+          aria-label="Translation Language"
+        />
+      </div>
+      <div className={styles.field}>
+        <div className={styles.fieldHead}>
+          <span className={styles.label}>Auto-Translate New Conversations</span>
+        </div>
+        <Toggle checked={prefs.autoDefault} onChange={setAutoTranslateDefault} aria-label="Auto-Translate New Conversations" />
+      </div>
+    </>
+  )
+}
+
 export function SettingsPanel({
   settings,
   bindings,
@@ -81,7 +125,7 @@ export function SettingsPanel({
   onNavigate: (page: string) => void
 }): React.JSX.Element | null {
   const categories = useMemo(
-    () => [...new Set(settings.list.map((s) => s.category)), KEY_BINDINGS_TAB],
+    () => [...new Set([...settings.list.map((s) => s.category), CHAT_TAB]), KEY_BINDINGS_TAB],
     [settings.list]
   )
   const [tab, setTab] = useState<string | null>(null)
@@ -100,6 +144,11 @@ export function SettingsPanel({
       return
     }
     items.forEach((s) => settings.set(s.name, s.default))
+    if (activeTab === CHAT_TAB) {
+      setTranslationLanguage(null)
+      setAutoTranslateDefault(false)
+      clearAutoTranslate()
+    }
   }
 
   const p = profile.data
@@ -124,13 +173,14 @@ export function SettingsPanel({
       <div className={styles.card}>
         {activeTab === KEY_BINDINGS_TAB ? (
           <KeyBindingsTab bindings={bindings} />
-        ) : items.length === 0 ? (
+        ) : items.length === 0 && activeTab !== CHAT_TAB ? (
           <div className={styles.empty}>No settings available.</div>
         ) : (
           <div className={styles.grid}>
             {items.map((s) => (
               <SettingField key={s.name} s={s} onSet={settings.set} />
             ))}
+            {activeTab === CHAT_TAB && <TranslationFields />}
           </div>
         )}
       </div>
