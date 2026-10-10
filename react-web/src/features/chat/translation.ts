@@ -269,8 +269,8 @@ export function clearAutoTranslate(channel?: string): void {
 export type Translation =
   | { status: 'pending' }
   | { status: 'done'; text: string; from: string; showOriginal: boolean }
-  /** Nothing to translate, or already in the language. */
-  | { status: 'same' }
+  /** Nothing to translate, or already in the language (`to`); `manual`: asked for by hand, so it is shown. */
+  | { status: 'same'; manual: boolean; to: string }
   /** `manual`: asked for by hand, so the failure is shown. */
   | { status: 'failed'; manual: boolean }
 
@@ -349,7 +349,7 @@ export function requestTranslation(id: string, text: string, target: string, man
       try {
         const result = await translateText(text, target)
         failures = 0
-        setEntry(key, result == null ? { status: 'same' } : { status: 'done', ...result, showOriginal: false })
+        setEntry(key, result == null ? { status: 'same', manual, to: target } : { status: 'done', ...result, showOriginal: false })
       } catch (e) {
         console.warn('[translate]', e)
         if (++failures >= FAILURES_TO_PAUSE) {

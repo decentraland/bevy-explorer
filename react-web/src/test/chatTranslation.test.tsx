@@ -210,6 +210,29 @@ describe('chat translation', () => {
     expect(chat.bubbleText).not.toHaveBeenCalled()
   })
 
+  it('a message asked for by hand that is already in the language gets a grey icon saying so', async () => {
+    mockServer((q) => ({ translatedText: q, detectedLanguage: q.map(() => ({ language: 'en' })) }))
+    renderChat([line({ message: 'hello there' })])
+    await userEvent.click(screen.getByRole('button', { name: 'Translate' }))
+    expect(await screen.findByRole('img', { name: 'Already in English' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Translate' })).toBeNull()
+  })
+
+  it('switching auto-translation off shows the original words again, and back on the translations', async () => {
+    mockServer(es({ hola: 'hello' }))
+    setAutoTranslate('Nearby', true)
+    renderChat([line({})])
+    expect(await screen.findByText('hello')).toBeInTheDocument()
+    const toggle = screen.getByRole('button', { name: 'Auto-translate' })
+    expect(toggle.className).not.toMatch(/autoTranslateOff/)
+    await userEvent.click(toggle)
+    expect(screen.getByText('hola')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'See translation' })).toBeInTheDocument()
+    expect(toggle.className).toMatch(/autoTranslateOff/)
+    await userEvent.click(toggle)
+    expect(screen.getByText('hello')).toBeInTheDocument()
+  })
+
   it('deleting a conversation\'s history puts it back on the default', async () => {
     setAutoTranslateDefault(true)
     setAutoTranslate('0xbob', false)

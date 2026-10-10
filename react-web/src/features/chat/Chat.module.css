@@ -439,6 +439,13 @@ button.translationMark {
 .translationLit {
   color: var(--white);
 }
+/* The header's auto-translate switch, off: a grey glyph (on, it is white on the pressed wash). */
+button.autoTranslateOff {
+  color: var(--ink-6);
+}
+button.autoTranslateOff:hover {
+  color: var(--text);
+}
 
 /* A message that @-mentions you: purple bubble inside a 3px ruby→purple rim. */
 .mentionMe {

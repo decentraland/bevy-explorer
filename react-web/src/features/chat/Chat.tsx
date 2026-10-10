@@ -92,6 +92,7 @@ function TranslationMark({ line, translation, onTranslate, onShowOriginal, onHov
   let lit = false
   let act: (() => void) | null = null
   if (translation.status === 'pending') label = 'Waiting for translation'
+  else if (translation.status === 'same' && translation.manual) label = `Already in ${languageName(translation.to)}`
   else if (translation.status === 'failed' && translation.manual) {
     label = "Couldn't translate · Retry"
     act = () => onTranslate(line)
@@ -139,7 +140,13 @@ function AutoTranslateButton({ channel }: { channel: string }): React.JSX.Elemen
   const on = autoTranslates(useTranslationPrefs(), channel)
   return (
     <Tooltip label={on ? 'Auto-translate: on' : 'Auto-translate: off'} side="bottom">
-      <ControlButton variant="faint" active={on} aria-label="Auto-translate" onClick={() => setAutoTranslate(channel, !on)}>
+      <ControlButton
+        variant="faint"
+        active={on}
+        className={on ? undefined : styles.autoTranslateOff}
+        aria-label="Auto-translate"
+        onClick={() => setAutoTranslate(channel, !on)}
+      >
         <Translate size={18} />
       </ControlButton>
     </Tooltip>
@@ -959,6 +966,19 @@ export function Chat({
     if (autoTranslate) auto(chat.messages)
     if (nearbyAuto && chat.channel !== 'Nearby') auto(chat.nearby)
   }, [autoTranslate, nearbyAuto, chat.messages, chat.nearby, chat.channel, target, meAddress])
+  // Switching a conversation's auto-translation off shows its lines in their own words again; back
+  // on, their translations. Followed per conversation, so changing tabs is not a switch.
+  const autoWas = useRef(new Map<string, boolean>())
+  useEffect(() => {
+    const follow = (channel: string, auto: boolean, lines: ChatLine[]): void => {
+      const was = autoWas.current.get(channel)
+      autoWas.current.set(channel, auto)
+      if (was == null || was === auto) return
+      for (const line of lines) showOriginal(lineKey(line), target, !auto)
+    }
+    follow(chat.channel, autoTranslate, chat.messages)
+    if (chat.channel !== 'Nearby') follow('Nearby', nearbyAuto, chat.nearby)
+  }, [autoTranslate, nearbyAuto, chat.channel, chat.messages, chat.nearby, target])
   // Each Nearby translation goes to its bubble once (per language); the scene redraws the bubble only
   // while it is still showing that message.
   const bubbled = useRef(new Map<string, string>())
