@@ -10,9 +10,9 @@ name = "webgpu_build"
 
 # Experimental headless scene-server binary. Gated behind the `headless` feature so
 # `cargo build --release` (packaging) skips it — build explicitly with
-# `cargo build --bin headless --no-default-features --features "headless,livekit"`.
+# `cargo build --bin dcl_headless_server --no-default-features --features "headless,livekit"`.
 [[bin]]
-name = "headless"
+name = "dcl_headless_server"
 path = "src/bin/headless.rs"
 required-features = ["headless"]
 
