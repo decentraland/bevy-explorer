@@ -53,7 +53,13 @@ export function registerDm(ctx: Ctx): void {
     ctx.send({
       kind: 'dmHistory',
       address: msg.address,
-      entries: entries.map((e) => ({ from: e.from, message: e.message, receivedAt: e.receivedAt * 1000 }))
+      entries: entries.map((e) => ({
+        from: e.from,
+        message: e.message,
+        receivedAt: e.receivedAt * 1000,
+        messageId: e.messageId,
+        reactions: e.reactions
+      }))
     })
   })
 

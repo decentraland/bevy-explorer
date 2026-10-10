@@ -273,6 +273,7 @@ module.exports.getSystemActionStream = async function() {
 //   senderAddress: string,
 //   message: string,
 //   channel: string,
+//   message_id: string, // what reactions name it by; empty for system messages
 // }
 module.exports.getChatStream = async function() {
   const rid = await Deno.core.ops.op_get_chat_stream();
@@ -295,6 +296,33 @@ module.exports.getChatStream = async function() {
 // }
 module.exports.sendChat = async function(message, channel) {
     Deno.core.ops.op_send_chat(message, channel ?? "Nearby")
+}
+
+// get reactions to chat messages (the local user's included) as a stream
+// type ChatReaction = {
+//   channel: string, // "Nearby" or the DM partner's wallet
+//   message_id: string,
+//   emoji: string,
+//   from: string,
+//   remove: boolean,
+// }
+module.exports.getChatReactionStream = async function() {
+  const rid = await Deno.core.ops.op_get_chat_reaction_stream();
+
+  async function* streamGenerator() {
+    while (true) {
+      const next = await Deno.core.ops.op_read_chat_reaction_stream(rid);
+      if (next === null) break;
+      yield next;
+    }
+  }
+
+  return streamGenerator();
+}
+
+// add or remove the local user's reaction to a chat message
+module.exports.sendChatReaction = function(channel, messageId, emoji, remove) {
+  Deno.core.ops.op_send_chat_reaction(channel, messageId, emoji, remove ?? false)
 }
 
 module.exports.quit = function() {

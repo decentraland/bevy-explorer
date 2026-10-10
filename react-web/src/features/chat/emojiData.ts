@@ -31,6 +31,10 @@ export const EMOJI_GROUPS: EmojiGroup[] = (data.categories as RawCategory[]).map
 }))
 
 export const EMOJI_BY_CODE: Map<string, Emoji> = new Map(ALL.map((e) => [e.code, e]))
+export const EMOJI_BY_GLYPH: Map<string, Emoji> = new Map(ALL.map((e) => [e.emoji, e]))
+
+/** The reaction bar's fixed emoji, Unity's: ♥️ 👏 👍 👎 🤣 🔥 😢. */
+export const QUICK_REACTIONS = ['\u2665\ufe0f', '\u{1f44f}', '\u{1f44d}', '\u{1f44e}', '\u{1f923}', '\u{1f525}', '\u{1f622}']
 
 // "Frequently used" — persisted across sessions, most-recent first.
 const RECENTS_MAX = 18

@@ -4,13 +4,13 @@
 //   • open + active (hover/focus): full solid panel — navbar, emoji, members, borders
 // Incoming messages come from the bridge getChatStream relay; sends go via BevyApi.sendChat.
 
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ChatLine, ChatState, Conversation } from '../session/useEngineSession'
-import type { DmUserState, NearbyMember } from '../../engine/protocol'
+import type { DmUserState, MessageReaction, NearbyMember } from '../../engine/protocol'
 import { Avatar, ContextMenu, ControlButton, DclLogo, Kebab, MaskIcon, Tooltip, VerifiedBadge, VoiceBars } from '../../design'
 import { registerCancelLayer } from '../../lib/cancelLayers'
 import { EmojiPicker } from './EmojiPicker'
-import { searchByShortcode, type Emoji } from './emojiData'
+import { EMOJI_BY_CODE, EMOJI_BY_GLYPH, QUICK_REACTIONS, loadRecents, searchByShortcode, type Emoji } from './emojiData'
 import { MessageText, mentionsMe } from './chatText'
 import { type ChatUser } from './ProfileCardPresentation'
 import { openProfileCard } from '../profileCard/ProfileCard'
@@ -134,6 +134,77 @@ function NewSeparator(): React.JSX.Element {
 
 const MSG_STYLES = { url: styles.url, mention: styles.mention, location: styles.location, world: styles.world }
 
+/** "Ana, Bo and you reacted with :fire:" — who reacted with one emoji, for its pill's tooltip. */
+export function reactionLabel(reaction: MessageReaction, me?: string): string {
+  const mine = me?.toLowerCase()
+  const others = reaction.from.filter((f) => f !== mine).map((f) => {
+    const p = peekProfile(f)
+    return p?.name != null && p.name !== '' ? displayName(p.name, f, p.hasClaimedName) : shortAddr(f)
+  })
+  const MAX_NAMES = 10
+  const names = others.length > MAX_NAMES ? [...others.slice(0, MAX_NAMES), `${others.length - MAX_NAMES} more`] : others
+  if (mine != null && reaction.from.includes(mine)) names.push('you')
+  const who = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : (names[0] ?? '')
+  const code = EMOJI_BY_GLYPH.get(reaction.emoji)?.expression
+  return code != null ? `${who} reacted with ${code}` : `${who} reacted`
+}
+
+function ReactionPills({
+  line,
+  me,
+  onToggle,
+  onHover
+}: {
+  line: ChatLine
+  me?: string
+  onToggle: (line: ChatLine, emoji: string) => void
+  /** Hovering a pill: who reacted with it, anchored at the pill; null on leave. */
+  onHover?: (label: string | null, pill?: HTMLElement) => void
+}): React.JSX.Element | null {
+  if (line.reactions == null || line.reactions.length === 0) return null
+  const mine = me?.toLowerCase()
+  return (
+    <div className={styles.reactions}>
+      {line.reactions.map((r) => (
+        <button
+          key={r.emoji}
+          type="button"
+          className={`${styles.pill} ${mine != null && r.from.includes(mine) ? styles.pillOwn : ''}`.trim()}
+          aria-label={reactionLabel(r, me)}
+          onClick={() => {
+            onHover?.(null)
+            onToggle(line, r.emoji)
+          }}
+          onMouseEnter={(e) => onHover?.(reactionLabel(r, me), e.currentTarget)}
+          onMouseLeave={() => onHover?.(null)}
+        >
+          <span className={styles.pillEmoji}>{r.emoji}</span>
+          {r.from.length}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** The hovered pill's tooltip, over the panel above the pill (not inside the scrolling list, whose
+ *  overflow would clip it), centred on it as far as the panel's edges allow. */
+function PillTip({ label, top, center }: { label: string; top: number; center: number }): React.JSX.Element {
+  const ref = useRef<HTMLDivElement>(null)
+  const [left, setLeft] = useState<number | null>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    const panel = el?.offsetParent as HTMLElement | null
+    if (el == null || panel == null) return
+    const EDGE = 4
+    setLeft(Math.min(Math.max(center - el.offsetWidth / 2, EDGE), panel.offsetWidth - el.offsetWidth - EDGE))
+  }, [label, center])
+  return (
+    <div ref={ref} className={styles.pillTip} role="tooltip" style={{ top, left: left ?? center, visibility: left == null ? 'hidden' : undefined }}>
+      {label}
+    </div>
+  )
+}
+
 export const ChatBubble = memo(function ChatBubble({
   line,
   members = [],
@@ -141,11 +212,22 @@ export const ChatBubble = memo(function ChatBubble({
   onOpenProfile,
   onLocation,
   onVisitWorld,
+  onReact,
+  onToggleReaction,
+  onReactionHover,
+  reacting = false,
   arrive = false
 }: {
   line: ChatLine
   /** A live message (not history): fades in on mount. */
   arrive?: boolean
+  /** Open the reaction bar for this line, anchored at its reaction button. */
+  onReact?: (line: ChatLine, anchor: HTMLElement) => void
+  /** Add the local user's reaction with an emoji, or remove it if they already reacted with it. */
+  onToggleReaction?: (line: ChatLine, emoji: string) => void
+  onReactionHover?: (label: string | null, pill?: HTMLElement) => void
+  /** The reaction bar is open for this line: its button stays shown. */
+  reacting?: boolean
   members?: NearbyMember[]
   me?: { address?: string; name?: string; hasClaimedName?: boolean } | null
   /** Open the profile viewer for a user, anchored at the click. */
@@ -168,6 +250,7 @@ export const ChatBubble = memo(function ChatBubble({
   const sender: ChatUser = { address: line.sender, name, picture }
   const highlight = !own && mentionsMe(line.message, me ?? null)
   const clickable = !own && !system && onOpenProfile != null
+  const reactable = !system && line.messageId !== '' && onReact != null
 
   const openSender = (e: React.MouseEvent): void => {
     if (e.type === 'contextmenu') e.preventDefault()
@@ -216,12 +299,71 @@ export const ChatBubble = memo(function ChatBubble({
             <MessageText text={line.message} members={members} styles={MSG_STYLES} onMention={onMention} onLocation={(x, y) => onLocation?.(x, y)} onWorld={onVisitWorld} />
           </span>
           <span className={styles.time}>{formatTime(line.ts)}</span>
+          {onToggleReaction != null && <ReactionPills line={line} me={me?.address} onToggle={onToggleReaction} onHover={onReactionHover} />}
         </div>
         <span className={styles.spacer} aria-hidden="true" />
       </div>
+      {reactable && (
+        <button
+          type="button"
+          className={`${styles.reactBtn} ${reacting ? styles.reactBtnOn : ''}`.trim()}
+          aria-label="React"
+          aria-pressed={reacting}
+          onClick={(e) => onReact(line, e.currentTarget)}
+        />
+      )}
     </div>
   )
 })
+
+/** The reaction bar: Unity's fixed emoji, the most recent others from the picker, and "+" for the
+ *  full picker. Picking toggles the local user's reaction. */
+function ReactionBar({
+  line,
+  me,
+  style,
+  onPick,
+  onMore
+}: {
+  line: ChatLine
+  me?: string
+  style: React.CSSProperties
+  onPick: (emoji: string) => void
+  onMore: () => void
+}): React.JSX.Element {
+  const MAX_RECENT = 3
+  const recent = useMemo(
+    () =>
+      loadRecents()
+        .map((c) => EMOJI_BY_CODE.get(c)?.emoji)
+        .filter((e): e is string => e != null && !QUICK_REACTIONS.includes(e))
+        .slice(0, MAX_RECENT),
+    []
+  )
+  const mine = me?.toLowerCase()
+  const isMine = (emoji: string): boolean => mine != null && (line.reactions?.find((r) => r.emoji === emoji)?.from.includes(mine) ?? false)
+  const item = (emoji: string): React.JSX.Element => (
+    <button
+      key={emoji}
+      type="button"
+      className={`${styles.barEmoji} ${isMine(emoji) ? styles.barEmojiOn : ''}`.trim()}
+      title={EMOJI_BY_GLYPH.get(emoji)?.expression}
+      onClick={() => onPick(emoji)}
+    >
+      {emoji}
+    </button>
+  )
+  return (
+    <div className={styles.reactionBar} style={style} role="dialog" aria-label="React">
+      {QUICK_REACTIONS.map(item)}
+      {recent.length > 0 && <span className={styles.barDivider} aria-hidden="true" />}
+      {recent.map(item)}
+      <button type="button" className={styles.barMore} aria-label="More emoji" onClick={onMore}>
+        +
+      </button>
+    </div>
+  )
+}
 
 function MemberName({ member }: { member: NearbyMember }): React.JSX.Element {
   const known = useProfile(member.address)
@@ -499,12 +641,25 @@ export function Chat({
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const pickerRef = useRef<HTMLDivElement>(null)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const setRoot = useCallback((el: HTMLDivElement | null) => {
+    rootRef.current = el
+    return hudInsetRef(el)
+  }, [])
+  // The line whose reaction bar is open (how far down the panel, in its own px), and whether the
+  // full picker is choosing its reaction instead.
+  const [reacting, setReacting] = useState<{ line: ChatLine; top: number } | null>(null)
+  const [reactPicker, setReactPicker] = useState(false)
+  const reactRef = useRef<HTMLDivElement>(null)
+  // The hovered reaction pill's tooltip (where its pill's top and centre are, in the panel's px).
+  const [pillTip, setPillTip] = useState<{ label: string; top: number; center: number } | null>(null)
+  const pillTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const open = chat.open
   // "active" = the user is interacting → show the full solid panel + chrome.
   // A profile card opened from the chat keeps it active, so the view under the card stays put.
   const [cardOpen, setCardOpen] = useState(false)
-  const active = open && (hovered || focused || picker || cardOpen)
+  const active = open && (hovered || focused || picker || cardOpen || reacting != null)
   const bare = !active // collapsed or idle-open → borderless translucent input only
   useEffect(() => chat.setActive(active), [active, chat.setActive])
   // The DM shown, if the channel is one; the rail appears once any DM tab exists.
@@ -659,6 +814,82 @@ export function Chat({
   const teleport = useCallback((x: number, y: number) => handlers.current.onTeleport?.(x, y), [])
   const visitWorld = useCallback((name: string) => handlers.current.onVisitWorld?.(name), [])
   const hasVisitWorld = onVisitWorld != null
+
+  // Reactions: picking an emoji the local user already reacted with takes it back.
+  const chatRef = useRef(chat)
+  chatRef.current = chat
+  const meAddress = me?.address
+  const toggleReaction = useCallback(
+    (line: ChatLine, emoji: string) => {
+      const mine = meAddress?.toLowerCase()
+      const remove = mine != null && (line.reactions?.find((r) => r.emoji === emoji)?.from.includes(mine) ?? false)
+      chatRef.current.react(line.messageId, emoji, remove)
+    },
+    [meAddress]
+  )
+  const BAR_HEIGHT = 40
+  const BAR_GAP = 4
+  const openReactionBar = useCallback((line: ChatLine, anchor: HTMLElement) => {
+    const root = rootRef.current
+    if (root == null) return
+    setPicker(false)
+    setReactPicker(false)
+    setReacting((current) => {
+      if (current?.line.id === line.id) return null
+      // the panel is scaled: client px back into its own
+      const box = root.getBoundingClientRect()
+      const scale = root.offsetWidth > 0 ? box.width / root.offsetWidth : 1
+      const at = anchor.getBoundingClientRect()
+      const above = (at.top - box.top) / scale - BAR_HEIGHT - BAR_GAP
+      const top = above >= 0 ? above : (at.bottom - box.top) / scale + BAR_GAP
+      return { line, top }
+    })
+  }, [])
+  // Unity's: a short hover delay, so scrolling past pills doesn't flicker tooltips.
+  const TOOLTIP_DELAY_MS = 300
+  const TOOLTIP_GAP = 6
+  const hoverReaction = useCallback((label: string | null, pill?: HTMLElement) => {
+    if (pillTimer.current != null) clearTimeout(pillTimer.current)
+    pillTimer.current = null
+    const root = rootRef.current
+    if (label == null || pill == null || root == null) {
+      setPillTip(null)
+      return
+    }
+    pillTimer.current = setTimeout(() => {
+      const box = root.getBoundingClientRect()
+      const scale = root.offsetWidth > 0 ? box.width / root.offsetWidth : 1
+      const at = pill.getBoundingClientRect()
+      setPillTip({ label, top: (at.top - box.top) / scale - TOOLTIP_GAP, center: (at.left + at.width / 2 - box.left) / scale })
+    }, TOOLTIP_DELAY_MS)
+  }, [])
+  useEffect(() => () => {
+    if (pillTimer.current != null) clearTimeout(pillTimer.current)
+  }, [])
+  const closeReactions = (): void => {
+    setReacting(null)
+    setReactPicker(false)
+  }
+  const pickReaction = (emoji: string): void => {
+    if (reacting != null) toggleReaction(reacting.line, emoji)
+    closeReactions()
+  }
+  // The bar follows its line's reactions as they change while it is open.
+  const reactingLine = reacting != null ? (chat.messages.find((l) => l.id === reacting.line.id) ?? reacting.line) : null
+  // A press outside the bar (or its picker) closes it; so does switching channel.
+  useEffect(() => {
+    if (reacting == null) return
+    const onDown = (e: PointerEvent): void => {
+      const t = e.target as HTMLElement
+      if (reactRef.current?.contains(t) || pickerRef.current?.contains(t) || t.closest('[aria-label="React"]')) return
+      closeReactions()
+    }
+    document.addEventListener('pointerdown', onDown, true)
+    return () => document.removeEventListener('pointerdown', onDown, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reacting])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => closeReactions(), [chat.channel, open])
   // "Mention" from the viewer drops @name into the draft, ready to send.
   const insertMention = (name: string): void => {
     setDraft((d) => `${d.replace(/\s*$/, '')} @${name} `.trimStart())
@@ -741,6 +972,7 @@ export function Chat({
     } else if (isCancelKey(e)) {
       setSug(null)
       setPicker(false)
+      closeReactions()
       inputRef.current?.blur()
     }
   }
@@ -766,6 +998,7 @@ export function Chat({
 
   const toggleEmoji = (): void => {
     openIfClosed()
+    closeReactions()
     setPicker((p) => !p)
   }
 
@@ -775,7 +1008,7 @@ export function Chat({
 
   return (
     <div
-      ref={hudInsetRef}
+      ref={setRoot}
       className={`${styles.root} ${open ? styles.open : ''} ${active ? styles.active : ''} ${focused ? styles.focused : ''} ${active && showMembers ? styles.membersOpen : ''} ${hasRail ? styles.withRail : ''}`.trim()}
       onClick={focusFromPanel}
       onMouseEnter={() => setHovered(true)}
@@ -821,7 +1054,7 @@ export function Chat({
       )}
 
       {open && (
-        <div ref={listRef} className={`${styles.messages} ${dim ? styles.dim : ''}`.trim()}>
+        <div ref={listRef} className={`${styles.messages} ${dim ? styles.dim : ''}`.trim()} onScroll={() => hoverReaction(null)}>
           {rows.map((r) =>
             r.kind === 'day' ? (
               <DaySeparator key={r.id} ts={r.ts} />
@@ -836,6 +1069,10 @@ export function Chat({
                   onOpenProfile={openProfile}
                   onLocation={teleport}
                   onVisitWorld={hasVisitWorld ? visitWorld : undefined}
+                  onReact={openReactionBar}
+                  onToggleReaction={toggleReaction}
+                  onReactionHover={hoverReaction}
+                  reacting={reacting?.line.id === r.line.id}
                 />
               </Fragment>
             )
@@ -852,6 +1089,12 @@ export function Chat({
               inputRef.current?.focus()
             }}
           />
+        </div>
+      )}
+
+      {active && reactPicker && reacting != null && (
+        <div ref={pickerRef} className={styles.pickerWrap}>
+          <EmojiPicker onPick={pickReaction} onClose={closeReactions} />
         </div>
       )}
 
@@ -958,6 +1201,18 @@ export function Chat({
       )}
       </div>
       {hasRail && <ConversationRail chat={chat} onClose={chat.toggle} />}
+      {open && pillTip != null && <PillTip label={pillTip.label} top={pillTip.top} center={pillTip.center} />}
+      {open && reactingLine != null && reacting != null && !reactPicker && (
+        <div ref={reactRef} className={styles.reactionLayer}>
+          <ReactionBar
+            line={reactingLine}
+            me={me?.address}
+            style={{ top: reacting.top }}
+            onPick={pickReaction}
+            onMore={() => setReactPicker(true)}
+          />
+        </div>
+      )}
     </div>
   )
 }

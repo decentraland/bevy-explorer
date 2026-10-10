@@ -127,6 +127,14 @@ pub enum SystemApi {
     BridgeToPage(String),
     GetBridgeStream(RpcStreamSender<String>),
     SendChat(String, String),
+    /// Adds or removes the local user's reaction to a chat message in a channel.
+    SendChatReaction {
+        channel: String,
+        message_id: String,
+        emoji: String,
+        remove: bool,
+    },
+    GetChatReactionStream(RpcStreamSender<ChatReactionData>),
     Quit,
     GetPermissionRequestStream(RpcStreamSender<PermissionRequestEvent>),
     SetSinglePermission(SetSinglePermission),

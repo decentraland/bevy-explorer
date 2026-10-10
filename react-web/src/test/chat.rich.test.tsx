@@ -17,6 +17,7 @@ const line = (message: string, sender = '0xsender'): ChatLine => ({
   sender,
   message,
   channel: 'Nearby',
+  messageId: '',
   id: 1,
   ts: 1_700_000_000_000
 })

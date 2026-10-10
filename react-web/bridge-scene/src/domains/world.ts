@@ -29,7 +29,7 @@ const SCENE_LOOKUP_ATTEMPTS = 3
 // Echo a "DCL System" line into the React chat (empty sender → system member). Used to relay
 // slash-command feedback (/commands output, /reload status) that isn't broadcast to other players.
 function pushSystem(ctx: Ctx, message: string): void {
-  ctx.send({ kind: 'chat', chat: { sender: '', message, channel: 'Nearby' } })
+  ctx.send({ kind: 'chat', chat: { sender: '', message, channel: 'Nearby', messageId: '' } })
 }
 
 export function registerWorld(ctx: Ctx): void {

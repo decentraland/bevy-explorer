@@ -15,11 +15,11 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use strum::IntoEnumIterator;
 use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
-    BlockingStatusData, ChatMessage, DmHistoryEntryData, DmUserStateData, FriendConnectivityEvent,
-    FriendData, FriendRequestData, FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent,
-    LiveSceneInfo, PermanentPermissionItem, PermissionRequestEvent, ProfileChangedEvent,
-    ProximityEvent, SatelliteView, SceneLoadingUi, SetAvatarData, SetPermanentPermission,
-    SetSinglePermission, SystemApi, VoiceMessage,
+    BlockingStatusData, ChatMessage, ChatReactionData, DmHistoryEntryData, DmUserStateData,
+    FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData,
+    FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo, PermanentPermissionItem,
+    PermissionRequestEvent, ProfileChangedEvent, ProximityEvent, SatelliteView, SceneLoadingUi,
+    SetAvatarData, SetPermanentPermission, SetSinglePermission, SystemApi, VoiceMessage,
 };
 use tokio::sync::Notify;
 
@@ -461,6 +461,59 @@ pub fn op_send_chat(state: Rc<RefCell<impl State>>, message: String, channel: St
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
         .send(SystemApi::SendChat(message, channel))
+        .unwrap();
+}
+
+pub async fn op_get_chat_reaction_stream(state: Rc<RefCell<impl State>>) -> u32 {
+    let (sx, rx) = RpcStreamSender::channel();
+    state.borrow_mut().put(rx);
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetChatReactionStream(sx))
+        .unwrap();
+
+    2
+}
+
+pub async fn op_read_chat_reaction_stream(
+    state: Rc<RefCell<impl State>>,
+    _rid: u32,
+) -> Result<Option<ChatReactionData>, anyhow::Error> {
+    let Some(mut receiver) = state
+        .borrow_mut()
+        .try_take::<RpcStreamReceiver<ChatReactionData>>()
+    else {
+        return Ok(None);
+    };
+
+    let res = match receiver.recv().await {
+        Some(data) => Ok(Some(data)),
+        None => Ok(None),
+    };
+
+    state.borrow_mut().put(receiver);
+
+    res
+}
+
+pub fn op_send_chat_reaction(
+    state: Rc<RefCell<impl State>>,
+    channel: String,
+    message_id: String,
+    emoji: String,
+    remove: bool,
+) {
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::SendChatReaction {
+            channel,
+            message_id,
+            emoji,
+            remove,
+        })
         .unwrap();
 }
 

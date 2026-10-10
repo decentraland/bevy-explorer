@@ -9,6 +9,7 @@ import type {
   BlockedUserData,
   BlockingStatusData,
   ChatMessage,
+  ChatReactionData,
   DmHistoryEntryData,
   DmUserStateData,
   VoiceMessage,
@@ -130,6 +131,10 @@ export type BevyApiInterface = {
   setInteractableArea: (area: { left: number; top: number; right: number; bottom: number }) => void
   sendChat: (message: string, channel: string) => void
   getChatStream: () => Promise<AsyncIterable<ChatStreamMessage>>
+  /** Add or remove the local user's reaction to a chat message; echoed on getChatReactionStream. */
+  sendChatReaction: (channel: string, messageId: string, emoji: string, remove: boolean) => void
+  /** Every reaction to a chat message, the local user's included. */
+  getChatReactionStream: () => Promise<AsyncIterable<ChatReactionData>>
   getVoiceStream: () => Promise<AsyncIterable<VoiceMessage>>
   getSystemActionStream: () => Promise<AsyncIterable<SystemActionEvent>>
   getSceneLoadingUIStream: () => Promise<AsyncIterable<SceneLoadingState>>

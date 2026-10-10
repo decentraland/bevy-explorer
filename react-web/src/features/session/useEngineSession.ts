@@ -37,6 +37,8 @@ import type {
   BindingEntry,
   ChangeRealmRequest,
   ChatMessage,
+  ChatReaction,
+  MessageReaction,
   Community,
   DmUserState,
   CommunityAction,
@@ -353,7 +355,26 @@ export interface PermissionsState {
   resolve: (id: number, allow: boolean, level: PermissionLevelChoice) => void
 }
 
-export type ChatLine = ChatMessage & { id: number; ts: number }
+export type ChatLine = ChatMessage & {
+  id: number
+  ts: number
+  /** In the order each emoji was first used. */
+  reactions?: MessageReaction[]
+}
+
+/** `reactions` with one wallet's reaction added or removed. */
+export function applyReaction(reactions: MessageReaction[], reaction: Pick<ChatReaction, 'emoji' | 'from' | 'remove'>): MessageReaction[] {
+  const from = reaction.from.toLowerCase()
+  const i = reactions.findIndex((r) => r.emoji === reaction.emoji)
+  if (reaction.remove) {
+    if (i < 0 || !reactions[i].from.includes(from)) return reactions
+    const rest = reactions[i].from.filter((f) => f !== from)
+    return rest.length > 0 ? reactions.map((r, j) => (j === i ? { ...r, from: rest } : r)) : reactions.filter((_, j) => j !== i)
+  }
+  if (i < 0) return [...reactions, { emoji: reaction.emoji, from: [from] }]
+  if (reactions[i].from.includes(from)) return reactions
+  return reactions.map((r, j) => (j === i ? { ...r, from: [...r.from, from] } : r))
+}
 
 /** An open DM tab. Tabs are HUD state only: nothing opens on boot, a tab appears when a DM
  *  arrives or is sent, or from Message on a profile, and closing it is local. */
@@ -382,6 +403,8 @@ export interface ChatState {
   messages: ChatLine[]
   /** Sends to the channel shown: Nearby, or the open DM. */
   send: (text: string) => void
+  /** Adds or removes the local user's reaction to a message on the channel shown. */
+  react: (messageId: string, emoji: string, remove: boolean) => void
   /** 'Nearby' or a partner wallet (lowercase). */
   channel: string
   select: (channel: string) => void
@@ -581,7 +604,7 @@ export function photoTime(dateTime: string): number {
 }
 
 function initialMessages(): ChatLine[] {
-  return [{ sender: '', message: 'Type /help for available commands.', channel: 'Nearby', id: -1, ts: Date.now() }]
+  return [{ sender: '', message: 'Type /help for available commands.', channel: 'Nearby', messageId: '', id: -1, ts: Date.now() }]
 }
 
 export function useEngineSession(createDriver: () => LoginDriver): EngineSession {
@@ -671,6 +694,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // A DM tab shows the engine's stored history and nothing else: `messages` holds Nearby only.
   // The store is re-read when the tab is shown and whenever a line lands on the shown tab.
   const [dmLines, setDmLines] = useState<Record<string, ChatLine[]>>({})
+  // Reactions to Nearby lines, by message id; a DM tab's come with its stored history.
+  const [nearbyReactions, setNearbyReactions] = useState<Record<string, MessageReaction[]>>({})
+  const nearbyIdsRef = useRef<Set<string>>(new Set())
   const [members, setMembers] = useState<NearbyMember[]>([])
   const [speaking, setSpeaking] = useState<ReadonlySet<string>>(() => new Set())
   // Mirror cursor-lock into a ref so the run-once message handler reads it without a stale closure —
@@ -859,6 +885,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           if (!shown && !(chatOpenRef.current && chatActiveRef.current)) setChatUnread((n) => n + 1)
           if (key === 'Nearby') {
             if (!shown) setNearbyUnread((n) => n + 1)
+            // known at once, so a reaction relayed right behind its line isn't dropped
+            if (msg.chat.messageId !== '') nearbyIdsRef.current.add(msg.chat.messageId)
             setMessages((prev) =>
               [...prev, { ...msg.chat, id: chatId.current++, ts: Date.now() }].slice(
                 -MAX_CHAT_LINES
@@ -887,10 +915,28 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
             sender: e.from,
             message: e.message,
             channel: key,
+            messageId: e.messageId,
             id: skipped + i,
-            ts: e.receivedAt
+            ts: e.receivedAt,
+            reactions: e.reactions
           }))
           setDmLines((prev) => ({ ...prev, [key]: lines }))
+          break
+        }
+        case 'chatReaction': {
+          const r = msg.reaction
+          if (r.channel === 'Nearby') {
+            // reactions to lines we don't have (from before we arrived, or scrolled away) are dropped
+            if (!nearbyIdsRef.current.has(r.messageId)) break
+            setNearbyReactions((prev) => {
+              const next = applyReaction(prev[r.messageId] ?? [], r)
+              return next === prev[r.messageId] ? prev : { ...prev, [r.messageId]: next }
+            })
+            break
+          }
+          // a DM's reactions are stored with it: the shown tab re-reads them
+          const key = channelKey(r.channel)
+          if (chatOpenRef.current && channelRef.current === key) driverRef.current?.send({ kind: 'dmHistory', address: key })
           break
         }
         case 'dmUserState': {
@@ -1084,7 +1130,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           setMessages((prev) =>
             [
               ...prev,
-              { sender: '', message: formatConsoleReply(msg.command, msg.args, msg.output), channel: 'Nearby', id: chatId.current++, ts: Date.now() }
+              { sender: '', message: formatConsoleReply(msg.command, msg.args, msg.output), channel: 'Nearby', messageId: '', id: chatId.current++, ts: Date.now() }
             ].slice(-MAX_CHAT_LINES)
           )
           break
@@ -1223,7 +1269,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // feedback (/help, /goto usage, /commands output) that must NOT be broadcast to other players.
   const pushSystemMessage = useCallback((message: string) => {
     setMessages((prev) =>
-      [...prev, { sender: '', message, channel: 'Nearby', id: chatId.current++, ts: Date.now() }].slice(-MAX_CHAT_LINES)
+      [...prev, { sender: '', message, channel: 'Nearby', messageId: '', id: chatId.current++, ts: Date.now() }].slice(-MAX_CHAT_LINES)
     )
   }, [])
 
@@ -1393,10 +1439,25 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     // a read queued before the delete would answer with the old rows: this one answers after it
     driverRef.current?.send({ kind: 'dmHistory', address: key })
   }, [])
+  // Nearby reactions follow the lines kept: those for lines trimmed off the log go with them.
+  useEffect(() => {
+    const ids = new Set(messages.map((l) => l.messageId).filter((id) => id !== ''))
+    nearbyIdsRef.current = ids
+    setNearbyReactions((prev) => {
+      const kept = Object.entries(prev).filter(([id]) => ids.has(id))
+      return kept.length === Object.keys(prev).length ? prev : Object.fromEntries(kept)
+    })
+  }, [messages])
   const channelMessages = useMemo(
-    () => (channel === 'Nearby' ? messages : (dmLines[channel] ?? [])),
-    [messages, dmLines, channel]
+    () =>
+      channel === 'Nearby'
+        ? messages.map((l) => (nearbyReactions[l.messageId] != null ? { ...l, reactions: nearbyReactions[l.messageId] } : l))
+        : (dmLines[channel] ?? []),
+    [messages, nearbyReactions, dmLines, channel]
   )
+  const reactInChat = useCallback((messageId: string, emoji: string, remove: boolean) => {
+    driverRef.current?.send({ kind: 'sendChatReaction', channel: channelRef.current, messageId, emoji, remove })
+  }, [])
 
   // The full-screen main menu — mirrors App's `pageOpen`.
   const menuPageOpen =
@@ -2500,6 +2561,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     chat: {
       messages: channelMessages,
       send: sendChat,
+      react: reactInChat,
       channel,
       select: selectChannel,
       conversations,

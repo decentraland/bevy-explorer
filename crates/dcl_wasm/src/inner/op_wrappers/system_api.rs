@@ -214,6 +214,30 @@ pub fn op_send_chat(state: &WorkerContext, message: String, channel: String) {
 }
 
 #[wasm_bindgen]
+pub async fn op_get_chat_reaction_stream(state: &WorkerContext) -> u32 {
+    dcl::js::system_api::op_get_chat_reaction_stream(state.rc()).await
+}
+
+#[wasm_bindgen]
+pub async fn op_read_chat_reaction_stream(
+    state: &WorkerContext,
+    rid: u32,
+) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_read_chat_reaction_stream(state.rc(), rid).await)
+}
+
+#[wasm_bindgen]
+pub fn op_send_chat_reaction(
+    state: &WorkerContext,
+    channel: String,
+    message_id: String,
+    emoji: String,
+    remove: bool,
+) {
+    dcl::js::system_api::op_send_chat_reaction(state.rc(), channel, message_id, emoji, remove)
+}
+
+#[wasm_bindgen]
 pub async fn op_get_user_profile(
     state: &WorkerContext,
     address: String,
