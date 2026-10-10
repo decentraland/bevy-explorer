@@ -21,6 +21,7 @@ import { registerWearables, sendEquipped } from './domains/wearables'
 import { registerCatalog } from './domains/catalog'
 import { registerOutfits } from './domains/outfits'
 import { registerAvatarDraft } from './domains/avatarDraft'
+import { registerWelcome } from './domains/welcome'
 import { registerNotifications } from './domains/notifications'
 import { registerSettings } from './domains/settings'
 import { registerCommunities } from './domains/communities'
@@ -54,6 +55,7 @@ export function main(): void {
     registerAvatarDraft(ctx, async () => {
       await sendEquipped(ctx)
     })
+    registerWelcome(ctx)
     registerNotifications(ctx)
     registerSettings(ctx)
     registerCommunities(ctx)

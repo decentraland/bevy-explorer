@@ -27,7 +27,8 @@ import type {
   SceneLoadingUi,
   SetAvatarData,
   SetSinglePermission,
-  Vector3
+  Vector3,
+  WelcomeState
 } from '../../src/engine/generated'
 
 // --- raw social-service shapes (BevyApi.social.*), generated from the Rust structs ---
@@ -106,6 +107,11 @@ export type SetPermanentPermissionBody = {
 
 export type BevyApiInterface = {
   getHomeScene: () => Promise<HomeScene>
+  /** What the welcome page must show for the signed-in account (all false when the host shows none). */
+  getWelcome?: () => Promise<WelcomeState>
+  /** The welcome page's accept: records the terms for this install. A held new profile deploys with
+   *  the setAvatar after it. */
+  acceptTerms?: () => Promise<void>
   getSettings: () => Promise<Setting[]>
   setSetting: (name: string, value: number) => Promise<void>
   /** Full binding table: [Action, InputIdentifier[]] pairs, e.g. [{System:'Map'}, ['KeyM','Tab']].

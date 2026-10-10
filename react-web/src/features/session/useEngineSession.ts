@@ -469,7 +469,7 @@ export type LoginStatus =
   | 'sign-in-or-guest'
   | 'reuse-login-or-new'
 
-export type SessionPhase = 'login' | 'lobby' | 'picking' | 'entering' | 'world'
+export type SessionPhase = 'login' | 'welcome' | 'lobby' | 'picking' | 'entering' | 'world'
 
 // Where the user chose to spawn after login (the post-jump-in Places picker). `null` = skip → the
 // engine's default spawn (Genesis Plaza). A world switches realm; a parcel teleports once spawned.
@@ -512,6 +512,25 @@ export interface LoginFlow {
   useDifferentAccount: () => void
 }
 
+/** The welcome page, shown after sign-in while the terms aren't accepted on this install or the
+ *  account has no profile yet. */
+export interface WelcomeFlow {
+  /** The terms still need accepting (the world is held until they are). */
+  terms: boolean
+  /** The account has no profile: the name and look are its new one's, deployed on accept. */
+  newProfile: boolean
+  /** Signed in to the lobby, and not yet known whether the page is needed: the stage shows alone. */
+  pending: boolean
+  saving: boolean
+  error: string | null
+  /** Another of the curated default looks on the avatar (deployed on accept). */
+  reroll: () => void
+  /** Accept the terms, and for a new profile deploy it under `name` with the look. */
+  accept: (name?: string) => void
+  /** Open the terms of use or the privacy policy in the browser. */
+  openLegal: (doc: 'terms' | 'privacy') => void
+}
+
 /** The scene editor's handle on the session (features/editorHost). */
 export interface EditorHostState {
   /** 'edit' takes the HUD chrome and its hotkeys away, 'play' leaves a player's minimum. */
@@ -533,6 +552,7 @@ export interface EngineSession {
   /** Post-jump-in Places picker: choose where to spawn (or null to skip → Genesis Plaza). */
   pickDestination: (dest: Destination) => void
   login: LoginFlow
+  welcome: WelcomeFlow
   /** Entry overlay state (the sceneLoading stream): what is loading while `phase` is
    *  'entering'. NOT the scene the player is in — that is `minimap.sceneTitle`, resolved by
    *  parcel; this title is whatever was last loading and goes stale as the player moves. */
@@ -653,6 +673,16 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const lobbyRef = useRef(false)
   const [lobbyStageReady, setLobbyStageReady] = useState(false)
   lobbyRef.current = lobby
+  // The welcome page: asked of the engine after each sign-in, null until it answers (or once accepted).
+  const [welcome, setWelcome] = useState<{ terms: boolean; newProfile: boolean } | null>(null)
+  // the lobby waits for the answer, so it never shows only to be replaced by the page
+  const [welcomePending, setWelcomePending] = useState(false)
+  const [welcomeSaving, setWelcomeSaving] = useState(false)
+  const [welcomeError, setWelcomeError] = useState<string | null>(null)
+  // A ?position/?realm link the sign-in entered, and the destination whose world was launched held
+  // for the terms (undefined = none): it goes there once the welcome page is done.
+  const welcomeLink = useRef<Destination>(null)
+  const heldDest = useRef<Destination | undefined>(undefined)
   // The engine launches once per page (boot.js), so after that a destination is a runtime travel.
   const launchedRef = useRef(false)
   // The last place recorded as visited (realm|title), so walking inside one scene records it once.
@@ -1156,6 +1186,31 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         case 'lobbyStageReady':
           setLobbyStageReady(true)
           break
+        case 'welcome':
+          setWelcomePending(false)
+          // native, which launches itself, holds a link's world for the terms (src/lib.rs)
+          if (msg.terms && driver.launch == null && welcomeLink.current != null) heldDest.current = welcomeLink.current
+          if (!msg.terms && !msg.newProfile) {
+            releaseLinkRef.current()
+            break
+          }
+          // a new profile's name shows on the page; the profile is otherwise first pulled on world entry
+          if (msg.newProfile && !fetchedRef.current.has('getProfile')) {
+            fetchedRef.current.add('getProfile')
+            driver.send({ kind: 'getProfile' })
+          }
+          setWelcome({ terms: msg.terms, newProfile: msg.newProfile })
+          break
+        case 'welcomeAccepted': {
+          setWelcomeSaving(false)
+          if (!msg.ok) {
+            setWelcomeError(msg.error ?? 'Saving failed')
+            break
+          }
+          releaseLinkRef.current()
+          setWelcome(null)
+          break
+        }
         case 'sceneInfo':
           setSceneTitle(msg.title)
           if (msg.title !== '' && msg.parcel != null && msg.realm && !msg.preview && (msg.genesis || msg.realm.includes('.'))) {
@@ -1659,8 +1714,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     pendingLogin.current = null
     Promise.resolve(login?.(driver))
       .then(() => {
+        welcomeLink.current = urlDestination.current
         urlDestination.current = null
         setBusy(false)
+        if (welcomeShown()) driver.send({ kind: 'getWelcome' })
       })
       .catch((e: unknown) => {
         console.error('[login] post-launch login failed:', e)
@@ -1675,6 +1732,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         setSubmitted(false)
         setDestinationPicked(false)
         setLobby(false)
+        setWelcomePending(false)
       })
   }, [])
 
@@ -1763,6 +1821,16 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     },
     [homeScene, travel]
   )
+  // A link held for the terms is released by travelling there; the lobby keeps its hold until a
+  // destination is picked.
+  const releaseLink = useCallback(() => {
+    const dest = heldDest.current
+    heldDest.current = undefined
+    welcomeLink.current = null
+    if (dest !== undefined && !lobbyRef.current) travelFromLobby(dest)
+  }, [travelFromLobby])
+  const releaseLinkRef = useRef(releaseLink)
+  releaseLinkRef.current = releaseLink
 
   // Post-jump-in Places picker (or the lobby): choose a destination (or null to skip → home),
   // then leave the picker. A world switches realm now; a parcel is teleported once the avatar spawns.
@@ -1803,9 +1871,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         // Skip goes HOME — the engine's persisted home scene (0,0 on the default realm unless
         // the user pinned one; the engine gives no realm before launch, so the default is ours).
         const home = driver.homeScene?.()
-        launched = launchEngine(driver, home?.realm ?? DEFAULT_REALM, home?.parcel ?? '0,0')
-      } else if (dest.kind === 'world') launched = launchEngine(driver, dest.realm, dest.position)
-      else launched = launchEngine(driver, DEFAULT_REALM, `${dest.x},${dest.y}`)
+        launched = launchEngine(driver, home?.realm ?? DEFAULT_REALM, home?.parcel ?? '0,0', holdForTerms(driver, dest))
+      } else if (dest.kind === 'world') launched = launchEngine(driver, dest.realm, dest.position, holdForTerms(driver, dest))
+      else launched = launchEngine(driver, DEFAULT_REALM, `${dest.x},${dest.y}`, holdForTerms(driver, dest))
       if (launched) runPendingLogin(driver)
     }
     requestAnimationFrame(() => requestAnimationFrame(run))
@@ -1814,6 +1882,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // Boot-mode flags (?hud=0 / ?guest=1 / ?systemScene= — see lib/bootMode.ts), captured once
   // per session mount so tests can vary location.search between mounts.
   const boot = useRef(bootMode())
+  // The welcome page needs a HUD to show it, and the sites embed's auto guest skips it.
+  const welcomeShown = (): boolean => !boot.current.hideHud && boot.current.autoLogin !== 'guest'
+  // A destination launched straight in (a link) holds the world while the terms wait for the page.
+  const holdForTerms = (driver: LoginDriver, dest: Destination): LaunchHostOptions | undefined => {
+    if (!welcomeShown() || driver.termsAccepted?.() !== false) return undefined
+    heldDest.current = dest
+    return { holdWorld: true }
+  }
   // ?position=x,y / ?realm= (parity with the plain engine page): skip the Places picker and launch
   // straight there. realm wins when both are given, carrying the position along — letting
   // ?position shadow ?realm made a reload in a custom realm respawn in Genesis at the same
@@ -2071,6 +2147,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setLobby(false)
     setLobbyOpen(false)
     setLobbyStageReady(false)
+    setWelcome(null)
+    setWelcomePending(false)
+    setWelcomeSaving(false)
+    setWelcomeError(null)
+    welcomeLink.current = null
+    heldDest.current = undefined
     visitedTitle.current = ''
     pendingLogin.current = null
     // The next account starts clean: it fetches its own data and hasn't spawned yet.
@@ -2132,6 +2214,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       // Otherwise the lobby: launch now holding the world back, so signing in, the avatar and
       // friends work but no scene loads until a destination is picked (which releases it).
       setLobby(true)
+      setWelcomePending(welcomeShown())
       setLobbyStageReady(false)
       setBusy(true)
       let ran = false
@@ -2140,7 +2223,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         ran = true
         if (driver.launch != null && !launchedRef.current) {
           const home = driver.homeScene?.()
-          if (!launchEngine(driver, home?.realm ?? DEFAULT_REALM, home?.parcel ?? '0,0', { holdWorld: true })) return
+          if (!launchEngine(driver, home?.realm ?? DEFAULT_REALM, home?.parcel ?? '0,0', { holdWorld: true })) {
+            setWelcomePending(false) // no sign-in to answer it
+            return
+          }
         }
         runPendingLogin(driver)
       }
@@ -2151,6 +2237,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     [busy, engineReady, launchEngine, runPendingLogin]
   )
 
+
+  const rerollLook = useCallback(() => driverRef.current?.send({ kind: 'rerollLook' }), [])
+  const openLegal = useCallback((doc: 'terms' | 'privacy') => driverRef.current?.send({ kind: 'openLegal', doc }), [])
+  const acceptWelcome = useCallback((name?: string) => {
+    setWelcomeSaving(true)
+    setWelcomeError(null)
+    driverRef.current?.send({ kind: 'acceptWelcome', name })
+  }, [])
 
   // The button creates a guest account that persists; ?guest=1 stays a throwaway guest.
   const exploreAsGuest = useCallback(() => submitLogin((d) => d.loginPersistentGuest?.() ?? d.loginGuest()), [submitLogin])
@@ -2201,10 +2295,13 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         setBusy(false)
         pendingLogin.current = null
         setSubmitted(true)
+        welcomeLink.current = urlDestination.current
+        if (welcomeShown()) driverRef.current?.send({ kind: 'getWelcome' })
         // the engine booted holding the world, as for Jump in: the pick is the lobby's
         if (urlDestination.current == null) {
           setLobby(true)
           setLobbyStageReady(false)
+          setWelcomePending(welcomeShown())
         }
       })
       .catch((e: unknown) => {
@@ -2308,7 +2405,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
 
   const phase: SessionPhase = !submitted
     ? 'login'
-    : !destinationPicked
+    : welcome != null || (welcomePending && lobby)
+      ? 'welcome'
+      : !destinationPicked
       ? urlDestination.current != null
         ? 'entering' // a ?position/?realm launch is about to fire — never flash the picker
         : lobby
@@ -2321,7 +2420,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // Once launched the bridge scene must exist, so from here on its absence is a fault. Not
   // 'picking': nothing is launched behind the picker.
   useEffect(() => {
-    if (phase === 'lobby' || phase === 'entering' || phase === 'world') driverRef.current?.expectBridge?.()
+    if (phase === 'welcome' || phase === 'lobby' || phase === 'entering' || phase === 'world') driverRef.current?.expectBridge?.()
   }, [phase])
 
   // HUD focus, declared to the engine (fire-and-forget; latest wins). `ui` reserves all
@@ -2436,7 +2535,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const uiFocus = anyPanelOpen || popupOpen || locked
   // `covered` also spans the loading overlay: it outlives the engine's own out-of-world state
   // (player spawn, render-settle, reveal debounce), so the engine can't see that tail itself.
-  const covered = menuPageOpen || phase === 'lobby' || phase === 'entering'
+  const covered = menuPageOpen || phase === 'welcome' || phase === 'lobby' || phase === 'entering'
   // The open menu page, by the SystemAction that toggles it (the pages are exclusive, so at most
   // one is open). The engine answers a scene's openExplorerUi from this, and writes the page's
   // opened/closed events to the scene whose request opened it.
@@ -2448,9 +2547,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     : galleryOpen ? 'Gallery'
     : null
   useEffect(() => {
-    if (phase !== 'world' && phase !== 'entering' && phase !== 'lobby') return
-    // The lobby holds input like a menu page: the player can't walk under it.
-    const ui = uiFocus || phase === 'lobby'
+    if (phase !== 'world' && phase !== 'entering' && phase !== 'lobby' && phase !== 'welcome') return
+    // The lobby and the welcome page hold input like a menu page: the player can't walk under them.
+    const ui = uiFocus || phase === 'lobby' || phase === 'welcome'
     driverRef.current?.send({ kind: 'uiFocus', ui, text: textFocused, scroll: scrollHover, covered, menu })
   }, [phase, uiFocus, textFocused, scrollHover, covered, menu])
 
@@ -2548,6 +2647,16 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     homeScene,
     avatarPreviewRect,
     pickDestination,
+    welcome: {
+      terms: welcome?.terms ?? false,
+      newProfile: welcome?.newProfile ?? false,
+      pending: welcome == null,
+      saving: welcomeSaving,
+      error: welcomeError,
+      reroll: rerollLook,
+      accept: acceptWelcome,
+      openLegal
+    },
     sceneLoading,
     loadingProgress,
     travelError,

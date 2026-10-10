@@ -237,6 +237,20 @@ module.exports.setHomeScene = async function(args) {
     await Deno.core.ops.op_set_home_scene(args.realm, args.parcel)
 }
 
+// {
+//   terms: boolean, // the terms aren't accepted on this install; the world is held until they are
+//   newProfile: boolean, // the account has no profile; its new one deploys with the next setAvatar
+//                        // once the terms are accepted
+// }
+module.exports.getWelcome = async function() {
+    return await Deno.core.ops.op_get_welcome()
+}
+
+// the welcome page's accept: records the terms for this install
+module.exports.acceptTerms = async function() {
+    await Deno.core.ops.op_accept_terms()
+}
+
 // the current realm's `configurations.map.satelliteView`; null (native) or undefined (wasm)
 // when it has none
 // {

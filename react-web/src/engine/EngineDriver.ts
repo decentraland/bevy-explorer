@@ -143,6 +143,10 @@ export class EngineDriver implements LoginDriver {
     return this.rpc.homeScene()
   }
 
+  termsAccepted(): boolean | null {
+    return this.rpc.termsAccepted()
+  }
+
   command(line: string): Promise<string> {
     return this.rpc.command(line)
   }

@@ -405,7 +405,7 @@ pub fn setup_primary_profile(
             });
 
             // deploy to server
-            if !current_profile.is_deployed {
+            if !current_profile.is_deployed && !current_profile.deploy_held {
                 debug!("deploying {:#?}", profile);
                 let ipfs = ipfas.ipfs().clone();
                 let profile = profile.clone();
@@ -462,6 +462,9 @@ pub struct CurrentUserProfile {
     pub profile: Option<UserProfile>,
     pub snapshots: Option<(Handle<Image>, Handle<Image>)>,
     pub is_deployed: bool,
+    /// A new profile made while the world is held: the host's welcome page deploys it, with its
+    /// save after the terms are accepted.
+    pub deploy_held: bool,
 }
 
 /// Run the fetch cascade for every entry that wants one: registry batches (grouped by

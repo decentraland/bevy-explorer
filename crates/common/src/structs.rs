@@ -564,6 +564,8 @@ pub struct AppConfig {
     pub home_realm: Option<String>,
     pub home_location: Option<IVec2>,
     pub previous_login: Option<PreviousLogin>,
+    /// The [`TERMS_VERSION`] last accepted on this install, on the welcome page.
+    pub accepted_terms: Option<u32>,
     pub graphics: GraphicsSettings,
     pub audio: AudioSettings,
     pub cache_bytes: u64,
@@ -614,12 +616,16 @@ pub const SETTINGS_GENERATION: u32 = 2;
 /// (see [`AppConfig::migrate_inputs`])
 pub const INPUTS_GENERATION: u32 = 1;
 
+/// bump when the terms of use change, so every install accepts them again
+pub const TERMS_VERSION: u32 = 1;
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
             home_realm: None,
             home_location: None,
             previous_login: None,
+            accepted_terms: None,
             graphics: Default::default(),
             audio: Default::default(),
             cache_bytes: 1024 * 1024 * 1024 * 10, // 10gb
@@ -654,6 +660,10 @@ impl Default for AppConfig {
 }
 
 impl AppConfig {
+    pub fn terms_accepted(&self) -> bool {
+        self.accepted_terms.is_some_and(|v| v >= TERMS_VERSION)
+    }
+
     /// Parse a saved config. One that fails to parse (e.g. written by a newer build) falls back
     /// to the default, keeping its user_id when that can still be read, in which case the file
     /// is left alone rather than overwritten at startup.

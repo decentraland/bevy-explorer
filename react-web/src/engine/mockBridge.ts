@@ -258,13 +258,16 @@ interface MockOptions {
   userId: string
   /** Latency for simulated calls, ms. */
   latency: number
+  /** Show the welcome page after sign-in, as for a new account on an install without the terms. */
+  welcome: boolean
 }
 
 const DEFAULTS: MockOptions = {
   hasPreviousLogin:
     new URLSearchParams(location.search).get('previousLogin') === '1',
   userId: '0xmock00000000000000000000000000000000beef',
-  latency: 600
+  latency: 600,
+  welcome: new URLSearchParams(location.search).get('welcome') === '1'
 }
 
 let running: (() => void) | null = null
@@ -547,6 +550,17 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       reply({ kind: 'homeScene', realm: DEFAULT_REALM, parcel: { x: 0, y: 0 } })
       return
     }
+
+    if (msg.kind === 'getWelcome') {
+      reply({ kind: 'welcome', terms: o.welcome, newProfile: o.welcome })
+      return
+    }
+    if (msg.kind === 'acceptWelcome') {
+      reply({ kind: 'welcomeAccepted', ok: true })
+      return
+    }
+    // no catalyst looks or browser to open in the mock
+    if (msg.kind === 'rerollLook' || msg.kind === 'openLegal') return
 
     if (msg.kind === 'sendChat') {
       // Echo the local player's message back (the engine would broadcast it); a DM is stored first.

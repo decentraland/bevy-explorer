@@ -22,6 +22,7 @@ import { EventsPage } from './features/events/EventsPage'
 import { ShopPage } from './features/shop/ShopPage'
 import { PlacesPicker } from './features/places/PlacesPicker'
 import { LobbyHome } from './features/lobby/LobbyHome'
+import { WelcomePage } from './features/welcome/WelcomePage'
 import { GalleryPage } from './features/gallery/GalleryPage'
 import { Sidebar } from './features/sidebar/Sidebar'
 import { Minimap } from './features/minimap/Minimap'
@@ -321,6 +322,7 @@ function Hud(): React.JSX.Element {
     <SessionProvider value={session}>
       {rpc && <EngineHost rpc={rpc} />}
       {session.phase === 'login' && <LoadingAndLogin flow={session.login} />}
+      {session.phase === 'welcome' && <WelcomePage setEngineViewport={session.setEngineViewport} />}
       {session.phase === 'picking' && <PlacesPicker onPick={session.pickDestination} />}
       {session.phase === 'lobby' && (
         <>

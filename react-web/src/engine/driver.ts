@@ -70,6 +70,9 @@ export interface LoginDriver {
   /** The engine's persisted home scene — the Skip target. Available pre-launch; null until the
    *  engine module is up. Native and mock clients request it through the scene bridge instead. */
   homeScene?(): { realm: string | null; parcel: string } | null
+  /** Whether this install has accepted the terms, pre-launch (null = unknown), so a link can launch
+   *  holding the world for the welcome page. Native decides that hold itself (src/lib.rs). */
+  termsAccepted?(): boolean | null
   /** Run an engine console command line (e.g. "/time 12 0") and resolve with its reply, without
    *  the reply landing in chat. Optional — the mock has no engine console. */
   command?(line: string): Promise<string>

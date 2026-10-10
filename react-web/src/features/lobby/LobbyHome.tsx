@@ -54,7 +54,7 @@ const FLOOR_SHADE = floorShadeGradient()
 
 // Until the engine has drawn the stage, the page paints the same backdrop and the account's
 // snapshot, so the lobby never shows an empty or half-loaded centre.
-function StandInStage({ hidden, body }: { hidden: boolean; body?: string }): React.JSX.Element {
+export function StandInStage({ hidden, body }: { hidden: boolean; body?: string }): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 1920, h: 1080 })
   useEffect(() => {

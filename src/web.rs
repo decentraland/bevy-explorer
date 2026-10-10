@@ -265,6 +265,15 @@ pub fn engine_home_scene() -> String {
         .to_string()
 }
 
+/// Whether the terms are accepted on this install (the loaded config), so the HUD can launch a
+/// realm/position link holding the world for its welcome page. Valid after [`engine_init`].
+#[wasm_bindgen]
+pub fn engine_terms_accepted() -> bool {
+    INIT_DATA
+        .get()
+        .is_some_and(|config| config.terms_accepted())
+}
+
 /// Round-trip the page's object through JSON rather than `serde_wasm_bindgen::from_value`: that
 /// only visits the struct's own fields, so `deny_unknown_fields` would never see a misspelt key.
 pub(crate) fn parse_options(options: &JsValue) -> Result<EngineRunOptions, JsValue> {

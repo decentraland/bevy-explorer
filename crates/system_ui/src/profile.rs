@@ -453,12 +453,18 @@ fn process_profile(
     mut current_profile: ResMut<CurrentUserProfile>,
     mut processing: Local<Option<ProcessProfileState>>,
     mut deployed: EventReader<ProfileDeployedEvent>,
+    config: Res<AppConfig>,
 ) {
     if let Some(SystemApi::SetAvatar(set_avatar, sender)) = e
         .read()
         .filter(|ev| matches!(ev, SystemApi::SetAvatar(..)))
         .last()
     {
+        // the welcome page's save, after its accept: a held new profile deploys with it
+        if current_profile.deploy_held && config.terms_accepted() {
+            current_profile.deploy_held = false;
+        }
+
         let Some(profile) = current_profile.profile.as_mut() else {
             error!("can't amend missing profile");
             return;

@@ -175,6 +175,18 @@ pub async fn op_get_home_scene(state: &WorkerContext) -> Result<JsValue, WasmErr
 }
 
 #[wasm_bindgen]
+pub async fn op_get_welcome(state: &WorkerContext) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_get_welcome(state.rc()).await)
+}
+
+#[wasm_bindgen]
+pub async fn op_accept_terms(state: &WorkerContext) -> Result<(), WasmError> {
+    dcl::js::system_api::op_accept_terms(state.rc())
+        .await
+        .map_err(WasmError::from)
+}
+
+#[wasm_bindgen]
 pub async fn op_get_satellite_view(state: &WorkerContext) -> Result<JsValue, WasmError> {
     serde_result!(dcl::js::system_api::op_get_satellite_view(state.rc()).await)
 }
