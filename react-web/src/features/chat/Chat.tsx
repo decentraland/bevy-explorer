@@ -943,17 +943,37 @@ export function Chat({
   )
   // Translation: the conversation's newest lines when it auto-translates, any line by hand.
   const translationPrefs = useTranslationPrefs()
-  useTranslations()
+  const translations = useTranslations()
   const target = translationPrefs.language
   const autoTranslate = autoTranslates(translationPrefs, chat.channel)
+  // Nearby's auto-translation reaches the bubbles over the speakers' heads too, whichever tab is shown.
+  const nearbyAuto = autoTranslates(translationPrefs, 'Nearby')
   useEffect(() => {
-    if (!autoTranslate) return
     const mine = meAddress?.toLowerCase()
-    for (const line of chat.messages.slice(-AUTO_TRANSLATE_RECENT)) {
-      if (isSystem(line.sender) || line.sender.toLowerCase() === mine || !hasTranslatableText(line.message)) continue
-      requestTranslation(lineKey(line), line.message, target, false)
+    const auto = (lines: ChatLine[]): void => {
+      for (const line of lines.slice(-AUTO_TRANSLATE_RECENT)) {
+        if (isSystem(line.sender) || line.sender.toLowerCase() === mine || !hasTranslatableText(line.message)) continue
+        requestTranslation(lineKey(line), line.message, target, false)
+      }
     }
-  }, [autoTranslate, chat.messages, target, meAddress])
+    if (autoTranslate) auto(chat.messages)
+    if (nearbyAuto && chat.channel !== 'Nearby') auto(chat.nearby)
+  }, [autoTranslate, nearbyAuto, chat.messages, chat.nearby, chat.channel, target, meAddress])
+  // Each Nearby translation goes to its bubble once (per language); the scene redraws the bubble only
+  // while it is still showing that message.
+  const bubbled = useRef(new Map<string, string>())
+  useEffect(() => {
+    if (!nearbyAuto) return
+    const recent = chat.nearby.slice(-AUTO_TRANSLATE_RECENT).filter((l) => l.messageId !== '')
+    const ids = new Set(recent.map((l) => l.messageId))
+    for (const id of bubbled.current.keys()) if (!ids.has(id)) bubbled.current.delete(id)
+    for (const line of recent) {
+      const t = getTranslation(lineKey(line), target)
+      if (t?.status !== 'done' || bubbled.current.get(line.messageId) === target) continue
+      bubbled.current.set(line.messageId, target)
+      chatRef.current.bubbleText(line.sender, line.messageId, t.text)
+    }
+  }, [nearbyAuto, chat.nearby, target, translations])
   const translateLine = useCallback((line: ChatLine) => requestTranslation(lineKey(line), line.message, target, true), [target])
   const showLineOriginal = useCallback((line: ChatLine, original: boolean) => showOriginal(lineKey(line), target, original), [target])
   const BAR_HEIGHT = 40

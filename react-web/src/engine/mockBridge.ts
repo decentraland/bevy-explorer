@@ -572,6 +572,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       return
     }
 
+    if (msg.kind === 'chatBubbleText') return // no avatars' bubbles in the mock
     if (msg.kind === 'navAction') return // no scene menus in the mock
     if (msg.kind === 'friendAction') {
       // No social service in the mock: acknowledge so the page's flows (toasts, popups) run.

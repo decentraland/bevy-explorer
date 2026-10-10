@@ -83,6 +83,15 @@ export interface SendChatReactionRequest {
   remove: boolean
 }
 
+/** Redraw a Nearby chat bubble with other words (its translation), if that message is still the
+ *  sender's bubble; its timer starts again. */
+export interface ChatBubbleTextRequest {
+  kind: 'chatBubbleText'
+  sender: string
+  messageId: string
+  message: string
+}
+
 /** Reload the current scene(s) — the `/reload` chat command (scene calls SystemApi.reload). */
 export interface ReloadSceneRequest {
   kind: 'reloadScene'
@@ -146,6 +155,7 @@ export type PageToScene =
   | RpcRequest
   | SendChatRequest
   | SendChatReactionRequest
+  | ChatBubbleTextRequest
   | ReloadSceneRequest
   | ConsoleCommandRequest
   | NavActionRequest

@@ -7,7 +7,7 @@ import { getPlayer } from '@dcl/sdk/players'
 import { getPlayerData } from '~system/Players'
 import { BevyApi } from '../bevy-api'
 import { httpOrUndef, profileKey } from './profile'
-import { setChatBubble } from './nametags'
+import { retextChatBubble, setChatBubble } from './nametags'
 import { onSystemAction } from './systemAction'
 import { relay } from '../system-helpers'
 import type { Ctx } from '../bridge'
@@ -32,6 +32,9 @@ export function registerChat(ctx: Ctx): void {
   ctx.on('sendChatReaction', (msg) => {
     BevyApi.sendChatReaction(msg.channel, msg.messageId, msg.emoji, msg.remove)
   })
+  ctx.on('chatBubbleText', (msg) => {
+    retextChatBubble(msg.sender, msg.messageId, msg.message)
+  })
 
   // Incoming chat stream → React (we're the only consumer now the SDK7 chat UI is gone).
   relay('chat', async () => await BevyApi.getChatStream(), (m) => {
@@ -39,7 +42,7 @@ export function registerChat(ctx: Ctx): void {
     ctx.send({ kind: 'chat', chat: { sender: m.sender_address, message: m.message, channel: m.channel, messageId: m.message_id } })
     // Pop the speech bubble under this sender's nametag (world-space, engine-positioned). Not for
     // DMs (a wallet channel): those are private.
-    if (m.channel === 'Nearby') setChatBubble(m.sender_address, m.message, mentionsMe(m.message))
+    if (m.channel === 'Nearby') setChatBubble(m.sender_address, m.message, mentionsMe(m.message), m.message_id)
   })
 
   relay('chatReaction', async () => await BevyApi.getChatReactionStream(), (r) => {

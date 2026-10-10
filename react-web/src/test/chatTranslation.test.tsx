@@ -105,10 +105,10 @@ const line = (over: Partial<ChatLine>): ChatLine => ({
   ts: 1_700_000_000_000,
   ...over
 })
-const renderChat = (messages: ChatLine[], channel = 'Nearby') => {
+const renderChat = (messages: ChatLine[], channel = 'Nearby', nearby = channel === 'Nearby' ? messages : []) => {
   const conversations = channel === 'Nearby' ? [] : [{ address: channel, unread: 0, state: 'connected' as const, online: true }]
-  const chat: ChatState = { ...fakeSession().chat, open: true, channel, messages, conversations }
-  return render(<Chat chat={chat} me={me} />)
+  const chat: ChatState = { ...fakeSession().chat, open: true, channel, messages, nearby, conversations }
+  return { chat, ...render(<Chat chat={chat} me={me} />) }
 }
 
 describe('chat translation', () => {
@@ -181,6 +181,33 @@ describe('chat translation', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Auto-translate' }))
     expect(await screen.findByText('hello')).toBeInTheDocument()
     expect(JSON.parse(getPref(PREF.chatAutoTranslateChannels) ?? '{}')).toEqual({ '0xbob': true })
+  })
+
+  it('an auto-translating Nearby sends each translation to the bubble over the speaker, once', async () => {
+    mockServer(es({ hola: 'hello' }))
+    setAutoTranslate('Nearby', true)
+    const { chat, rerender } = renderChat([line({})])
+    expect(await screen.findByText('hello')).toBeInTheDocument()
+    expect(chat.bubbleText).toHaveBeenCalledWith('0xana', '0xana:45000.5', 'hello')
+    rerender(<Chat chat={{ ...chat }} me={me} />)
+    await userEvent.click(screen.getByRole('button', { name: 'From Spanish · See original' }))
+    expect(chat.bubbleText).toHaveBeenCalledTimes(1)
+  })
+
+  it('Nearby\'s bubbles are translated while a DM is shown', async () => {
+    const { requests } = mockServer(es({ hola: 'hello' }))
+    setAutoTranslate('Nearby', true)
+    const { chat } = renderChat([], '0xbob', [line({})])
+    await waitFor(() => expect(chat.bubbleText).toHaveBeenCalledWith('0xana', '0xana:45000.5', 'hello'))
+    expect(requests).toHaveLength(1)
+  })
+
+  it('a line translated by hand leaves the bubble alone', async () => {
+    mockServer(es({ hola: 'hello' }))
+    const { chat } = renderChat([line({})])
+    await userEvent.click(screen.getByRole('button', { name: 'Translate' }))
+    expect(await screen.findByText('hello')).toBeInTheDocument()
+    expect(chat.bubbleText).not.toHaveBeenCalled()
   })
 
   it('deleting a conversation\'s history puts it back on the default', async () => {
