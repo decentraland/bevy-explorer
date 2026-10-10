@@ -107,7 +107,12 @@ function TranslationMark({ line, translation, onTranslate, onShowOriginal, onHov
   // The state can change under the pointer (a click, a translation arriving): the tooltip follows,
   // and goes with the icon.
   useEffect(() => {
-    if (hovered.current && ref.current != null) onHover?.(label, ref.current)
+    if (!hovered.current) return
+    if (label != null && ref.current != null) onHover?.(label, ref.current)
+    else {
+      hovered.current = false
+      onHover?.(null)
+    }
   }, [label, onHover])
   useEffect(() => () => {
     if (hovered.current) onHover?.(null)
