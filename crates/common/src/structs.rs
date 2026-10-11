@@ -1515,6 +1515,8 @@ pub struct StartupScene {
     pub preview: bool,
     pub hot_reload: Option<tokio::sync::mpsc::UnboundedSender<PreviewCommand>>,
     pub hash: Option<String>,
+    /// the source didn't resolve: the scene is never coming
+    pub failed: bool,
 }
 
 #[derive(Resource)]

@@ -20,7 +20,7 @@ use common::{
     sets::RealmLifecycle,
     structs::{
         server_mode, AppConfig, AppError, CurrentRealm, EditorMode, GlobalCrdtStateUpdate,
-        IVec2Arg, PreviewMode, SceneLoadDistance, SceneMeta, SceneTime, WorldHold,
+        IVec2Arg, PreviewMode, SceneLoadDistance, SceneMeta, SceneTime, StartupScenes, WorldHold,
     },
     terrain::{Occupancy, TerrainChange, TerrainTargets, BORDER_PADDING},
     util::{TaskExt, TryPushChildrenEx},
@@ -1577,6 +1577,7 @@ pub fn process_scene_lifecycle(
     imposter_scene: Res<CurrentImposterScene>,
     preview_mode: Res<PreviewMode>,
     mut current_scene_loading_res: ResMut<CurrentSceneLoading>,
+    startup_scenes: Option<Res<StartupScenes>>,
 ) {
     let mut required_scene_ids: HashMap<(String, Option<String>), bool> = HashMap::new();
 
@@ -1677,7 +1678,7 @@ pub fn process_scene_lifecycle(
 
     // despawn any no-longer required entities
     let mut current_scene_loading = false;
-    let mut system_scene_loading = false;
+    let mut startup_loading = false;
     for (entity, scene_hash, maybe_ctx, maybe_loading, is_super) in &scene_entities {
         match keep_entities.get(&entity) {
             Some((hash, _)) => {
@@ -1710,17 +1711,38 @@ pub fn process_scene_lifecycle(
             }
         }
 
-        // system/super-user scenes (e.g. the UI scene) are highest priority and
-        // exempt from the deferral below; track their load so imposters wait on
-        // them too, otherwise nothing blocks while the system scene loads.
-        if is_super && still_loading {
-            system_scene_loading = true;
+        // the startup set (system/super-user scenes and startup portables) is highest
+        // priority and exempt from the deferrals below; track its load so the world and
+        // imposters wait on it.
+        let startup_portable = startup_scenes.as_ref().is_some_and(|startup| {
+            startup
+                .scenes
+                .iter()
+                .any(|scene| scene.hash.as_ref() == Some(&scene_hash.0))
+        });
+        if (is_super || startup_portable) && still_loading {
+            startup_loading = true;
         }
     }
     drop(keep_entities);
 
     for removed_hash in removed_hashes {
         live_scenes.scenes.remove(removed_hash);
+    }
+
+    // a startup scene still resolving (a failed one is never coming) or not yet spawned is
+    // loading too
+    startup_loading |= startup_scenes.as_ref().is_some_and(|startup| {
+        startup.scenes.iter().any(|scene| match &scene.hash {
+            None => !scene.failed,
+            Some(hash) => portables.contains_key(hash) && !existing_ids.contains(hash),
+        })
+    });
+    // hold the world until the startup set has come up: its requests (a movement
+    // controller's animation preloads above all) must be queued ahead of the world's, which
+    // would otherwise swamp them for the whole of the load
+    if startup_loading {
+        required_scene_ids.retain(|scene, super_user| *super_user || portable_ids.contains(scene));
     }
 
     let mut defer_to_current_scene = false;
@@ -1737,9 +1759,8 @@ pub fn process_scene_lifecycle(
         }
     }
     // publish for imposter loading: defer while the current scene is loading
-    // (same condition the lifecycle uses above) or while a system scene is
-    // still loading (it's exempt from the deferral but still highest priority)
-    current_scene_loading_res.0 = defer_to_current_scene || system_scene_loading;
+    // (same condition the lifecycle uses above) or while the startup set is
+    current_scene_loading_res.0 = defer_to_current_scene || startup_loading;
 
     if live_scenes.block_new_scenes {
         return;

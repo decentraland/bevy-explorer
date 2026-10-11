@@ -322,6 +322,7 @@ impl DecentralandArguments {
                 preview: self.startup_scenes_preview,
                 hot_reload: None,
                 hash: None,
+                failed: false,
             })
             .collect()
     }
@@ -510,6 +511,7 @@ impl DecentralandApp {
                     preview: decentraland_app_config.arguments.startup_scenes_preview,
                     hot_reload: None,
                     hash: None,
+                    failed: false,
                 },
             );
         } else {

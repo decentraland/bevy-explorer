@@ -12,12 +12,13 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU16, AtomicU32, Ordering},
-        Arc,
+        Arc, Weak,
     },
 };
 
 #[cfg(feature = "ipfs_debug")]
 use common::util::ReportErr;
+use common::util::UrlLoopbackExt;
 use futures_io::{AsyncRead, AsyncSeek};
 use web_time::{Duration, Instant};
 
@@ -41,6 +42,7 @@ use bevy::{
     reflect::TypePath,
     tasks::{ConditionalSendFuture, IoTaskPool, Task},
 };
+use tokio::sync::{oneshot, watch};
 
 #[cfg(not(target_arch = "wasm32"))]
 use bevy::asset::io::file::FileAssetReader;
@@ -846,6 +848,8 @@ pub struct IpfsIo {
     #[cfg(not(target_arch = "wasm32"))]
     allowed_file_roots: std::sync::RwLock<Vec<PathBuf>>,
     client: reqwest::Client,
+    // downloads under way, by url (`share_download`)
+    in_flight: InFlightDownloads,
     #[cfg(feature = "ipfs_debug")]
     debug_overlay_sender: tokio::sync::mpsc::UnboundedSender<IpfsDebug>,
 }
@@ -884,6 +888,7 @@ impl IpfsIo {
                 .user_agent("DCLExplorer/0.1")
                 .build()
                 .unwrap(),
+            in_flight: Default::default(),
             #[cfg(feature = "ipfs_debug")]
             debug_overlay_sender,
         }
@@ -1180,6 +1185,23 @@ impl IpfsIo {
         self.default_fs_path.as_deref()
     }
 
+    /// The cached bytes under `key` (native only: on web the worker's cache is read through
+    /// `web_cache`).
+    async fn read_disk_cache(&self, key: &CacheKey) -> Result<Option<Vec<u8>>, std::io::Error> {
+        let Some(cached) = self
+            .cache_path()
+            .and_then(|root| root.join_relative(key.name()))
+        else {
+            return Ok(None);
+        };
+        let Ok(mut reader) = self.default_io.read(&cached).await else {
+            return Ok(None);
+        };
+        let mut buffer = Vec::default();
+        reader.read_to_end(&mut buffer).await?;
+        Ok(Some(buffer))
+    }
+
     // load entities from pointers and cache urls
     pub fn active_entities(
         self: &Arc<Self>,
@@ -1258,7 +1280,7 @@ impl IpfsIo {
                     for path in paths.iter() {
                         let hash = path.context_free_hash().unwrap().unwrap();
                         let pathbuf = std::path::PathBuf::from(path);
-                        let Ok(mut reader) = AssetReader::read(&*ipfs, &pathbuf).await else {
+                        let Ok(mut reader) = ipfs.read(&pathbuf).await else {
                             continue;
                         };
 
@@ -1592,11 +1614,13 @@ pub enum ActiveEntitiesRequest {
 #[derive(Deserialize, Debug)]
 pub struct ActiveEntitiesResponse(Vec<EntityDefinitionJson>);
 
-impl AssetReader for IpfsIo {
-    async fn read<'a>(
-        &'a self,
-        path: &'a std::path::Path,
-    ) -> Result<impl Reader + 'a, bevy::asset::io::AssetReaderError> {
+impl IpfsIo {
+    /// Read an asset: a plain path from the default reader, an ipfs path from the cache or the
+    /// remote (`download`).
+    pub async fn read<'a>(
+        self: &'a Arc<Self>,
+        path: &'a Path,
+    ) -> Result<Box<dyn Reader + 'a>, AssetReaderError> {
         platform::compat(async move {
             let wrap_err = |e: anyhow::Error| {
                 if e.to_string().contains("file not found") {
@@ -1612,7 +1636,7 @@ impl AssetReader for IpfsIo {
             let ipfs_io_read_state = IpfsIoReadState {
                 #[cfg(feature = "ipfs_debug")]
                 sender: &self.debug_overlay_sender,
-                path,
+                path: Cow::Borrowed(path),
                 #[cfg(feature = "ipfs_debug")]
                 start,
             };
@@ -1645,19 +1669,14 @@ impl AssetReader for IpfsIo {
 
             let cache_key = ipfs_path.cache_key(&*self.context.read().await);
 
-            if let Some(cache_path) = self.cache_path() {
-                if let Some(key) = &cache_key {
-                    debug!("hash: {}", key.name());
-                    if let Some(cached) = cache_path.join_relative(key.name()) {
-                        if let Ok(mut res) = self.default_io.read(&cached).await {
-                            let mut daft_buffer = Vec::default();
-                            ipfs_io_read_state
-                                .send_failure(res.read_to_end(&mut daft_buffer).await)?;
-                            ipfs_io_read_state.send_cached(daft_buffer.len());
-                            return Ok(Box::new(VecReader::new(daft_buffer)));
-                        }
-                    }
-                };
+            if let Some(key) = &cache_key {
+                debug!("hash: {}", key.name());
+                if let Some(cached) =
+                    ipfs_io_read_state.send_failure(self.read_disk_cache(key).await)?
+                {
+                    ipfs_io_read_state.send_cached(cached.len());
+                    return Ok(Box::new(VecReader::new(cached)));
+                }
             }
 
             debug!(
@@ -1732,6 +1751,26 @@ impl AssetReader for IpfsIo {
             let fail_time = context.failed_remotes.get(&remote).cloned();
             drop(context);
 
+            // loopback content is local already, and a preview server's is mutable: never cached
+            let cache_key =
+                cache_key.filter(|_| !url::Url::parse(&remote).is_ok_and(|url| url.is_loopback()));
+
+            // in wasm we add a custom header to allow the service worker to cache ipfs requests
+            // across content servers: anything with a cache key (content by hash, and urls by
+            // their digest), whatever path it was asked for under
+            #[cfg(target_arch = "wasm32")]
+            let sw_caches = cache_key.is_some();
+
+            // the worker's cache is the disk cache here: read it directly, so a cached file
+            // doesn't wait on a request slot behind every download in the queue
+            #[cfg(target_arch = "wasm32")]
+            if sw_caches {
+                if let Some(cached) = web_cache::read(&remote).await {
+                    ipfs_io_read_state.send_cached(cached.len());
+                    return Ok(Box::new(VecReader::new(cached)));
+                }
+            }
+
             if let Some(fail_time) = fail_time {
                 // wait 10 secs before retrying failed assets
                 if self.is_preview
@@ -1748,202 +1787,314 @@ impl AssetReader for IpfsIo {
                 }
             }
 
-            debug!("[{token:?}]: remote url: `{remote}` awaiting semaphore");
-            // get semaphore to limit concurrent requests
-            let _deferred_in_flight = DeferredDropper::new(&IPFS_IN_FLIGHT);
-            let _permit = ipfs_io_read_state.send_failure(
-                self.request_slots.acquire().await.map_err(|e| {
-                    AssetReaderError::Io(Arc::new(std::io::Error::new(ErrorKind::Interrupted, e)))
-                }),
-            )?;
-            debug!("[{token:?}]: remote url: `{remote}` proceeding");
-
-            let mut attempt = 0;
-            let mut no_cache = false;
-            // in wasm we add a custom header to allow the service worker to cache ipfs requests across content servers
-            #[cfg(target_arch = "wasm32")]
-            let sw_caches = ipfs_path.content_path().is_some() && cache_key.is_some();
-            // whether the service worker answered from its cache
-            #[cfg(target_arch = "wasm32")]
-            let sw_cached;
-            let data = loop {
-                attempt += 1;
-
-                let request = self.client.get(&remote);
-
-                #[cfg(target_arch = "wasm32")]
-                let request = if sw_caches {
-                    request.header("X-IPFS", "true")
-                } else {
-                    request
-                };
-
-                let request = ipfs_io_read_state.send_failure(request.build().map_err(|e| {
-                    AssetReaderError::Io(Arc::new(std::io::Error::other(format!(
-                        "[{token:?}]: {e}"
+            // nothing to share an uncacheable download under
+            let Some(key) = cache_key else {
+                let data = self
+                    .clone()
+                    .download(token, path.to_owned(), remote, None)
+                    .await?;
+                return Ok(Box::new(AsyncCursor::new(data)));
+            };
+            // one download per url: a second read of a url already in flight (the same file
+            // under another asset path, say) takes the first's bytes instead of queueing a
+            // download of its own behind everything requested since. By url, not by hash: the
+            // bytes are shared before the hash check, and a scene names its own server
+            let (download, joined) = self.share_download(key, token, path.to_owned(), remote);
+            let mut result = download.result.clone();
+            let data = result
+                .wait_for(Option::is_some)
+                .await
+                .ok()
+                .and_then(|result| result.clone())
+                // only a panic ends the task without a result: our own arc keeps it alive
+                .unwrap_or_else(|| {
+                    Err(AssetReaderError::Io(Arc::new(std::io::Error::other(
+                        "download ended without a result",
                     ))))
-                }))?;
-
-                // Headers-phase timeout + body inactivity timeout; the total transfer
-                // time is unbounded, so a slow-but-progressing download is never
-                // killed — only a stall (no chunk for 10s) or a dead connection trips.
-                let fetched = platform::fetch(
-                    self.client.execute(request),
-                    Duration::from_secs(30),
-                    Duration::from_secs(10),
-                )
-                .await;
-
-                debug!("[{token:?}]: attempt {attempt}: request: {remote}");
-
-                let fetched = match fetched {
-                    Ok(fetched) => fetched,
-                    Err(platform::FetchError::Headers) if attempt <= 3 => {
-                        warn!("[{token:?}] timeout awaiting headers for `{remote}`, retrying");
-                        continue;
-                    }
-                    Err(platform::FetchError::Stalled) if attempt <= 3 => {
-                        warn!("[{token:?}] stalled retrieving `{remote}`, retrying");
-                        continue;
-                    }
-                    Err(platform::FetchError::Send(e)) if e.is_timeout() && attempt <= 3 => {
-                        warn!("[{token:?}] timeout requesting `{remote}`, retrying");
-                        continue;
-                    }
-                    Err(e) => {
-                        let detail = match e {
-                            platform::FetchError::Headers => {
-                                "timed out awaiting headers".to_owned()
-                            }
-                            platform::FetchError::Stalled => "stalled (no data for 10s)".to_owned(),
-                            platform::FetchError::Send(e) => format!("server responded `{e}`"),
-                            platform::FetchError::Status(s) => {
-                                format!("server responded with status {s}")
-                            }
-                            platform::FetchError::Body(e) => format!("body stream error: {e}"),
-                        };
-                        self.context
-                            .write()
-                            .await
-                            .failed_remotes
-                            .insert(remote.clone(), Instant::now());
-                        return ipfs_io_read_state.send_failure(Err(AssetReaderError::Io(
-                            Arc::new(std::io::Error::other(format!(
-                                "[{token:?}] failed to retrieve `{remote}`: {detail}"
-                            ))),
-                        )));
-                    }
-                };
-
-                if let Some(cache_control) = fetched.headers.get("cache-control") {
-                    if cache_control
-                        .to_str()
-                        .unwrap_or_default()
-                        .contains("no-store")
-                    {
-                        no_cache = true;
-                    }
-                }
-
-                #[cfg(target_arch = "wasm32")]
-                {
-                    sw_cached = fetched.headers.contains_key(web_cache::CACHED_HEADER);
-                }
-
-                break fetched.body;
-            };
-
-            // A cache keyed on the hash alone answers for every server, so it only takes bytes
-            // that are what the hash names: any server (and on web any scene, through the service
-            // worker) can otherwise file its own bytes under another's hash.
-            let cacheable = |key: &CacheKey| match key {
-                CacheKey::Url(_) => true,
-                CacheKey::Content(hash) => {
-                    let matches = content_hash::matches_content_hash(hash, &data);
-                    if !matches {
-                        // not expected from a decentraland deployment: either the server sent
-                        // other bytes, or the hash was made in a way `content_hash` doesn't know
-                        warn!(
-                            "`{remote}` ({} bytes) does not hash to `{hash}`: not caching it under that hash",
-                            data.len()
-                        );
-                    }
-                    matches
-                }
-            };
-
-            // the service worker holds a fresh response per origin; move it to the shared entry
-            #[cfg(target_arch = "wasm32")]
-            if let Some(key @ CacheKey::Content(_)) = &cache_key {
-                if sw_caches && !sw_cached {
-                    if let Err(e) = web_cache::share(&remote, key.name(), &data, || cacheable(key))
-                            .await {
-                        warn!("failed to share cache item `{remote}`: {e:?}");
-                    }
-                }
-            }
-
-            // `hash` reaches us from the entity json, so it must not steer the cache path
-            let cache_paths = self
-                .cache_path()
-                .zip(cache_key.as_ref())
-                .and_then(|(root, key)| {
-                    Some((
-                        root.join_relative(format!("{}.part", key.name()))?,
-                        root.join_relative(key.name())?,
-                    ))
                 });
-
-            if let (Some(key), Some((cache_path, final_path))) = (&cache_key, cache_paths) {
-                if !no_cache && cacheable(key) {
-                    let cache_path_str = cache_path.to_string_lossy().into_owned();
-                    // ignore errors trying to cache
-                    match async_fs::File::create(&cache_path).await {
-                        Err(e) => {
-                            warn!("failed to create cache `{cache_path_str}`: {e}");
-                        }
-                        Ok(mut f) => {
-                            if let Err(e) = f.write_all(&data).await {
-                                warn!("failed to write cache `{cache_path_str}`: {e}");
-                            } else if let Err(e) = f.sync_all().await {
-                                warn!("failed to sync cache `{cache_path_str}`: {e}");
-                            } else {
-                                if let Err(e) = async_fs::rename(cache_path, &final_path).await {
-                                    warn!("failed to rename cache item `{cache_path_str}`: {e}");
-                                } else {
-                                    debug!("cached ok `{}`", final_path.to_string_lossy());
-                                }
-                            }
-                        }
-                    }
-                }
+            if joined {
+                let data = ipfs_io_read_state.send_failure(data)?;
+                ipfs_io_read_state.send_cached(data.len());
+                return Ok(Box::new(AsyncCursor::new(data)));
             }
-
-            debug!("[{token:?}]: completed remote url: `{remote}`");
-            ipfs_io_read_state.send_success(data.len());
-            Ok(Box::new(AsyncCursor::new(data)))
+            // the download reported for the reader that started it
+            Ok(Box::new(AsyncCursor::new(data?)))
         })
         .await
     }
 
-    async fn read_meta<'a>(
-        &'a self,
-        path: &'a Path,
-    ) -> Result<impl bevy::asset::io::Reader + 'a, AssetReaderError> {
-        self.default_io.read_meta(path).await
+    /// The download of `remote`: the one in flight, or a new one. A download is shared by every
+    /// reader of its url (`joined` says this isn't the first) and lives as long as any of them.
+    fn share_download(
+        self: &Arc<Self>,
+        key: CacheKey,
+        token: u16,
+        path: PathBuf,
+        remote: String,
+    ) -> (Arc<SharedDownload>, bool) {
+        let mut in_flight = self.in_flight.lock().unwrap();
+        if let Some(download) = in_flight
+            .get(&remote)
+            .and_then(|(_, download)| download.upgrade())
+        {
+            debug!("[{token:?}]: remote url: `{remote}` joining in-flight download");
+            return (download, true);
+        }
+        let name = remote.clone();
+        let (sender, result) = watch::channel(None);
+        let (cancel, cancelled) = oneshot::channel::<()>();
+        let ipfs = self.clone();
+        let entry = remote.clone();
+        let task = IoTaskPool::get().spawn_compat(async move {
+            let download = ipfs.clone().download(token, path, remote, Some(key));
+            let result = tokio::select! {
+                result = download => result,
+                // the last reader dropped the sender: stop, and the request slot goes with
+                // the fetch (on web, dropping the task handle alone doesn't end the task)
+                _ = cancelled => return,
+            };
+            // over, so a later reader starts afresh (from the cache, now it is written). Only
+            // this download's own entry goes: cancelled, it was replaced by a newer one
+            if let Ok(mut in_flight) = ipfs.in_flight.lock() {
+                if in_flight.get(&entry).is_some_and(|(t, _)| *t == token) {
+                    in_flight.remove(&entry);
+                }
+            }
+            sender.send_replace(Some(result));
+        });
+        let download = Arc::new(SharedDownload {
+            _task: task,
+            _cancel: cancel,
+            result,
+        });
+        // a cancelled download leaves its entry behind: nothing else sweeps them
+        in_flight.retain(|_, (_, download)| download.strong_count() > 0);
+        in_flight.insert(name, (token, Arc::downgrade(&download)));
+        (download, false)
     }
 
-    async fn is_directory<'a>(&'a self, path: &'a Path) -> Result<bool, AssetReaderError> {
-        self.default_io.is_directory(path).await
-    }
+    /// Fetch `remote` through a request slot and cache the bytes under `cache_key`.
+    async fn download(
+        self: Arc<Self>,
+        token: u16,
+        path: PathBuf,
+        remote: String,
+        cache_key: Option<CacheKey>,
+    ) -> Result<SharedBytes, AssetReaderError> {
+        let start = web_time::Instant::now();
+        let ipfs_io_read_state = IpfsIoReadState {
+            #[cfg(feature = "ipfs_debug")]
+            sender: &self.debug_overlay_sender,
+            path: Cow::Owned(path),
+            #[cfg(feature = "ipfs_debug")]
+            start,
+        };
+        // in wasm we add a custom header to allow the service worker to cache ipfs requests across content servers
+        #[cfg(target_arch = "wasm32")]
+        let sw_caches = cache_key.is_some();
 
-    async fn read_directory<'a>(
-        &'a self,
-        path: &'a Path,
-    ) -> Result<Box<bevy::asset::io::PathStream>, AssetReaderError> {
-        self.default_io.read_directory(path).await
+        debug!("[{token:?}]: remote url: `{remote}` awaiting semaphore");
+        // get semaphore to limit concurrent requests
+        let _deferred_in_flight = DeferredDropper::new(&IPFS_IN_FLIGHT);
+        let _permit =
+            ipfs_io_read_state.send_failure(self.request_slots.acquire().await.map_err(|e| {
+                AssetReaderError::Io(Arc::new(std::io::Error::new(ErrorKind::Interrupted, e)))
+            }))?;
+        debug!("[{token:?}]: remote url: `{remote}` proceeding");
+
+        let mut attempt = 0;
+        let mut no_cache = false;
+        // whether the service worker answered from its cache
+        #[cfg(target_arch = "wasm32")]
+        let sw_cached;
+        let data = loop {
+            attempt += 1;
+
+            let request = self.client.get(&remote);
+
+            #[cfg(target_arch = "wasm32")]
+            let request = if sw_caches {
+                request.header("X-IPFS", "true")
+            } else {
+                request
+            };
+
+            let request = ipfs_io_read_state.send_failure(request.build().map_err(|e| {
+                AssetReaderError::Io(Arc::new(std::io::Error::other(format!("[{token:?}]: {e}"))))
+            }))?;
+
+            // Headers-phase timeout + body inactivity timeout; the total transfer
+            // time is unbounded, so a slow-but-progressing download is never
+            // killed — only a stall (no chunk for 10s) or a dead connection trips.
+            let fetched = platform::fetch(
+                self.client.execute(request),
+                Duration::from_secs(30),
+                Duration::from_secs(10),
+            )
+            .await;
+
+            debug!("[{token:?}]: attempt {attempt}: request: {remote}");
+
+            let fetched = match fetched {
+                Ok(fetched) => fetched,
+                Err(platform::FetchError::Headers) if attempt <= 3 => {
+                    warn!("[{token:?}] timeout awaiting headers for `{remote}`, retrying");
+                    continue;
+                }
+                Err(platform::FetchError::Stalled) if attempt <= 3 => {
+                    warn!("[{token:?}] stalled retrieving `{remote}`, retrying");
+                    continue;
+                }
+                Err(platform::FetchError::Send(e)) if e.is_timeout() && attempt <= 3 => {
+                    warn!("[{token:?}] timeout requesting `{remote}`, retrying");
+                    continue;
+                }
+                Err(e) => {
+                    let detail = match e {
+                        platform::FetchError::Headers => "timed out awaiting headers".to_owned(),
+                        platform::FetchError::Stalled => "stalled (no data for 10s)".to_owned(),
+                        platform::FetchError::Send(e) => format!("server responded `{e}`"),
+                        platform::FetchError::Status(s) => {
+                            format!("server responded with status {s}")
+                        }
+                        platform::FetchError::Body(e) => format!("body stream error: {e}"),
+                    };
+                    self.context
+                        .write()
+                        .await
+                        .failed_remotes
+                        .insert(remote.clone(), Instant::now());
+                    return ipfs_io_read_state.send_failure(Err(AssetReaderError::Io(Arc::new(
+                        std::io::Error::other(format!(
+                            "[{token:?}] failed to retrieve `{remote}`: {detail}"
+                        )),
+                    ))));
+                }
+            };
+
+            if let Some(cache_control) = fetched.headers.get("cache-control") {
+                if cache_control
+                    .to_str()
+                    .unwrap_or_default()
+                    .contains("no-store")
+                {
+                    no_cache = true;
+                }
+            }
+
+            #[cfg(target_arch = "wasm32")]
+            {
+                sw_cached = fetched.headers.contains_key(web_cache::CACHED_HEADER);
+            }
+
+            break SharedBytes(Arc::new(fetched.body));
+        };
+
+        // A cache keyed on the hash alone answers for every server, so it only takes bytes
+        // that are what the hash names: any server (and on web any scene, through the service
+        // worker) can otherwise file its own bytes under another's hash.
+        let cacheable = |key: &CacheKey| match key {
+            CacheKey::Url(_) => true,
+            CacheKey::Content(hash) => {
+                let matches = content_hash::matches_content_hash(hash, &data);
+                if !matches {
+                    // not expected from a decentraland deployment: either the server sent
+                    // other bytes, or the hash was made in a way `content_hash` doesn't know
+                    warn!(
+                        "`{remote}` ({} bytes) does not hash to `{hash}`: not caching it under that hash",
+                        data.len()
+                    );
+                }
+                matches
+            }
+        };
+
+        // the worker only answers from its cache; fill it: content under its hash, for every
+        // server, once checked; a url under its own key
+        #[cfg(target_arch = "wasm32")]
+        if sw_caches && !sw_cached {
+            let kept = match &cache_key {
+                Some(key @ CacheKey::Content(_)) => {
+                    web_cache::share(&remote, key.name(), &data, || cacheable(key)).await
+                }
+                Some(CacheKey::Url(_)) if !no_cache => web_cache::keep(&remote, &data).await,
+                _ => Ok(()),
+            };
+            if let Err(e) = kept {
+                warn!("failed to cache `{remote}`: {e:?}");
+            }
+        }
+
+        // `hash` reaches us from the entity json, so it must not steer the cache path
+        let cache_paths = self
+            .cache_path()
+            .zip(cache_key.as_ref())
+            .and_then(|(root, key)| {
+                Some((
+                    root.join_relative(format!("{}.part", key.name()))?,
+                    root.join_relative(key.name())?,
+                ))
+            });
+
+        if let (Some(key), Some((cache_path, final_path))) = (&cache_key, cache_paths) {
+            if !no_cache && cacheable(key) {
+                let cache_path_str = cache_path.to_string_lossy().into_owned();
+                // ignore errors trying to cache
+                match async_fs::File::create(&cache_path).await {
+                    Err(e) => {
+                        warn!("failed to create cache `{cache_path_str}`: {e}");
+                    }
+                    Ok(mut f) => {
+                        if let Err(e) = f.write_all(&data).await {
+                            warn!("failed to write cache `{cache_path_str}`: {e}");
+                        } else if let Err(e) = f.sync_all().await {
+                            warn!("failed to sync cache `{cache_path_str}`: {e}");
+                        } else {
+                            if let Err(e) = async_fs::rename(cache_path, &final_path).await {
+                                warn!("failed to rename cache item `{cache_path_str}`: {e}");
+                            } else {
+                                debug!("cached ok `{}`", final_path.to_string_lossy());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        debug!("[{token:?}]: completed remote url: `{remote}`");
+        ipfs_io_read_state.send_success(data.len());
+        Ok(data)
     }
 }
+
+/// A download's bytes, shared with the readers that asked for the same key while it was in flight.
+#[derive(Clone, Default)]
+pub struct SharedBytes(Arc<Vec<u8>>);
+
+impl AsRef<[u8]> for SharedBytes {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for SharedBytes {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+/// A download, shared by every reader of its url and cancelled with the last of them.
+struct SharedDownload {
+    _task: Task<()>,
+    _cancel: oneshot::Sender<()>,
+    result: watch::Receiver<Option<Result<SharedBytes, AssetReaderError>>>,
+}
+
+/// Downloads under way by url, each with its request token (`SharedDownload` holds its
+/// task, so a download whose readers are all gone upgrades to nothing).
+type InFlightDownloads = std::sync::Mutex<HashMap<String, (u16, Weak<SharedDownload>)>>;
 
 pub struct AsyncCursor<T>(async_std::io::Cursor<T>);
 
@@ -1992,30 +2143,26 @@ pub struct PassThroughReader {
 
 impl AssetReader for PassThroughReader {
     async fn read<'a>(&'a self, path: &'a Path) -> Result<impl Reader + 'a, AssetReaderError> {
-        AssetReader::read(&*self.inner, path).await
+        self.inner.read(path).await
     }
 
     async fn read_meta<'a>(&'a self, path: &'a Path) -> Result<impl Reader + 'a, AssetReaderError> {
         if IpfsPath::new_from_path(path).is_ok() {
             Err(AssetReaderError::NotFound(path.to_owned()))
         } else {
-            AssetReader::read_meta(&*self.inner, path).await
+            self.inner.default_io.read_meta(path).await
         }
     }
 
-    fn read_directory<'a>(
+    async fn read_directory<'a>(
         &'a self,
         path: &'a Path,
-    ) -> impl ConditionalSendFuture<Output = Result<Box<bevy::asset::io::PathStream>, AssetReaderError>>
-    {
-        AssetReader::read_directory(&*self.inner, path)
+    ) -> Result<Box<bevy::asset::io::PathStream>, AssetReaderError> {
+        self.inner.default_io.read_directory(path).await
     }
 
-    fn is_directory<'a>(
-        &'a self,
-        path: &'a Path,
-    ) -> impl ConditionalSendFuture<Output = Result<bool, AssetReaderError>> {
-        AssetReader::is_directory(&*self.inner, path)
+    async fn is_directory<'a>(&'a self, path: &'a Path) -> Result<bool, AssetReaderError> {
+        self.inner.default_io.is_directory(path).await
     }
 }
 
@@ -2054,7 +2201,7 @@ fn ipfs_diagnostics(mut diagnostics: ResMut<DiagnosticsStore>) {
 struct IpfsIoReadState<'a> {
     #[cfg(feature = "ipfs_debug")]
     sender: &'a tokio::sync::mpsc::UnboundedSender<IpfsDebug>,
-    path: &'a std::path::Path,
+    path: Cow<'a, Path>,
     #[cfg(feature = "ipfs_debug")]
     start: web_time::Instant,
 }
