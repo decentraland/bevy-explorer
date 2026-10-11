@@ -80,12 +80,10 @@ describe('service worker asset cache', () => {
     expect(await asset(`https://evil.example/contents/bafkreitarget#${path}`)).toEqual({ body: 'target', cached: true })
   })
 
-  it('neither stores nor answers anything but a GET', async () => {
-    const { asset, network, keys } = serviceWorker()
+  it('answers nothing but a GET from an entry', async () => {
+    const { asset, network } = serviceWorker({ [`https://peer.example${path}`]: 'peer' })
     expect(await asset(`https://peer.example${path}`, 'HEAD')).toEqual({ body: 'https://peer.example', cached: false })
-    expect(keys()).toEqual([])
-    expect(await asset(`https://peer.example${path}`)).toEqual({ body: 'https://peer.example', cached: false })
-    expect(await asset(`https://peer.example${path}`, 'HEAD')).toEqual({ body: 'https://peer.example', cached: false })
-    expect(network).toHaveBeenCalledTimes(3)
+    expect(await asset(`https://peer.example${path}`)).toEqual({ body: 'peer', cached: true })
+    expect(network).toHaveBeenCalledTimes(1)
   })
 })

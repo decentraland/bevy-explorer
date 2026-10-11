@@ -1714,9 +1714,12 @@ pub fn process_scene_lifecycle(
         // the startup set (system/super-user scenes and startup portables) is highest
         // priority and exempt from the deferrals below; track its load so the world and
         // imposters wait on it.
-        let startup_portable = portables
-            .get(&scene_hash.0)
-            .is_some_and(|source| source.parent_scene.is_none());
+        let startup_portable = startup_scenes.as_ref().is_some_and(|startup| {
+            startup
+                .scenes
+                .iter()
+                .any(|scene| scene.hash.as_ref() == Some(&scene_hash.0))
+        });
         if (is_super || startup_portable) && still_loading {
             startup_loading = true;
         }
@@ -1730,13 +1733,11 @@ pub fn process_scene_lifecycle(
     // a startup scene still resolving (a failed one is never coming) or not yet spawned is
     // loading too
     startup_loading |= startup_scenes.as_ref().is_some_and(|startup| {
-        startup
-            .scenes
-            .iter()
-            .any(|scene| scene.hash.is_none() && !scene.failed)
-    }) || portables
-        .iter()
-        .any(|(hash, source)| source.parent_scene.is_none() && !existing_ids.contains(hash));
+        startup.scenes.iter().any(|scene| match &scene.hash {
+            None => !scene.failed,
+            Some(hash) => portables.contains_key(hash) && !existing_ids.contains(hash),
+        })
+    });
     // hold the world until the startup set has come up: its requests (a movement
     // controller's animation preloads above all) must be queued ahead of the world's, which
     // would otherwise swamp them for the whole of the load
