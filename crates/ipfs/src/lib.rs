@@ -18,6 +18,7 @@ use std::{
 
 #[cfg(feature = "ipfs_debug")]
 use common::util::ReportErr;
+use common::util::UrlLoopbackExt;
 use futures_io::{AsyncRead, AsyncSeek};
 use web_time::{Duration, Instant};
 
@@ -1749,6 +1750,10 @@ impl IpfsIo {
 
             let fail_time = context.failed_remotes.get(&remote).cloned();
             drop(context);
+
+            // loopback content is local already, and a preview server's is mutable: never cached
+            let cache_key =
+                cache_key.filter(|_| !url::Url::parse(&remote).is_ok_and(|url| url.is_loopback()));
 
             // in wasm we add a custom header to allow the service worker to cache ipfs requests
             // across content servers: anything with a cache key (content by hash, and urls by

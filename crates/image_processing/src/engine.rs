@@ -7,7 +7,10 @@ use bevy::{
     tasks::{IoTaskPool, Task},
 };
 use bevy_console::ConsoleCommand;
-use common::{structs::DebugInfo, util::TaskExt};
+use common::{
+    structs::DebugInfo,
+    util::{TaskExt, UrlLoopbackExt},
+};
 use console::DoAddConsoleCommand;
 use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer};
 
@@ -242,7 +245,15 @@ fn check_assets(
                         return None;
                     };
 
-                    if ipfs_path.should_cache(&hash) {
+                    // loopback content is never cached (see `IpfsIo::read`), so there is
+                    // nothing to process
+                    let url = ipfs_path.to_url(&ctx);
+                    let loopback = url
+                        .as_deref()
+                        .ok()
+                        .and_then(|url| url::Url::parse(url).ok())
+                        .is_some_and(|url| url.is_loopback());
+                    if ipfs_path.should_cache(&hash) && !loopback {
                         // `hash` comes from the entity json, so it must not steer the path
                         #[cfg(not(target_arch = "wasm32"))]
                         let cache_path = std::path::Path::new(&cache_root)
@@ -250,7 +261,8 @@ fn check_assets(
                             .map(|p| p.to_string_lossy().into_owned())?;
 
                         #[cfg(target_arch = "wasm32")]
-                        let Ok(cache_path) = ipfs_path.to_url(&ctx) else {
+                        let Ok(cache_path) = url
+                        else {
                             skip_unhashable += 1;
                             return None;
                         };
