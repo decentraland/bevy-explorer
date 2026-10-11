@@ -2540,6 +2540,7 @@ pub fn process_startup_scenes(
         *done = false;
         for scene in &mut startup_scenes.scenes {
             scene.hash = None;
+            scene.failed = false;
         }
         return;
     }
@@ -2583,10 +2584,9 @@ pub fn process_startup_scenes(
             false
         }
         Some(Err(e)) => {
-            error!(
-                "failed to load startup scene {}: {e}",
-                startup_scenes.scenes.get(*ix).unwrap().source
-            );
+            let scene = startup_scenes.scenes.get_mut(*ix).unwrap();
+            error!("failed to load startup scene {}: {e}", scene.source);
+            scene.failed = true;
             false
         }
         None => true,
