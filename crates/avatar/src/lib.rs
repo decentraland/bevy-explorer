@@ -4,7 +4,7 @@ use attach::AttachPlugin;
 use avatar_texture::AvatarTexturePlugin;
 use bevy::{
     animation::{AnimationTarget, AnimationTargetId},
-    asset::{io::AssetReader, AsyncReadExt, RenderAssetUsages},
+    asset::{AsyncReadExt, RenderAssetUsages},
     gltf::Gltf,
     platform::collections::{HashMap, HashSet},
     prelude::*,

@@ -7,7 +7,7 @@ use std::{path::PathBuf, sync::Arc};
 use alloy_core::primitives::Address;
 use anyhow::anyhow;
 use bevy::{
-    asset::{io::AssetReader, AsyncReadExt, LoadState},
+    asset::{AsyncReadExt, LoadState},
     ecs::system::SystemParam,
     math::Vec3Swizzles,
     platform::collections::{HashMap, HashSet},

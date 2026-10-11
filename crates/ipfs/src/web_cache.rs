@@ -77,6 +77,26 @@ mod io {
         Err("no previous cache item".into())
     }
 
+    /// The cached bytes for `url`, under either key; `None` when there are none (or no cache).
+    pub async fn read(url: &str) -> Option<Vec<u8>> {
+        async fn read(url: &str) -> Result<Vec<u8>, JsValue> {
+            let cache = open().await?;
+            let (_, response) = find(&cache, url).await?;
+            bytes(&response).await
+        }
+        read(url).await.ok()
+    }
+
+    /// The body of a cached response.
+    pub async fn bytes(response: &Response) -> Result<Vec<u8>, JsValue> {
+        let buffer: js_sys::ArrayBuffer =
+            JsFuture::from(response.array_buffer()?).await?.dyn_into()?;
+        let array = Uint8Array::new(&buffer);
+        let mut data = vec![0u8; array.length() as usize];
+        array.copy_to(&mut data);
+        Ok(data)
+    }
+
     /// Replaces the body of the entry under `key`.
     pub async fn put(cache: &Cache, key: &str, old: &Response, data: &[u8]) -> Result<(), JsValue> {
         let headers = old.headers();

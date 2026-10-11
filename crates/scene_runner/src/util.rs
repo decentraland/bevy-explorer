@@ -6,7 +6,6 @@ use std::{
 
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use bevy::{
-    asset::io::AssetReader,
     prelude::*,
     tasks::{IoTaskPool, Task},
 };
