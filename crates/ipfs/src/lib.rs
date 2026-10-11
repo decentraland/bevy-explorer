@@ -847,7 +847,7 @@ pub struct IpfsIo {
     #[cfg(not(target_arch = "wasm32"))]
     allowed_file_roots: std::sync::RwLock<Vec<PathBuf>>,
     client: reqwest::Client,
-    // downloads under way, by cache key (`share_download`)
+    // downloads under way, by url (`share_download`)
     in_flight: InFlightDownloads,
     #[cfg(feature = "ipfs_debug")]
     debug_overlay_sender: tokio::sync::mpsc::UnboundedSender<IpfsDebug>,
@@ -1790,9 +1790,10 @@ impl IpfsIo {
                     .await?;
                 return Ok(Box::new(AsyncCursor::new(data)));
             };
-            // one download per cache key: a second read of a key already in flight (the same
-            // file under another asset path, say) takes the first's bytes instead of queueing a
-            // download of its own behind everything requested since
+            // one download per url: a second read of a url already in flight (the same file
+            // under another asset path, say) takes the first's bytes instead of queueing a
+            // download of its own behind everything requested since. By url, not by hash: the
+            // bytes are shared before the hash check, and a scene names its own server
             let (download, joined) = self.share_download(key, token, path.to_owned(), remote);
             let mut result = download.result.clone();
             let data = result
@@ -1817,8 +1818,8 @@ impl IpfsIo {
         .await
     }
 
-    /// The download of `key`: the one in flight, or a new one. A download is shared by every
-    /// reader of its key (`joined` says this isn't the first) and lives as long as any of them.
+    /// The download of `remote`: the one in flight, or a new one. A download is shared by every
+    /// reader of its url (`joined` says this isn't the first) and lives as long as any of them.
     fn share_download(
         self: &Arc<Self>,
         key: CacheKey,
@@ -1828,16 +1829,16 @@ impl IpfsIo {
     ) -> (Arc<SharedDownload>, bool) {
         let mut in_flight = self.in_flight.lock().unwrap();
         if let Some(download) = in_flight
-            .get(key.name())
+            .get(&remote)
             .and_then(|(_, download)| download.upgrade())
         {
             debug!("[{token:?}]: remote url: `{remote}` joining in-flight download");
             return (download, true);
         }
-        let name = key.name().to_owned();
+        let name = remote.clone();
         let (sender, result) = watch::channel(None);
         let ipfs = self.clone();
-        let entry = name.clone();
+        let entry = remote.clone();
         let task = IoTaskPool::get().spawn_compat(async move {
             let result = ipfs.clone().download(token, path, remote, Some(key)).await;
             // over, so a later reader starts afresh (from the cache, now it is written). Only
@@ -2003,8 +2004,8 @@ impl IpfsIo {
                 Some(key @ CacheKey::Content(_)) => {
                     web_cache::share(&remote, key.name(), &data, || cacheable(key)).await
                 }
-                Some(CacheKey::Url(_)) => web_cache::keep(&remote, &data).await,
-                None => Ok(()),
+                Some(CacheKey::Url(_)) if !no_cache => web_cache::keep(&remote, &data).await,
+                _ => Ok(()),
             };
             if let Err(e) = kept {
                 warn!("failed to cache `{remote}`: {e:?}");
@@ -2071,13 +2072,13 @@ impl std::ops::Deref for SharedBytes {
     }
 }
 
-/// A download, shared by every reader of its cache key and cancelled with the last of them.
+/// A download, shared by every reader of its url and cancelled with the last of them.
 struct SharedDownload {
     _task: Task<()>,
     result: watch::Receiver<Option<Result<SharedBytes, AssetReaderError>>>,
 }
 
-/// Downloads under way by cache key, each with its request token (`SharedDownload` holds its
+/// Downloads under way by url, each with its request token (`SharedDownload` holds its
 /// task, so a download whose readers are all gone upgrades to nothing).
 type InFlightDownloads = std::sync::Mutex<HashMap<String, (u16, Weak<SharedDownload>)>>;
 
