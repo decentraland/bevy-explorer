@@ -1,9 +1,10 @@
 //! The service worker's asset cache (deploy/web/service_worker.js), as the engine reaches it.
 //! The cache name, the keys and the header here MUST match the worker's.
 //!
-//! The worker stores each response it fetches under its url. An entry under the shared key
-//! answers for every content server, so it is only written here, once the bytes are checked
-//! against the hash (`content_hash`), and under that hash.
+//! The worker only answers from the cache; the engine fills it from what it downloads. An entry
+//! under the shared key answers for every content server, so it is only written once the bytes
+//! are checked against the hash (`content_hash`), and under that hash; a url's response goes
+//! under the url.
 
 // stand-in origin for shared entries: `.invalid` is reserved, so no server's own entries land here
 const SHARED_ORIGIN: &str = "https://shared.invalid";
@@ -45,7 +46,7 @@ mod io {
     use js_sys::Uint8Array;
     use wasm_bindgen::prelude::*;
     use wasm_bindgen_futures::JsFuture;
-    use web_sys::{Cache, CacheStorage, Response, ResponseInit};
+    use web_sys::{Cache, CacheStorage, Headers, Response, ResponseInit};
 
     const CACHE_NAME: &str = "ipfs-path-cache-v2";
     /// On a response the worker answered from its cache.
@@ -113,27 +114,44 @@ mod io {
         Ok(())
     }
 
-    /// Moves `url`'s entry to the shared key for `hash`, if `matches_hash`: whether `data`, the
-    /// response's bytes, are what `hash` names. That is only asked once there is an entry to move.
+    /// Stores `data` under `key` as a fresh response.
+    async fn store(cache: &Cache, key: &str, data: &[u8]) -> Result<(), JsValue> {
+        let headers = Headers::new()?;
+        headers.set("Content-Type", "application/octet-stream")?;
+        headers.set("Content-Length", &data.len().to_string())?;
+
+        let init = ResponseInit::new();
+        init.set_status(200);
+        init.set_headers(&headers);
+
+        let body = Uint8Array::from(data);
+        let response = Response::new_with_opt_buffer_source_and_init(Some(&body), &init)?;
+        JsFuture::from(cache.put_with_str(key, &response)).await?;
+        Ok(())
+    }
+
+    /// Stores `data`, the bytes `url` answered with, under the url's own key.
+    pub async fn keep(url: &str, data: &[u8]) -> Result<(), JsValue> {
+        let [_, own] = keys(url).ok_or("not a url")?;
+        let cache = open().await?;
+        store(&cache, &own, data).await
+    }
+
+    /// Stores `data`, the bytes `url` answered with, under the shared key for `hash`, if
+    /// `matches_hash`: whether they are what `hash` names. The url's own entry, if an older
+    /// worker left one, goes: it is dead weight beside the shared one.
     pub async fn share(
         url: &str,
         hash: &str,
         data: &[u8],
         matches_hash: impl FnOnce() -> bool,
     ) -> Result<(), JsValue> {
-        if !names(url, hash) {
+        if !names(url, hash) || !matches_hash() {
             return Ok(());
         }
         let [shared, own] = keys(url).ok_or("not a url")?;
         let cache = open().await?;
-        // nothing stored: the worker doesn't cache localhost, or the page is not under this worker
-        let Some(stored) = get(&cache, &own).await? else {
-            return Ok(());
-        };
-        if !matches_hash() {
-            return Ok(());
-        }
-        put(&cache, &shared, &stored, data).await?;
+        store(&cache, &shared, data).await?;
         JsFuture::from(cache.delete_with_str(&own)).await?;
         Ok(())
     }

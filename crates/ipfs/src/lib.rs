@@ -1750,9 +1750,11 @@ impl IpfsIo {
             let fail_time = context.failed_remotes.get(&remote).cloned();
             drop(context);
 
-            // in wasm we add a custom header to allow the service worker to cache ipfs requests across content servers
+            // in wasm we add a custom header to allow the service worker to cache ipfs requests
+            // across content servers: anything with a cache key (content by hash, and urls by
+            // their digest), whatever path it was asked for under
             #[cfg(target_arch = "wasm32")]
-            let sw_caches = ipfs_path.content_path().is_some() && cache_key.is_some();
+            let sw_caches = cache_key.is_some();
 
             // the worker's cache is the disk cache here: read it directly, so a cached file
             // doesn't wait on a request slot behind every download in the queue
@@ -1784,15 +1786,14 @@ impl IpfsIo {
             let Some(key) = cache_key else {
                 let data = self
                     .clone()
-                    .download(token, path.to_owned(), ipfs_path, remote, None)
+                    .download(token, path.to_owned(), remote, None)
                     .await?;
                 return Ok(Box::new(AsyncCursor::new(data)));
             };
             // one download per cache key: a second read of a key already in flight (the same
             // file under another asset path, say) takes the first's bytes instead of queueing a
             // download of its own behind everything requested since
-            let (download, joined) =
-                self.share_download(key, token, path.to_owned(), ipfs_path, remote);
+            let (download, joined) = self.share_download(key, token, path.to_owned(), remote);
             let mut result = download.result.clone();
             let data = result
                 .wait_for(Option::is_some)
@@ -1823,7 +1824,6 @@ impl IpfsIo {
         key: CacheKey,
         token: u16,
         path: PathBuf,
-        ipfs_path: IpfsPath,
         remote: String,
     ) -> (Arc<SharedDownload>, bool) {
         let mut in_flight = self.in_flight.lock().unwrap();
@@ -1839,10 +1839,7 @@ impl IpfsIo {
         let ipfs = self.clone();
         let entry = name.clone();
         let task = IoTaskPool::get().spawn_compat(async move {
-            let result = ipfs
-                .clone()
-                .download(token, path, ipfs_path, remote, Some(key))
-                .await;
+            let result = ipfs.clone().download(token, path, remote, Some(key)).await;
             // over, so a later reader starts afresh (from the cache, now it is written). Only
             // this download's own entry goes: cancelled, it was replaced by a newer one
             if let Ok(mut in_flight) = ipfs.in_flight.lock() {
@@ -1867,7 +1864,6 @@ impl IpfsIo {
         self: Arc<Self>,
         token: u16,
         path: PathBuf,
-        ipfs_path: IpfsPath,
         remote: String,
         cache_key: Option<CacheKey>,
     ) -> Result<SharedBytes, AssetReaderError> {
@@ -1881,10 +1877,7 @@ impl IpfsIo {
         };
         // in wasm we add a custom header to allow the service worker to cache ipfs requests across content servers
         #[cfg(target_arch = "wasm32")]
-        let sw_caches = ipfs_path.content_path().is_some() && cache_key.is_some();
-        // only the worker's cache cares what kind of path this is
-        #[cfg(not(target_arch = "wasm32"))]
-        let _ = &ipfs_path;
+        let sw_caches = cache_key.is_some();
 
         debug!("[{token:?}]: remote url: `{remote}` awaiting semaphore");
         // get semaphore to limit concurrent requests
@@ -2002,15 +1995,19 @@ impl IpfsIo {
             }
         };
 
-        // the service worker holds a fresh response per origin; move it to the shared entry
+        // the worker only answers from its cache; fill it: content under its hash, for every
+        // server, once checked; a url under its own key
         #[cfg(target_arch = "wasm32")]
-        if let Some(key @ CacheKey::Content(_)) = &cache_key {
-            if sw_caches && !sw_cached {
-                if let Err(e) =
+        if sw_caches && !sw_cached {
+            let kept = match &cache_key {
+                Some(key @ CacheKey::Content(_)) => {
                     web_cache::share(&remote, key.name(), &data, || cacheable(key)).await
-                {
-                    warn!("failed to share cache item `{remote}`: {e:?}");
                 }
+                Some(CacheKey::Url(_)) => web_cache::keep(&remote, &data).await,
+                None => Ok(()),
+            };
+            if let Err(e) = kept {
+                warn!("failed to cache `{remote}`: {e:?}");
             }
         }
 

@@ -1,6 +1,7 @@
 // MUST stay in sync with crates/ipfs/src/web_cache.rs (cache name, both keys, the cached header):
-// the engine moves entries it has checked to the shared key, and its asset processor reads the
-// raw responses this worker caches and writes the processed bytes back over the same key.
+// this worker only answers from the cache; the engine fills it (content it has checked against
+// its hash under the shared key, a url's response under the url), and its asset processor writes
+// processed bytes back over the entry it read.
 // v2: v1 entries were shared across content servers on the path alone, with nothing checked.
 const CACHE_NAME = 'ipfs-path-cache-v2';
 const CUSTOM_HEADER = 'X-IPFS';
@@ -165,16 +166,17 @@ async function cacheFirstStrategy(request) {
         return fetch(stripCustomHeader(request));
     }
 
-    // Cache entries are keyed by url alone, so only a GET may fill or be answered from one.
+    // Cache entries are keyed by url alone, so only a GET may be answered from one.
     if (request.method !== 'GET') {
         return fetch(stripCustomHeader(request));
     }
 
     // Two keys. The shared one is the hash alone (the last path segment), so every content server
-    // serving a hash hits the same entry. This worker never writes it: any client (a scene
-    // included) can make it fetch and store a response, so what it stores stays under the url it
-    // came from. The engine moves an entry to the shared key once it has checked the bytes
-    // against the hash.
+    // serving a hash hits the same entry. This worker writes neither: any client (a scene
+    // included) can make it fetch, so what it fetched would have to stay under the url it came
+    // from, and the engine already stores what it downloads, under the hash once it has checked
+    // the bytes against it. Storing here would also hold the response until the whole body was
+    // in, which on a slow link makes a large file look like a request that never sent headers.
     const sharedKey = SHARED_ORIGIN + '/' + reqUrl.pathname.split('/').pop();
     const originKey = reqUrl.origin + reqUrl.pathname + reqUrl.search;
 
@@ -200,16 +202,7 @@ async function cacheFirstStrategy(request) {
     }
 
     //If not in cache, fetch from network
-    const networkRequest = stripCustomHeader(request);
-    const networkResponse = await fetch(networkRequest);
-    
-    if (networkResponse.ok) {
-        // Store the new response in the cache
-        const responseToCache = networkResponse.clone();
-        await cache.put(originKey, responseToCache);
-    }
-    
-    return networkResponse;
+    return fetch(stripCustomHeader(request));
 }
 
 function stripCustomHeader(request) {

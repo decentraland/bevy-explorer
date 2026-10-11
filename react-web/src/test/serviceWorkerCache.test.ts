@@ -1,6 +1,6 @@
-// The service worker's asset cache: what it fetches stays under the url it came from; only an
-// entry under the shared key (the hash alone, which the engine writes once it has checked the bytes
-// against that hash) answers for every content server.
+// The service worker's asset cache: the worker only answers from it. The engine fills it: an
+// entry under the shared key (the hash alone, written once it has checked the bytes against that
+// hash) answers for every content server, an entry under a url only that url.
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -46,13 +46,19 @@ describe('service worker asset cache', () => {
   const hash = 'bafkreiexample'
   const path = `/contents/${hash}`
 
-  it('keeps what it fetches with the origin that served it', async () => {
+  it('passes a miss to the network and stores nothing itself', async () => {
     const { asset, network, keys } = serviceWorker()
-    expect(await asset(`https://evil.example${path}`)).toEqual({ body: 'https://evil.example', cached: false })
     expect(await asset(`https://peer.example${path}`)).toEqual({ body: 'https://peer.example', cached: false })
-    expect(await asset(`https://peer.example${path}`)).toEqual({ body: 'https://peer.example', cached: true })
+    expect(await asset(`https://peer.example${path}`)).toEqual({ body: 'https://peer.example', cached: false })
     expect(network).toHaveBeenCalledTimes(2)
-    expect(keys().sort()).toEqual([`https://evil.example${path}`, `https://peer.example${path}`])
+    expect(keys()).toEqual([])
+  })
+
+  it('answers a url from its own entry, and only that url', async () => {
+    const { asset, network } = serviceWorker({ [`https://peer.example${path}`]: 'peer' })
+    expect(await asset(`https://peer.example${path}`)).toEqual({ body: 'peer', cached: true })
+    expect(await asset(`https://evil.example${path}`)).toEqual({ body: 'https://evil.example', cached: false })
+    expect(network).toHaveBeenCalledTimes(1)
   })
 
   it('answers every origin from the shared entry, dropping the origin\'s own copy', async () => {
@@ -70,9 +76,8 @@ describe('service worker asset cache', () => {
   })
 
   it('keys a request by where its path ends, not by what follows a `#`', async () => {
-    const { asset, keys } = serviceWorker()
-    await asset(`https://evil.example/contents/bafkreitarget#${path}`)
-    expect(keys()).toEqual(['https://evil.example/contents/bafkreitarget'])
+    const { asset } = serviceWorker({ [`${SHARED}/bafkreitarget`]: 'target' })
+    expect(await asset(`https://evil.example/contents/bafkreitarget#${path}`)).toEqual({ body: 'target', cached: true })
   })
 
   it('neither stores nor answers anything but a GET', async () => {
