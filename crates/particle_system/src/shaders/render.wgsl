@@ -9,6 +9,9 @@
 #import "embedded://particle_system/shaders/color.wgsl"::color_at
 #import "embedded://particle_system/shaders/sprite_sheet.wgsl"::sprite_uv
 #import "embedded://particle_system/shaders/billboard.wgsl"::quad_axes
+#ifdef TRANSPARENT_FOCUS_OUTPUT
+#import bevy_pbr::view_transformations::depth_ndc_to_view_z
+#endif
 
 @group(2) @binding(0) var<uniform> params: RenderParams;
 @group(2) @binding(1) var<storage, read> particles: array<Particle>;
@@ -26,6 +29,16 @@ struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) uv: vec2<f32>,
     @location(1) color: vec4<f32>,
+}
+
+// matches bevy_pbr::forward_io::FragmentOutput: the transparent pass carries a second
+// target (alpha-weighted view depth + coverage for depth of field) that WebGPU requires
+// every fragment shader to write
+struct FragmentOutput {
+    @location(0) color: vec4<f32>,
+#ifdef TRANSPARENT_FOCUS_OUTPUT
+    @location(1) focus: vec4<f32>,
+#endif
 }
 
 @vertex
@@ -65,18 +78,23 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 }
 
 @fragment
-fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
+fn fragment(in: VertexOutput) -> FragmentOutput {
     var color = in.color;
 #ifdef TEXTURE
     color *= textureSample(color_texture, color_sampler, in.uv);
 #endif
+    var out: FragmentOutput;
 #ifdef BLEND_PREMULTIPLIED_ALPHA
     // additive: premultiplied colour, no coverage
-    return vec4(color.rgb * color.a, 0.0);
+    out.color = vec4(color.rgb * color.a, 0.0);
 #else ifdef BLEND_MULTIPLY
     // multiply blend state is dst * src + dst * (1 - src.a): premultiply so alpha weights it
-    return vec4(color.rgb * color.a, color.a);
+    out.color = vec4(color.rgb * color.a, color.a);
 #else
-    return color;
+    out.color = color;
 #endif
+#ifdef TRANSPARENT_FOCUS_OUTPUT
+    out.focus = vec4(-depth_ndc_to_view_z(in.position.z), 1.0, 0.0, color.a);
+#endif
+    return out;
 }
