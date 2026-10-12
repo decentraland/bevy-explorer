@@ -8,6 +8,7 @@ use dcl_component::proto_components::kernel::apis::{
     VideoTrackSourceType, VideoTracksActiveStreamsData, VideoTracksActiveStreamsResponse,
 };
 use livekit::participant::Participant;
+use livestream_manager::ActiveTransmitter;
 use tokio::{sync::mpsc, task::JoinHandle};
 #[cfg(not(target_arch = "wasm32"))]
 use {
@@ -197,6 +198,7 @@ fn respond_to_rpc_calls(
             &LivekitTrack,
             &PublishedBy,
             AnyOf<(&LivekitSourceCamera, &LivekitSourceScreenshare)>,
+            Has<ActiveTransmitter>,
         ),
         With<Video>,
     >,
@@ -206,13 +208,25 @@ fn respond_to_rpc_calls(
         match call {
             RpcCall::ActiveVideoStreams { response } => {
                 let mut streams = vec![];
-                for (track, published_by, source) in tracks {
+                for (track, published_by, source, has_active_streamer) in tracks {
                     let Ok(participant) = participants.get(published_by.get()) else {
                         continue;
                     };
 
                     let identity = participant.identity().0;
                     let track_sid = format!("livekit://{}/{}", identity, track.sid());
+
+                    if has_active_streamer {
+                        streams.push(VideoTracksActiveStreamsData {
+                            identity: participant.identity().0.clone(),
+                            track_sid: "livekit-video://current-stream".to_owned(),
+                            source_type: match source {
+                                (Some(_), _) => VideoTrackSourceType::VtstCamera as i32,
+                                (_, Some(_)) => VideoTrackSourceType::VtstScreenShare as i32,
+                                _ => VideoTrackSourceType::VtstUnknown as i32,
+                            },
+                        });
+                    }
 
                     streams.push(VideoTracksActiveStreamsData {
                         identity: participant.identity().0,
