@@ -30,7 +30,7 @@ dcl-assert = ["common/dcl-assert"]
 gen-tests = []
 tracy = ["bevy/trace_tracy"]
 inspect = ["dcl_deno/inspect", "system_ui/inspect"]
-hot_reload = ["bevy/file_watcher", "ipfs/hot_reload"]
+hot_reload = ["bevy/file_watcher", "bevy/embedded_watcher", "ipfs/hot_reload"]
 livekit = ["comms/livekit", "system_ui/livekit"]
 ffmpeg = ["av/ffmpeg"]
 social = ["social/social"]
@@ -229,7 +229,6 @@ bevy_kira_audio = { git = "https://github.com/robtfm/bevy_kira_audio", branch = 
 bevy_simple_text_input = { git = "https://github.com/robtfm/bevy_simple_text_input", features = [
   "clipboard",
 ], branch = "0.16" }
-bevy_hanabi = { git = "https://github.com/robtfm/bevy_hanabi", branch = "0.16-dcl", default-features = false }
 directories = "6"
 winreg = "0.50"
 uuid = { version = "1.23", features = ["v4"] }
