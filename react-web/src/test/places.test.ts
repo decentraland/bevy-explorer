@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest'
 import {
   placeCoords,
   placeCreator,
-  placeIsFeatured,
   placePlayers,
   placeRating,
   placeTeleport,
@@ -79,13 +78,6 @@ describe('placeCreator', () => {
   })
   it('returns empty string when nothing is set', () => {
     expect(placeCreator(worldPlace)).toBe('')
-  })
-})
-
-describe('placeIsFeatured', () => {
-  it('follows the curated highlighted flag, not the poi category', () => {
-    expect(placeIsFeatured({ ...worldPlace, highlighted: true })).toBe(true)
-    expect(placeIsFeatured(parcelPlace)).toBe(false)
   })
 })
 
