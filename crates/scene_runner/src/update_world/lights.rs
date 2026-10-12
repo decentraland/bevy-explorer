@@ -117,41 +117,42 @@ impl From<PbGlobalLight> for GlobalLight {
 const SUNRISE: f32 = 6.422;
 const SUNSET: f32 = 18.828;
 
-/// Direction the sunlight travels at `hours` past midnight. Like Unity, the sun crosses the sky
-/// at a steady rate in a vertical plane diagonal to the parcel grid, and carries on below the
-/// horizon to the next sunrise.
-fn sun_direction(hours: f32) -> Vec3 {
-    let since_sunrise = (hours - SUNRISE).rem_euclid(24.0);
-    let day = SUNSET - SUNRISE;
-    // from the sunrise horizon: 0 to PI through the day, PI to 2 PI through the night
-    let angle = if since_sunrise < day {
-        since_sunrise / day * PI
+/// Unity's moonrise and moonset (hours): the moon is up for six and a half hours around 00:45.
+const MOONRISE: f32 = 21.504;
+const MOONSET: f32 = 4.008;
+
+/// Unity's moon arc leans this far from the zenith, so the moon stays low for long shadows.
+const MOON_TILT_DEGREES: f32 = 40.0;
+
+/// Direction a body's light travels at `hours` past midnight. Like Unity, the body rises where
+/// the sun rises, crosses the sky at a steady rate to the opposite point on an arc leaning
+/// `tilt_degrees` from the zenith, and carries on below the horizon to its next rise.
+fn celestial_direction(hours: f32, rise: f32, set: f32, tilt_degrees: f32) -> Vec3 {
+    let since_rise = (hours - rise).rem_euclid(24.0);
+    let up = (set - rise).rem_euclid(24.0);
+    // from the rise horizon: 0 to PI while up, PI to 2 PI while down
+    let angle = if since_rise < up {
+        since_rise / up * PI
     } else {
-        PI + (since_sunrise - day) / (24.0 - day) * PI
+        PI + (since_rise - up) / (24.0 - up) * PI
     };
-    // away from the sun as it rises
-    let morning = Vec3::new(1.0, 0.0, -1.0).normalize();
-    morning * angle.cos() - Vec3::Y * angle.sin()
+    // away from the body as it rises, and away from it at its peak
+    let rising = Vec3::new(1.0, 0.0, -1.0).normalize();
+    let (tilt_sin, tilt_cos) = tilt_degrees.to_radians().sin_cos();
+    let peak = -(Vec3::Y * tilt_cos + Vec3::new(-1.0, 0.0, -1.0).normalize() * tilt_sin);
+    rising * angle.cos() + peak * angle.sin()
 }
 
-/// Direction the moonlight travels at `hours` past midnight. This is unity-explorer's night
-/// light: a great circle high in the south, travelled faster before midnight than after.
-/// Outside Unity's 21:00 to 04:00 night it carries on along the same circle.
+/// Direction the sunlight travels at `hours` past midnight: straight over the zenith in a
+/// vertical plane diagonal to the parcel grid.
+fn sun_direction(hours: f32) -> Vec3 {
+    celestial_direction(hours, SUNRISE, SUNSET, 0.0)
+}
+
+/// Direction the moonlight travels at `hours` past midnight: the sun's arc leaned to one side,
+/// crossed overnight.
 pub fn moon_direction(hours: f32) -> Vec3 {
-    // the moon at midnight, and the direction it travels (bevy axes)
-    const MIDNIGHT: Vec3 = Vec3::new(-0.374_61, 0.446_99, 0.812_32);
-    const TRAVEL: Vec3 = Vec3::new(-0.775_33, 0.329_44, -0.538_83);
-    // degrees per hour before and after midnight
-    const EVENING_RATE: f32 = 8.592;
-    const MORNING_RATE: f32 = 5.295;
-    let since_midnight = (hours + 12.0).rem_euclid(24.0) - 12.0;
-    let rate = if since_midnight < 0.0 {
-        EVENING_RATE
-    } else {
-        MORNING_RATE
-    };
-    let (sin, cos) = (since_midnight * rate).to_radians().sin_cos();
-    -(MIDNIGHT * cos + TRAVEL * sin)
+    celestial_direction(hours, MOONRISE, MOONSET, MOON_TILT_DEGREES)
 }
 
 /// The sunlight's colour (sRGB) at `elevation`, the sine of the sun's elevation: a cubic per
@@ -170,6 +171,20 @@ pub const SUN_COLOR_NOON: Vec3 = Vec3::new(1.0, 0.931, 0.892);
 
 /// The moonlight's colour (sRGB): a violet tint, so the scene stays directional after dark.
 const MOON_COLOR: Vec3 = Vec3::new(0.514, 0.388, 1.0);
+
+/// Sines of the sun and moon discs' angular radii, as the sky draws them (`nishita_cloud.wgsl`:
+/// the sun disc out to a cosine of 0.997, the moon's to 0.99914).
+const SUN_DISC_SIN: f32 = 0.0774;
+const MOON_DISC_SIN: f32 = 0.0415;
+
+/// How much of the directional light is left while both discs are below the horizon.
+const SET_ILLUMINANCE: f32 = 0.01;
+
+/// 0 while a body's disc is entirely below the horizon, 1 once entirely above, ramping across
+/// the crossing. `elevation` is the sine of the body's elevation, `disc_sin` of its radius.
+fn disc_above_horizon(elevation: f32, disc_sin: f32) -> f32 {
+    ((elevation + disc_sin) / (2.0 * disc_sin)).clamp(0.0, 1.0)
+}
 
 fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
     let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
@@ -194,13 +209,17 @@ pub fn update_directional_light(
     let energy = smoothstep(-0.05, 0.3, elevation);
     let dir = MOON_COLOR.lerp(sun_color(elevation), smoothstep(-0.05, 0.05, elevation));
 
-    // the sun lights while it is up and the moon once it has set, never dimmer than the moon's
-    // 1500 lux
-    let dir_illuminance = 1500.0 + smoothstep(0.0, 0.3, elevation) * 5500.0;
+    // the sun lights while it is up and the moon once it has set; the moon's 1500 lux dims to
+    // 1% while both discs are below the horizon, ramping as either disc crosses it
+    let moon_direction = moon_direction(hours);
+    let disc_above = disc_above_horizon(elevation, SUN_DISC_SIN)
+        .max(disc_above_horizon(-moon_direction.y, MOON_DISC_SIN));
+    let dir_illuminance =
+        (1500.0 + smoothstep(0.0, 0.3, elevation) * 5500.0) * SET_ILLUMINANCE.lerp(1.0, disc_above);
     let dir_direction = if elevation > 0.0 {
         sun_direction
     } else {
-        moon_direction(hours)
+        moon_direction
     };
 
     *global_light = SceneGlobalLight {
@@ -553,18 +572,26 @@ mod tests {
     #[test]
     fn moon_follows_unitys_path() {
         let angle = |a: Vec3, b: Vec3| a.angle_between(b).to_degrees();
-        // unity-explorer's night light, from its recorded day cycle (bevy axes, light travel)
+        // unity-explorer's moon light, from its computed celestial path (bevy axes, light travel)
         for (hours, unity) in [
-            (21.0, Vec3::new(0.000_2, -0.259_3, -0.965_8)),
-            (0.0, Vec3::new(0.379_8, -0.438_4, -0.814_6)),
-            (4.0, Vec3::new(0.629_4, -0.535_8, -0.562_8)),
+            (0.0, Vec3::new(0.677_1, -0.715_5, 0.172_0)),
+            (0.756, Vec3::new(0.454_5, -0.766_0, 0.454_5)),
+            (2.0, Vec3::new(-0.024_9, -0.631_9, 0.774_7)),
+            (12.0, Vec3::new(-0.546_0, 0.759_0, -0.354_6)),
         ] {
-            assert!(angle(moon_direction(hours), unity) < 1.0);
+            assert!(angle(moon_direction(hours), unity) < 0.5);
         }
-        // above the horizon from sunset to sunrise
-        for step in 0..=100 {
-            let hours = SUNSET + (24.0 - SUNSET + SUNRISE) * step as f32 / 100.0;
+        // rises where the sun rises and sets where the sun sets
+        assert!(angle(moon_direction(MOONRISE), sun_direction(SUNRISE)) < 0.01);
+        assert!(angle(moon_direction(MOONSET), sun_direction(SUNSET)) < 0.01);
+        // above the horizon from moonrise to moonset, and continuous round the whole day
+        for step in 1..100 {
+            let hours = MOONRISE + (24.0 - MOONRISE + MOONSET) * step as f32 / 100.0;
             assert!(moon_direction(hours).y < 0.0);
+        }
+        for step in 0..2400 {
+            let hours = step as f32 / 100.0;
+            assert!(angle(moon_direction(hours), moon_direction(hours + 0.01)) < 0.3);
         }
     }
 }
