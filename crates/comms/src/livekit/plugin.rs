@@ -214,7 +214,7 @@ fn respond_to_rpc_calls(
                     };
 
                     let identity = participant.identity().0;
-                    let track_sid = format!("livekit://{}/{}", identity, track.sid());
+                    let track_sid = format!("livekit-video://{}/{}", identity, track.sid());
 
                     if has_active_streamer {
                         streams.push(VideoTracksActiveStreamsData {
