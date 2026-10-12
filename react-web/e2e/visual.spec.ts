@@ -57,6 +57,9 @@ async function prepare(page: Page): Promise<void> {
   // Live events data changes by the minute; serve a fixed list (sidebar badge + Events page).
   await page.route(/marketplace-api\.[^/]+\/v1\/catalog/, (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: SHOP_FIXTURE, total: SHOP_FIXTURE.length }) }))
   await page.route(/\/api\/events\?list=/, (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, data: EVENTS_FIXTURE }) }))
+  // Live event head counts: the scene at 0,0 and the galaga world, matching the fixture's numbers.
+  await page.route(/realm-provider[^/]*\/hot-scenes/, (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify([{ parcels: [[0, 0]], usersTotalCount: 12 }]) }))
+  await page.route(/worlds-content-server\.[^/]+\/live-data/, (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: { perWorld: [{ worldName: 'galaga.dcl.eth', users: 3 }] } }) }))
 }
 
 /** Fonts loaded + a beat for layout to settle (animations are frozen at screenshot time anyway). */
