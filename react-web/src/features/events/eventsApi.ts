@@ -44,23 +44,35 @@ export interface LiveHeadcounts {
 type HotScene = { parcels?: [number, number][]; usersTotalCount?: number }
 type WorldsLiveData = { data?: { perWorld?: { worldName: string; users: number }[] | Record<string, number> } }
 
-async function json<T>(url: string, signal?: AbortSignal): Promise<T | null> {
-  const res = await fetch(url, { signal }).catch(() => null)
-  return res?.ok ? ((await res.json()) as T) : null
+// Presence is optional: a failed, non-JSON or malformed reply means "no counts", never an error.
+function json(url: string, signal?: AbortSignal): Promise<unknown> {
+  return fetch(url, { signal })
+    .then((res) => (res.ok ? (res.json() as Promise<unknown>) : null))
+    .catch(() => null)
 }
 
 export async function fetchLiveHeadcounts(signal?: AbortSignal): Promise<LiveHeadcounts> {
   const [scenes, live] = await Promise.all([
-    json<HotScene[]>(`${serviceUrl('realmProvider')}/hot-scenes`, signal),
-    json<WorldsLiveData>(`${serviceUrl('worldsServer')}/live-data`, signal)
+    json(`${serviceUrl('realmProvider')}/hot-scenes`, signal),
+    json(`${serviceUrl('worldsServer')}/live-data`, signal)
   ])
   const parcels = new Map<string, number>()
-  for (const scene of Array.isArray(scenes) ? scenes : []) {
-    for (const [x, y] of scene.parcels ?? []) parcels.set(`${x},${y}`, scene.usersTotalCount ?? 0)
+  for (const scene of Array.isArray(scenes) ? (scenes as HotScene[]) : []) {
+    const users = typeof scene?.usersTotalCount === 'number' ? scene.usersTotalCount : 0
+    for (const parcel of Array.isArray(scene?.parcels) ? scene.parcels : []) {
+      if (Array.isArray(parcel)) parcels.set(`${parcel[0]},${parcel[1]}`, users)
+    }
   }
-  const perWorld = live?.data?.perWorld
-  const entries = Array.isArray(perWorld) ? perWorld.map((w) => [w.worldName, w.users] as const) : Object.entries(perWorld ?? {})
-  const worlds = new Map(entries.map(([name, users]) => [name.toLowerCase(), users]))
+  const perWorld = (live as WorldsLiveData | null)?.data?.perWorld
+  const entries: [unknown, unknown][] = Array.isArray(perWorld)
+    ? perWorld.map((w) => [w?.worldName, w?.users])
+    : perWorld && typeof perWorld === 'object'
+      ? Object.entries(perWorld)
+      : []
+  const worlds = new Map<string, number>()
+  for (const [name, users] of entries) {
+    if (typeof name === 'string' && typeof users === 'number') worlds.set(name.toLowerCase(), users)
+  }
   return { parcels, worlds }
 }
 

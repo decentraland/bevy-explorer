@@ -60,10 +60,9 @@ export function EventsPage({
     setLoading(true)
     setError(null)
     setHeadcounts(null)
-    Promise.all([fetchEvents(section, ctrl.signal), section === 'live' ? fetchLiveHeadcounts(ctrl.signal) : null]).then(
-      ([data, counts]) => {
+    fetchEvents(section, ctrl.signal).then(
+      (data) => {
         setList(data)
-        setHeadcounts(counts)
         setLoading(false)
       },
       (e: unknown) => {
@@ -72,6 +71,8 @@ export function EventsPage({
         setLoading(false)
       }
     )
+    // The list never waits on presence: live counts fill in when (and if) they arrive.
+    if (section === 'live') void fetchLiveHeadcounts(ctrl.signal).then((counts) => !ctrl.signal.aborted && setHeadcounts(counts))
     return () => ctrl.abort()
   }, [events.open, section, attempt])
 
@@ -111,7 +112,7 @@ export function EventsPage({
         ) : (
           <DiscoverGrid>
             {list.map((e) => (
-              <EventCard key={e.id} event={e} people={headcounts ? eventPeopleNow(e, headcounts) : e.total_attendees} onClick={() => visit(e)} />
+              <EventCard key={e.id} event={e} people={section === 'upcoming' ? e.total_attendees : headcounts ? eventPeopleNow(e, headcounts) : undefined} onClick={() => visit(e)} />
             ))}
           </DiscoverGrid>
         )}

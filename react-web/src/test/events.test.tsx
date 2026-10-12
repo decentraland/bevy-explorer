@@ -17,11 +17,14 @@ function serveEvents(...responses: (DclEvent[] | 'down')[]): void {
 function servePresence(presence: { hotScenes?: unknown; liveData?: unknown }, ...responses: (DclEvent[] | 'down')[]): void {
   const queue = [...responses]
   const reply = (body: unknown): Response => (body === undefined ? new Response('', { status: 503 }) : new Response(JSON.stringify(body)))
+  // 'html' = a 200 gateway page instead of JSON; 'hang' = never answers.
+  const presenceReply = (body: unknown): Promise<Response> =>
+    body === 'hang' ? new Promise(() => {}) : Promise.resolve(body === 'html' ? new Response('<html>gateway</html>', { headers: { 'content-type': 'text/html' } }) : reply(body))
   vi.stubGlobal(
     'fetch',
     vi.fn((url: string) => {
-      if (url.includes('/hot-scenes')) return Promise.resolve(reply(presence.hotScenes))
-      if (url.includes('/live-data')) return Promise.resolve(reply(presence.liveData))
+      if (url.includes('/hot-scenes')) return presenceReply(presence.hotScenes)
+      if (url.includes('/live-data')) return presenceReply(presence.liveData)
       const r = queue.shift() ?? []
       return Promise.resolve(r === 'down' ? reply(undefined) : reply({ ok: true, data: r }))
     })
@@ -75,6 +78,13 @@ describe('events', () => {
     render(<EventsPage events={{ open: true, toggle: vi.fn() }} profile={fakeProfileState()} onNavigate={vi.fn()} onTeleport={vi.fn()} onVisitWorld={vi.fn()} />)
     expect(await within(await screen.findByRole('button', { name: 'Plaza party' })).findByText('11')).toBeInTheDocument()
     expect(within(screen.getByRole('button', { name: 'Galaga night' })).getByText('3')).toBeInTheDocument()
+  })
+
+  it('shows the events when presence answers with HTML or never answers', async () => {
+    servePresence({ hotScenes: 'html', liveData: 'hang' }, [parcel, world])
+    render(<EventsPage events={{ open: true, toggle: vi.fn() }} profile={fakeProfileState()} onNavigate={vi.fn()} onTeleport={vi.fn()} onVisitWorld={vi.fn()} />)
+    expect(await screen.findByRole('button', { name: 'Plaza party' })).toBeInTheDocument()
+    expect(screen.queryByText("Couldn't load events")).not.toBeInTheDocument()
   })
 
   it('has no destination for a world event without a server', () => {
