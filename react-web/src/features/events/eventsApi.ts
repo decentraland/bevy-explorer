@@ -1,7 +1,7 @@
 // Client for the public Decentraland events API (events.<base domain>/api/events).
 
 import { useEffect, useState } from 'react'
-import { BASE_DOMAIN } from '../../lib/baseDomain'
+import { BASE_DOMAIN, serviceUrl } from '../../lib/baseDomain'
 
 export const EVENTS_API = `https://events.${BASE_DOMAIN}/api/events`
 // Unity refreshes the sidebar's live counter every 3 minutes (SidebarController.FillLiveEventsAsync).
@@ -30,6 +30,43 @@ export async function fetchEvents(list: EventsList, signal?: AbortSignal): Promi
   const body = (await res.json()) as { ok?: boolean; data?: DclEvent[] }
   if (body.ok === false || !Array.isArray(body.data)) throw new Error('Events service returned an unexpected response')
   return body.data
+}
+
+// People in the scene right now, keyed the way an event points at its venue. total_attendees is
+// RSVPs, not presence; decentraland.org/events reads live counts from hot-scenes the same way.
+export interface LiveHeadcounts {
+  /** Every parcel of a populated Genesis City scene → that scene's head count. */
+  parcels: Map<string, number>
+  /** World name (lowercase) → head count. */
+  worlds: Map<string, number>
+}
+
+type HotScene = { parcels?: [number, number][]; usersTotalCount?: number }
+type WorldsLiveData = { data?: { perWorld?: { worldName: string; users: number }[] | Record<string, number> } }
+
+async function json<T>(url: string, signal?: AbortSignal): Promise<T | null> {
+  const res = await fetch(url, { signal }).catch(() => null)
+  return res?.ok ? ((await res.json()) as T) : null
+}
+
+export async function fetchLiveHeadcounts(signal?: AbortSignal): Promise<LiveHeadcounts> {
+  const [scenes, live] = await Promise.all([
+    json<HotScene[]>(`${serviceUrl('realmProvider')}/hot-scenes`, signal),
+    json<WorldsLiveData>(`${serviceUrl('worldsServer')}/live-data`, signal)
+  ])
+  const parcels = new Map<string, number>()
+  for (const scene of Array.isArray(scenes) ? scenes : []) {
+    for (const [x, y] of scene.parcels ?? []) parcels.set(`${x},${y}`, scene.usersTotalCount ?? 0)
+  }
+  const perWorld = live?.data?.perWorld
+  const entries = Array.isArray(perWorld) ? perWorld.map((w) => [w.worldName, w.users] as const) : Object.entries(perWorld ?? {})
+  const worlds = new Map(entries.map(([name, users]) => [name.toLowerCase(), users]))
+  return { parcels, worlds }
+}
+
+export function eventPeopleNow(e: DclEvent, counts: LiveHeadcounts): number {
+  if (e.world) return counts.worlds.get((e.server ?? '').toLowerCase()) ?? 0
+  return counts.parcels.get(`${e.x},${e.y}`) ?? 0
 }
 
 export type EventDestination = { kind: 'world'; realm: string } | { kind: 'parcel'; x: number; y: number }

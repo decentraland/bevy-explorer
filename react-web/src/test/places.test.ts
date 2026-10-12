@@ -83,12 +83,9 @@ describe('placeCreator', () => {
 })
 
 describe('placeIsFeatured', () => {
-  it('is true when categories include poi', () => {
-    expect(placeIsFeatured(parcelPlace)).toBe(true)
-  })
-  it('is false otherwise', () => {
-    expect(placeIsFeatured(worldPlace)).toBe(false)
-    expect(placeIsFeatured({ ...parcelPlace, categories: ['social'] })).toBe(false)
+  it('follows the curated highlighted flag, not the poi category', () => {
+    expect(placeIsFeatured({ ...worldPlace, highlighted: true })).toBe(true)
+    expect(placeIsFeatured(parcelPlace)).toBe(false)
   })
 })
 

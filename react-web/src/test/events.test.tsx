@@ -9,12 +9,23 @@ import { fakeProfileState, fakeSession } from './harness'
 const parcel: DclEvent = { id: 'p', name: 'Plaza party', x: -9, y: 12, live: true, start_at: '2026-09-25T10:00:00Z', total_attendees: 4 }
 const world: DclEvent = { id: 'w', name: 'Galaga night', x: 0, y: 0, world: true, server: 'crazylagg.dcl.eth', live: true, start_at: '2026-09-25T10:00:00Z' }
 
-function serveEvents(...responses: (DclEvent[] | 'down')[]): ReturnType<typeof vi.fn> {
-  const fetchMock = vi.fn()
-  for (const r of responses)
-    fetchMock.mockResolvedValueOnce(r === 'down' ? new Response('', { status: 503 }) : new Response(JSON.stringify({ ok: true, data: r })))
-  vi.stubGlobal('fetch', fetchMock)
-  return fetchMock
+// Events responses in call order; hot-scenes / worlds live-data from `presence` (absent = down).
+function serveEvents(...responses: (DclEvent[] | 'down')[]): void {
+  servePresence({}, ...responses)
+}
+
+function servePresence(presence: { hotScenes?: unknown; liveData?: unknown }, ...responses: (DclEvent[] | 'down')[]): void {
+  const queue = [...responses]
+  const reply = (body: unknown): Response => (body === undefined ? new Response('', { status: 503 }) : new Response(JSON.stringify(body)))
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((url: string) => {
+      if (url.includes('/hot-scenes')) return Promise.resolve(reply(presence.hotScenes))
+      if (url.includes('/live-data')) return Promise.resolve(reply(presence.liveData))
+      const r = queue.shift() ?? []
+      return Promise.resolve(r === 'down' ? reply(undefined) : reply({ ok: true, data: r }))
+    })
+  )
 }
 
 afterEach(() => vi.unstubAllGlobals())
@@ -51,6 +62,19 @@ describe('events', () => {
     expect(await screen.findByText("Couldn't load events")).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(await screen.findByRole('button', { name: 'Plaza party' })).toBeInTheDocument()
+  })
+
+  it('counts the people in the scene now on live events, not the RSVPs', async () => {
+    servePresence(
+      {
+        hotScenes: [{ parcels: [[-9, 12], [-9, 13]], usersTotalCount: 11 }],
+        liveData: { data: { perWorld: [{ worldName: 'CrazyLagg.dcl.eth', users: 3 }] } }
+      },
+      [parcel, world]
+    )
+    render(<EventsPage events={{ open: true, toggle: vi.fn() }} profile={fakeProfileState()} onNavigate={vi.fn()} onTeleport={vi.fn()} onVisitWorld={vi.fn()} />)
+    expect(await within(await screen.findByRole('button', { name: 'Plaza party' })).findByText('11')).toBeInTheDocument()
+    expect(within(screen.getByRole('button', { name: 'Galaga night' })).getByText('3')).toBeInTheDocument()
   })
 
   it('has no destination for a world event without a server', () => {

@@ -3,7 +3,7 @@
 
 import { serviceUrl } from '../../lib/baseDomain'
 import { EVENTS_API, type DclEvent } from '../events/eventsApi'
-import { DEFAULT_PLACES_ARGS, fetchLiveWorlds, fetchPlaces, placePlayers, type DiscoverPlace } from '../places/placesApi'
+import { LIVE_FEED_ARGS, fetchDestinations, isHiddenPlace, placePlayers, type DiscoverPlace } from '../places/placesApi'
 import { getPref, PREF, setPref } from '../../lib/prefs'
 
 const PLACES_API = `${serviceUrl('places')}/api`
@@ -67,13 +67,9 @@ export function fetchLiveEvents(): Promise<LiveEvent[]> {
 /** Places and worlds with people in them right now, busiest first. */
 export function fetchLivePlaces(): Promise<DiscoverPlace[]> {
   return cached('livePlaces', async () => {
-    const [places, worlds] = await Promise.all([
-      fetchPlaces(DEFAULT_PLACES_ARGS).then((r) => r.data).catch(() => []),
-      fetchLiveWorlds().catch(() => [])
-    ])
-    const ids = new Set(places.map((p) => p.id))
-    return [...places, ...worlds.filter((w) => !ids.has(w.id))]
-      .filter((p) => placePlayers(p) > 0)
+    const feed = await fetchDestinations(LIVE_FEED_ARGS).then((r) => r.data)
+    return feed
+      .filter((p) => !isHiddenPlace(p) && placePlayers(p) > 0)
       .sort((a, b) => placePlayers(b) - placePlayers(a))
       .slice(0, LIVE_PLACES_MAX)
   })

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { BrowseLoading, BrowsePanel, BrowseToolbar, DiscoverCard, DiscoverGrid, EmptyState, Tabs, type TabItem } from '../../design'
 import { MainMenuShell } from '../menu/MainMenuShell'
 import type { EventsState, ProfileState } from '../session/useEngineSession'
-import { eventDestination, eventLocation, fetchEvents, type DclEvent, type EventsList } from './eventsApi'
+import { eventDestination, eventLocation, eventPeopleNow, fetchEvents, fetchLiveHeadcounts, type DclEvent, type EventsList, type LiveHeadcounts } from './eventsApi'
 
 const SECTIONS: TabItem<EventsList>[] = [
   { id: 'live', label: 'Live now' },
@@ -17,14 +17,14 @@ function when(e: DclEvent): string {
   return new Date(e.start_at).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
 
-function EventCard({ event, onClick }: { event: DclEvent; onClick: () => void }): React.JSX.Element {
+function EventCard({ event, people, onClick }: { event: DclEvent; people: number | undefined; onClick: () => void }): React.JSX.Element {
   return (
     <DiscoverCard
       id={event.id}
       title={event.name}
       image={event.image}
       live={event.live}
-      count={event.total_attendees}
+      count={people}
       byline={when(event)}
       location={{ text: eventLocation(event), world: event.world === true }}
       label={event.name}
@@ -48,6 +48,7 @@ export function EventsPage({
 }): React.JSX.Element | null {
   const [section, setSection] = useState<EventsList>('live')
   const [list, setList] = useState<DclEvent[]>([])
+  const [headcounts, setHeadcounts] = useState<LiveHeadcounts | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
@@ -58,9 +59,11 @@ export function EventsPage({
     const ctrl = new AbortController()
     setLoading(true)
     setError(null)
-    fetchEvents(section, ctrl.signal).then(
-      (data) => {
+    setHeadcounts(null)
+    Promise.all([fetchEvents(section, ctrl.signal), section === 'live' ? fetchLiveHeadcounts(ctrl.signal) : null]).then(
+      ([data, counts]) => {
         setList(data)
+        setHeadcounts(counts)
         setLoading(false)
       },
       (e: unknown) => {
@@ -108,7 +111,7 @@ export function EventsPage({
         ) : (
           <DiscoverGrid>
             {list.map((e) => (
-              <EventCard key={e.id} event={e} onClick={() => visit(e)} />
+              <EventCard key={e.id} event={e} people={headcounts ? eventPeopleNow(e, headcounts) : e.total_attendees} onClick={() => visit(e)} />
             ))}
           </DiscoverGrid>
         )}

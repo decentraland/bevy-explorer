@@ -1,6 +1,6 @@
-// The Places browser, matched to the "What's On" design: three stacked sections —
-//   1. LIVE NOW    — the 4 most-populated places (a single full-width row)
-//   2. FEATURED    — places tagged as points of interest
+// The Places browser, matched to the "What's On" design and decentraland.org/places: three stacked sections —
+//   1. LIVE NOW    — the 4 busiest destinations, places and worlds (a single full-width row)
+//   2. FEATURED    — the places API's curated (highlighted) set
 //   3. ALL          — a toolbar (Explore all / Favourites / My places + search + Any Category +
 //                     Sort by) over a purple grid panel of every place.
 // Live Now + Featured are curated highlights shown only on the default Explore-all view (no search,
@@ -12,7 +12,7 @@ import { BrowseControl, BrowseLoading, BrowsePanel, BrowseToolbar, DiscoverGrid,
 import { PlaceCard } from './PlaceCard'
 import { FeaturedCarousel } from './FeaturedCarousel'
 import { usePlaces, type PlacesSection, type PlacesSort } from './usePlaces'
-import { placeIsFeatured, placePlayers, type DiscoverPlace } from './placesApi'
+import { isHiddenPlace, placePlayers, type DiscoverPlace } from './placesApi'
 import styles from './PlacesPage.module.css'
 
 const SECTIONS: TabItem<PlacesSection>[] = [
@@ -22,8 +22,10 @@ const SECTIONS: TabItem<PlacesSection>[] = [
 ]
 
 const LIVE_NOW_LIMIT = 4
+// decentraland.org/places' `dapps-places-live-min-user` (min_users variant) in production.
+const LIVE_MIN_USERS = 0
 
-// "Any Category" dropdown — labels map to the usePlaces category id (featured = only_pois).
+// "Any Category" dropdown — labels map to the usePlaces category id (featured = only_highlighted).
 const CATEGORY_OPTIONS = ['Any Category', 'Featured', 'Social', 'Music', 'Art', 'Game', 'Fashion', 'Education', 'Shop', 'Sports', 'Business']
 function categoryId(label: string): string {
   return label === 'Any Category' ? 'all' : label.toLowerCase()
@@ -59,7 +61,7 @@ export function PlacesBrowser({
   headExtra?: React.ReactNode
   onPick: (place: DiscoverPlace) => void
 }): React.JSX.Element {
-  const { places: list, liveWorlds, loading, error, search, setSearch, category, setCategory, sort, setSort, section, setSection } = usePlaces()
+  const { places: list, liveFeed, featured: featuredFeed, loading, error, search, setSearch, category, setCategory, sort, setSort, section, setSection } = usePlaces()
   // Local input value, debounced into the hook's `search` so we don't refetch on every keystroke.
   const [draft, setDraft] = useState(search)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -72,25 +74,27 @@ export function PlacesBrowser({
     }
   }, [draft, setSearch])
 
-  // Highlights are derived from the full Explore-all list (most populated first / points of interest).
-  // Each place belongs to ONE section only — priority Live Now → Featured → the discover grid — so a
-  // place like Genesis Plaza (populated AND a POI) doesn't repeat across all three.
-  // Live Now pools places with live worlds (worlds-content-server counts; /places is Genesis only).
-  const liveNow = useMemo(() => {
-    const ids = new Set(list.map((p) => p.id))
-    return [...list, ...liveWorlds.filter((w) => !ids.has(w.id))]
-      .filter((p) => placePlayers(p) > 0)
-      .sort((a, b) => placePlayers(b) - placePlayers(a))
-      .slice(0, LIVE_NOW_LIMIT)
-  }, [list, liveWorlds])
+  // Each destination shows in ONE section only — Live Now → Featured → the grid — as on decentraland.org/places.
+  const liveNow = useMemo(
+    () =>
+      liveFeed
+        .filter((p) => !isHiddenPlace(p) && placePlayers(p) >= LIVE_MIN_USERS)
+        .sort((a, b) => placePlayers(b) - placePlayers(a))
+        .slice(0, LIVE_NOW_LIMIT),
+    [liveFeed]
+  )
   const liveIds = useMemo(() => new Set(liveNow.map((p) => p.id)), [liveNow])
-  const featured = useMemo(() => list.filter((p) => placeIsFeatured(p) && !liveIds.has(p.id)), [list, liveIds])
+  const featured = useMemo(
+    () => featuredFeed.filter((p) => !isHiddenPlace(p) && !liveIds.has(p.id)).sort((a, b) => placePlayers(b) - placePlayers(a)),
+    [featuredFeed, liveIds]
+  )
   const showHighlights = section === 'all' && category === 'all' && search.trim() === '' && !loading && !error
   // The discover grid shows everything not already surfaced in a highlight section above it.
   const mainList = useMemo(() => {
-    if (!showHighlights) return list
+    const kept = list.filter((p) => !isHiddenPlace(p))
+    if (!showHighlights) return kept
     const featuredIds = new Set(featured.map((p) => p.id))
-    return list.filter((p) => !liveIds.has(p.id) && !featuredIds.has(p.id))
+    return kept.filter((p) => !liveIds.has(p.id) && !featuredIds.has(p.id))
   }, [list, showHighlights, liveIds, featured])
 
   // Live Now is a fixed 4-up row: auto-fill would take the column count from the viewport (3 at
