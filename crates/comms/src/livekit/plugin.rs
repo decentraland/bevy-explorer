@@ -211,9 +211,12 @@ fn respond_to_rpc_calls(
                         continue;
                     };
 
+                    let identity = participant.identity().0;
+                    let track_sid = format!("livekit://{}/{}", identity, track.sid());
+
                     streams.push(VideoTracksActiveStreamsData {
                         identity: participant.identity().0,
-                        track_sid: track.sid().to_string(),
+                        track_sid,
                         source_type: match source {
                             (Some(_), _) => VideoTrackSourceType::VtstCamera as i32,
                             (_, Some(_)) => VideoTrackSourceType::VtstScreenShare as i32,
