@@ -1,11 +1,13 @@
-use bevy::prelude::*;
+use bevy::{ecs::relationship::Relationship, prelude::*};
 use common::{
     debug_panic,
     rpc::{RpcCall, RpcCallEvent, RpcOrigin},
+    structs::PrimaryUser,
 };
 use dcl_component::proto_components::kernel::apis::{
     VideoTrackSourceType, VideoTracksActiveStreamsData, VideoTracksActiveStreamsResponse,
 };
+use livekit::participant::Participant;
 use tokio::{sync::mpsc, task::JoinHandle};
 #[cfg(not(target_arch = "wasm32"))]
 use {
@@ -27,8 +29,8 @@ use crate::{
         room::plugin::LivekitRoomPlugin,
         runtime::LivekitRuntimePlugin,
         track::{
-            plugin::LivekitTrackPlugin, Camera as LivekitSourceCamera, LivekitTrack, Publishing,
-            ScreenshareVideo as LivekitSourceScreenshare, Video,
+            plugin::LivekitTrackPlugin, Camera as LivekitSourceCamera, LivekitTrack, PublishedBy,
+            Publishing, ScreenshareVideo as LivekitSourceScreenshare, Video,
         },
         ConnectionAvailability, LivekitChannelControl, LivekitNetworkMessage, LivekitRuntime,
         LivekitTransport, StartLivekit,
@@ -189,52 +191,35 @@ fn respond_to_audio_settings_change(
 #[expect(clippy::type_complexity, reason = "Queries are complex")]
 fn respond_to_rpc_calls(
     mut rpc_calls: EventReader<RpcCallEvent>,
-    scene_rooms: Query<(Entity, &SceneRoom)>,
-    transports: Query<&HostingParticipants, With<Transport>>,
-    participants: Query<(&LivekitParticipant, &Publishing)>,
+    participants: Query<&LivekitParticipant>,
     tracks: Query<
         (
             &LivekitTrack,
+            &PublishedBy,
             AnyOf<(&LivekitSourceCamera, &LivekitSourceScreenshare)>,
         ),
         With<Video>,
     >,
 ) {
-    for RpcCallEvent { origin, call } in rpc_calls.read() {
+    for RpcCallEvent { origin: _, call } in rpc_calls.read() {
         #[expect(clippy::single_match, reason = "may be expanded later")]
         match call {
             RpcCall::ActiveVideoStreams { response } => {
-                let RpcOrigin::Scene { hash, .. } = origin else {
-                    error!("ActiveVideoStreams RpcCall with non-scene origin.");
-                    continue;
-                };
-                let Some((transport, _)) = scene_rooms
-                    .iter()
-                    .find(|(_, scene_room)| scene_room.0.as_str() == &**hash)
-                else {
-                    debug!("No mapping between RpcCall origin and a transport.");
-                    continue;
-                };
-                let Ok(hosting_participants) = transports.get(transport) else {
-                    error!("Mapping between RpcCall origin and a transport is invalid.");
-                    continue;
-                };
-
                 let mut streams = vec![];
-                for (participant, publishing) in
-                    participants.iter_many(hosting_participants.collection())
-                {
-                    for (track, source) in tracks.iter_many(publishing.collection()) {
-                        streams.push(VideoTracksActiveStreamsData {
-                            identity: participant.identity().0,
-                            track_sid: track.sid().to_string(),
-                            source_type: match source {
-                                (Some(_), _) => VideoTrackSourceType::VtstCamera as i32,
-                                (_, Some(_)) => VideoTrackSourceType::VtstScreenShare as i32,
-                                _ => VideoTrackSourceType::VtstUnknown as i32,
-                            },
-                        });
-                    }
+                for (track, published_by, source) in tracks {
+                    let Ok(participant) = participants.get(published_by.get()) else {
+                        continue;
+                    };
+
+                    streams.push(VideoTracksActiveStreamsData {
+                        identity: participant.identity().0,
+                        track_sid: track.sid().to_string(),
+                        source_type: match source {
+                            (Some(_), _) => VideoTrackSourceType::VtstCamera as i32,
+                            (_, Some(_)) => VideoTrackSourceType::VtstScreenShare as i32,
+                            _ => VideoTrackSourceType::VtstUnknown as i32,
+                        },
+                    });
                 }
                 response.send(VideoTracksActiveStreamsResponse { streams });
             }
