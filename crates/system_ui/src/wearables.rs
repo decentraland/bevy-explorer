@@ -1179,16 +1179,16 @@ fn update_selected_item(
             WearableCategory::EYEBROWS | WearableCategory::FACIAL_HAIR | WearableCategory::HAIR => {
                 (
                     "flex".to_owned(),
-                    avatar.0.hair_color.unwrap_or_default().convert_linear_rgb(),
+                    avatar.0.hair_color.unwrap_or_default().convert_srgb(),
                 )
             }
             WearableCategory::EYES => (
                 "flex".to_owned(),
-                avatar.0.eye_color.unwrap_or_default().convert_linear_rgb(),
+                avatar.0.eye_color.unwrap_or_default().convert_srgb(),
             ),
             WearableCategory::BODY_SHAPE => (
                 "flex".to_owned(),
-                avatar.0.skin_color.unwrap_or_default().convert_linear_rgb(),
+                avatar.0.skin_color.unwrap_or_default().convert_srgb(),
             ),
             _ => ("none".to_owned(), default()),
         };
@@ -1221,7 +1221,7 @@ fn update_selected_item(
                     WearableCategory::BODY_SHAPE => &mut avatar.0.skin_color,
                     _ => panic!(),
                 };
-                *target = Some(picker.get_linear().convert_linear_rgb());
+                *target = Some(picker.get_linear().convert_srgb());
 
                 // and photobooth
                 booth.update_shape(instance, avatar.clone());

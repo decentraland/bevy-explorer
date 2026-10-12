@@ -785,7 +785,7 @@ fn update_render_avatar(
                             g: 0.462,
                             b: 0.356,
                         })
-                        .convert_linear_rgb(),
+                        .convert_srgb(),
                     hair_color: selection
                         .shape
                         .0
@@ -795,7 +795,7 @@ fn update_render_avatar(
                             g: 0.142,
                             b: 0.0,
                         })
-                        .convert_linear_rgb(),
+                        .convert_srgb(),
                     eyes_color: selection
                         .shape
                         .0
@@ -805,7 +805,7 @@ fn update_render_avatar(
                             g: 0.462,
                             b: 0.356,
                         })
-                        .convert_linear_rgb(),
+                        .convert_srgb(),
                     bounds: maybe_scene_ent
                         .and_then(|se| scenes.get(se.root).ok())
                         .map(|ctx| ctx.scene_bounds.clone())
