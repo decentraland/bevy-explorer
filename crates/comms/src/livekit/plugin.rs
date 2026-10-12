@@ -1,13 +1,11 @@
 use bevy::{ecs::relationship::Relationship, prelude::*};
 use common::{
     debug_panic,
-    rpc::{RpcCall, RpcCallEvent, RpcOrigin},
-    structs::PrimaryUser,
+    rpc::{RpcCall, RpcCallEvent},
 };
 use dcl_component::proto_components::kernel::apis::{
     VideoTrackSourceType, VideoTracksActiveStreamsData, VideoTracksActiveStreamsResponse,
 };
-use livekit::participant::Participant;
 use livestream_manager::ActiveTransmitter;
 use tokio::{sync::mpsc, task::JoinHandle};
 #[cfg(not(target_arch = "wasm32"))]
@@ -26,17 +24,17 @@ use crate::{
     global_crdt::NetworkUpdate,
     livekit::{
         mic::MicPlugin,
-        participant::{plugin::LivekitParticipantPlugin, HostingParticipants, LivekitParticipant},
+        participant::{plugin::LivekitParticipantPlugin, LivekitParticipant},
         room::plugin::LivekitRoomPlugin,
         runtime::LivekitRuntimePlugin,
         track::{
             plugin::LivekitTrackPlugin, Camera as LivekitSourceCamera, LivekitTrack, PublishedBy,
-            Publishing, ScreenshareVideo as LivekitSourceScreenshare, Video,
+            ScreenshareVideo as LivekitSourceScreenshare, Video,
         },
         ConnectionAvailability, LivekitChannelControl, LivekitNetworkMessage, LivekitRuntime,
         LivekitTransport, StartLivekit,
     },
-    SceneRoom, Transport, TransportType,
+    Transport, TransportType,
 };
 
 pub struct LivekitPlugin;
