@@ -77,9 +77,8 @@ const HIDE_HUD = bootMode().hideHud
 // or a non-Chromium desktop browser (the engine bundle renders its own "Browser Not Supported" page
 // there — see deploy/web/index.html — which the HUD would otherwise cover, leaving login frozen at
 // 0%). `?gate=1` forces the mobile variant, `?gate=browser` the browser variant, `?gate=gpu` the
-// no-GPU variant (all for testing); `?nogate=1` bypasses; the shared `bypass_browser_check` cookie
-// ("try anyway") also bypasses. The mobile/browser checks are synchronous (UA); the real no-GPU
-// detection is async (see useGpuProbe) — `?gate=gpu` short-circuits it here for a deterministic gate.
+// no-GPU variant (all for testing); `?nogate=1` bypasses. The mobile/browser checks are synchronous
+// (UA); the real no-GPU detection is async (see useGpuProbe) — `?gate=gpu` short-circuits it here for a deterministic gate.
 function gateReason(): 'mobile' | 'browser' | 'gpu' | null {
   // Precedence: a real device constraint wins over a test override — mobile is checked before
   // `?gate=browser`, so on an actual phone that param still (correctly) yields the mobile variant.
@@ -89,7 +88,7 @@ function gateReason(): 'mobile' | 'browser' | 'gpu' | null {
   if (isMobile() || params.get('gate') === '1') return 'mobile'
   if (params.get('gate') === 'browser') return 'browser'
   if (params.get('gate') === 'gpu') return 'gpu'
-  if (!isChromiumBased() && !hasBypassCookie()) return 'browser'
+  if (!isChromiumBased()) return 'browser'
   // inside the shell the engine's SharedArrayBuffer needs Document-Isolation-Policy (Chrome 137+)
   if (inShell && !crossOriginIsolated) return 'browser'
   return null

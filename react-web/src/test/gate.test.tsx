@@ -59,11 +59,11 @@ describe('browser gate (non-Chromium desktop)', () => {
     expect(isChromiumBased()).toBe(false)
   })
 
-  it('the browser variant shows a Download Chrome link + try-anyway, no store links', () => {
+  it('the browser variant shows a Download Chrome link, no try-anyway or store links', () => {
     render(<MobileGate reason="browser" />)
     expect(screen.getByRole('heading', { name: /Browser Not Supported/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Download Chrome/i })).toHaveAttribute('href', 'https://www.google.com/chrome/')
-    expect(screen.getByRole('button', { name: /try anyway/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /try anyway/i })).toBeNull()
     expect(screen.queryByRole('link', { name: /App Store|Google Play/i })).toBeNull()
   })
 })

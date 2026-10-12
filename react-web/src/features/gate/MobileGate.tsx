@@ -1,6 +1,5 @@
 // Gate — shown instead of the HUD when the engine can't run: on a mobile browser (→ native apps) or
-// a non-Chromium desktop browser (→ "use Chrome"). Copy, store links, and the Chrome bypass mirror
-// the engine bundle's own gate (deploy/web/index.html) so the two stay consistent.
+// a non-Chromium desktop browser (→ "use Chrome", no bypass: the engine can't run there).
 //
 // KEEP IN SYNC with deploy/web/index.html: the store/Chrome URLs and the Apple/Google/Chrome SVGs are
 // duplicated there (the engine loader gates before react-web mounts, so it can't import from here).
@@ -145,11 +144,6 @@ export function MobileGate({ reason = 'mobile' }: { reason?: 'mobile' | 'browser
               <span>Download Chrome</span>
             </Button>
           </div>
-          {/* Bespoke text-link, not a Button: no link/text variant exists yet (Button is primary/
-              secondary/ghost pills) — tracked in docs/backlog.md (Button extend). */}
-          <button type="button" className={styles.tryAnyway} onClick={tryAnyway}>
-            try anyway…
-          </button>
         </div>
       </div>
     )
