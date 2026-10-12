@@ -5,7 +5,7 @@
 // ordered featured-first, then by user_count (most active), matching the "What's On" design.
 
 import { useEffect, useState } from 'react'
-import { getStoredLogin } from '../auth/sso'
+import { getLogin } from '../auth/sso'
 import { fetchLiveWorlds, fetchPlaces, fetchWorlds, type DiscoverPlace, type PlacesOrderBy, type PlacesResponse } from './placesApi'
 
 export type PlacesSection = 'all' | 'favourites' | 'my'
@@ -83,12 +83,9 @@ export function usePlaces(): UsePlaces {
       Promise.all([dataOrEmpty(fetchPlaces({ ...args, ...extra })), dataOrEmpty(fetchWorlds({ ...args, ...extra }))]).then(([p, w]) => [...p, ...w])
 
     // My Places = the signed-in creator's own places + worlds (public owner filter; boedo.dcl.eth etc.).
-    const owner = getStoredLogin()?.address
     const run: Promise<DiscoverPlace[]> =
       section === 'my'
-        ? owner
-          ? bothOwnedAndWorlds({ owner })
-          : Promise.resolve([])
+        ? getLogin().then((login) => (login ? bothOwnedAndWorlds({ owner: login.address }) : []))
         : q
           ? bothOwnedAndWorlds({})
           : fetchPlaces({

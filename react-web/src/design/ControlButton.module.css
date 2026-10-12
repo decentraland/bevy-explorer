@@ -28,9 +28,14 @@
   width: 30px;
   height: 30px;
 }
+.lg {
+  width: 32px;
+  height: 32px;
+}
 /* pill grows to fit a label/value, keeping the size's height */
 .pill.sm,
-.pill.md {
+.pill.md,
+.pill.lg {
   width: auto;
   padding: 0 10px;
 }
@@ -61,4 +66,21 @@
 .solid:hover:not(:disabled),
 .solid.active {
   background: var(--white-10);
+}
+
+.dark {
+  background: var(--black);
+}
+.faint {
+  background: transparent;
+}
+.dark:hover:not(:disabled),
+.dark.active,
+.faint:hover:not(:disabled),
+.faint.active {
+  background: var(--chat-hover);
+}
+.dark:active:not(:disabled),
+.faint:active:not(:disabled) {
+  background: var(--chat-pressed);
 }

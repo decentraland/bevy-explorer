@@ -14,7 +14,7 @@ use crate::{
     initialize_scene::SuperUserScene,
     update_world::{
         gltf_container::GLTF_LOADING,
-        mesh_collider::{RaycastResult, SceneColliderData},
+        mesh_collider::{GlobalGroundCollider, RaycastResult, SceneColliderData},
         raycast::Raycast,
     },
     ContainingScene, RendererSceneContext, SceneEntity, SceneSets,
@@ -86,6 +86,10 @@ fn run_raycasts(
     mut gizmo_cache: Local<Vec<(f64, Vec3, Vec3)>>,
     containing_scene: ContainingScene,
     su_target_res: Res<SuperUserRaycastScene>,
+    mut global_ground: Query<
+        (Entity, &mut SceneColliderData),
+        (With<GlobalGroundCollider>, Without<RendererSceneContext>),
+    >,
 ) {
     // redraw non-continuous gizmos for 1 sec
     gizmo_cache.retain(|(until, origin, end)| {
@@ -280,6 +284,14 @@ fn run_raycasts(
                         }
                     }
 
+                    for (ground, mut colliders) in global_ground.iter_mut() {
+                        if let Some(result) = nearest_function(&mut colliders) {
+                            if best_result.as_ref().is_none_or(|(_, b)| b.toi > result.toi) {
+                                best_result = Some((ground, result));
+                            }
+                        }
+                    }
+
                     if let Some(result) = best_result {
                         vec![result]
                     } else {
@@ -296,6 +308,11 @@ fn run_raycasts(
                         };
                         for result in all_function(&mut colliders).into_iter() {
                             results.push((scene, result));
+                        }
+                    }
+                    for (ground, mut colliders) in global_ground.iter_mut() {
+                        for result in all_function(&mut colliders).into_iter() {
+                            results.push((ground, result));
                         }
                     }
 

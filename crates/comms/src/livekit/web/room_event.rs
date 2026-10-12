@@ -1,12 +1,9 @@
 use bevy::{platform::sync::Arc, prelude::*};
-use wasm_bindgen::{
-    convert::{FromWasmAbi, IntoWasmAbi, OptionFromWasmAbi},
-    JsValue,
-};
+use wasm_bindgen::JsValue;
 
 use crate::livekit::web::{
-    traits::GetFromJsValue, ConnectionQuality, ConnectionState, DataPacketKind, DisconnectReason,
-    Participant, RemoteParticipant, RemoteTrack, RemoteTrackPublication,
+    host::Registry, ConnectionQuality, ConnectionState, DataPacketKind, DisconnectReason,
+    Participant, RemoteParticipant, RemoteTrack, RemoteTrackPublication, RoomId,
 };
 
 // Define structures for the events coming from JavaScript
@@ -62,63 +59,135 @@ pub enum RoomEvent {
     },
 }
 
-impl wasm_bindgen::describe::WasmDescribe for RoomEvent {
-    fn describe() {
-        JsValue::describe()
+// Page side: the conversion of the event objects `set_room_event_handler` (livekit_web_bindings.js)
+// emits into plain data. A malformed event is logged and dropped (a panic would trap the page).
+
+fn get(js_value: &JsValue, key: &str) -> Option<JsValue> {
+    js_sys::Reflect::get(js_value, &JsValue::from(key))
+        .ok()
+        .filter(|value| !(value.is_null() || value.is_undefined()))
+}
+
+fn get_string(js_value: &JsValue, key: &str) -> Option<String> {
+    get(js_value, key).and_then(|value| value.as_string())
+}
+
+fn get_array(js_value: &JsValue, key: &str) -> Option<js_sys::Array> {
+    get(js_value, key).map(Into::<js_sys::Array>::into)
+}
+
+fn get_payload(js_value: &JsValue, key: &str) -> Option<Arc<Vec<u8>>> {
+    let payload = get(js_value, key)?;
+    Some(Arc::new(js_sys::Uint8Array::new(&payload).to_vec()))
+}
+
+fn get_data_packet_kind(js_value: &JsValue, key: &str) -> Option<DataPacketKind> {
+    match get(js_value, key)?.as_f64()? as u32 {
+        0 => Some(DataPacketKind::Reliable),
+        1 => Some(DataPacketKind::Lossy),
+        int => {
+            error!("Should always be 0 for Reliable or 1 for Lossy, but was {int}.");
+            None
+        }
     }
 }
 
-impl FromWasmAbi for RoomEvent {
-    type Abi = <JsValue as IntoWasmAbi>::Abi;
+fn get_connection_quality(js_value: &JsValue, key: &str) -> Option<ConnectionQuality> {
+    let quality = get_string(js_value, key)?;
+    match quality.as_str() {
+        "excellent" => Some(ConnectionQuality::Excellent),
+        "good" => Some(ConnectionQuality::Good),
+        "poor" => Some(ConnectionQuality::Poor),
+        "lost" => Some(ConnectionQuality::Lost),
+        other => {
+            error!("Invalid ConnectionQuality '{other}'.");
+            None
+        }
+    }
+}
 
-    unsafe fn from_abi(abi: Self::Abi) -> Self {
-        let js_value = JsValue::from_abi(abi);
-        let tag = js_sys::Reflect::get(&js_value, &JsValue::from("type"))
-            .ok()
-            .and_then(|tag| tag.as_string());
+fn get_disconnect_reason(js_value: &JsValue, key: &str) -> Option<DisconnectReason> {
+    let reason = get(js_value, key)?.as_f64()? as i32;
+    let parsed = DisconnectReason::from_i32(reason);
+    if parsed.is_none() {
+        error!("Not a valid DisconnectReason: {reason}.");
+    }
+    parsed
+}
 
-        match tag.as_deref() {
+fn get_remote_participant(
+    js_value: &JsValue,
+    key: &str,
+    registry: &mut Registry,
+) -> Option<RemoteParticipant> {
+    get(js_value, key).map(|participant| registry.remote_participant(&participant))
+}
+
+fn get_participant(
+    js_value: &JsValue,
+    key: &str,
+    room: RoomId,
+    registry: &mut Registry,
+) -> Option<Participant> {
+    get(js_value, key).map(|participant| registry.participant(&participant, room))
+}
+
+fn get_publication(
+    js_value: &JsValue,
+    key: &str,
+    registry: &mut Registry,
+) -> Option<RemoteTrackPublication> {
+    get(js_value, key).map(|publication| registry.remote_track_publication(&publication))
+}
+
+fn get_remote_track(js_value: &JsValue, key: &str, registry: &mut Registry) -> Option<RemoteTrack> {
+    get(js_value, key).and_then(|track| registry.remote_track(&track))
+}
+
+impl RoomEvent {
+    pub(super) fn from_js(
+        js_value: &JsValue,
+        room: RoomId,
+        registry: &mut Registry,
+    ) -> Option<Self> {
+        let tag = get_string(js_value, "type");
+
+        let event = match tag.as_deref() {
             Some("connected") => {
                 let Some(participants_with_tracks) =
-                    js_sys::Reflect::get(&js_value, &JsValue::from("participants_with_tracks"))
-                        .ok()
-                        .map(Into::<js_sys::Array>::into)
+                    get_array(js_value, "participants_with_tracks")
                 else {
                     error!("RoomEvent::Connected did not have participants_with_tracks field.");
-                    panic!();
+                    return None;
                 };
 
                 let participants_with_tracks = participants_with_tracks
                     .iter()
-                    .map(|js_object: JsValue| {
+                    .filter_map(|js_object: JsValue| {
                         let Some(participant) =
-                            RemoteParticipant::get_from_js_value(&js_object, "participant")
+                            get_remote_participant(&js_object, "participant", registry)
                         else {
                             error!(
                                 "Object in participants_with_tracks array of RoomEvent::Connected\
                         did not have participant field."
                             );
-                            panic!();
+                            return None;
                         };
-                        let Some(publications) =
-                            js_sys::Reflect::get(&js_object, &JsValue::from("tracks"))
-                                .ok()
-                                .map(Into::<js_sys::Array>::into)
-                        else {
+                        let Some(publications) = get_array(&js_object, "tracks") else {
                             error!(
                                 "Object in participants_with_tracks array of RoomEvent::Connected\
                         did not have tracks field."
                             );
-                            panic!();
+                            return None;
                         };
 
-                        (
+                        Some((
                             participant,
                             publications
                                 .iter()
-                                .map(RemoteTrackPublication::from)
+                                .map(|publication| registry.remote_track_publication(&publication))
                                 .collect(),
-                        )
+                        ))
                     })
                     .collect::<Vec<_>>();
 
@@ -127,18 +196,17 @@ impl FromWasmAbi for RoomEvent {
                 }
             }
             Some("disconnected") => {
-                let Some(reason) =
-                    DisconnectReason::get_from_js_value(&js_value, "disconnectReason")
-                else {
-                    panic!("RoomEvent::Disconnected did not have disconnectReason field.");
+                let Some(reason) = get_disconnect_reason(js_value, "disconnectReason") else {
+                    error!("RoomEvent::Disconnected did not have disconnectReason field.");
+                    return None;
                 };
 
                 RoomEvent::Disconnected { reason }
             }
             Some("connectionStateChanged") => {
-                let Some(state) = String::get_from_js_value(&js_value, "state") else {
+                let Some(state) = get_string(js_value, "state") else {
                     error!("RoomEvent::ConnectionStateChanged did not have state field.");
-                    panic!();
+                    return None;
                 };
                 let state = match state.as_str() {
                     "connecting" => ConnectionState::Reconnecting,
@@ -146,22 +214,23 @@ impl FromWasmAbi for RoomEvent {
                     "signalReconnecting" | "reconnecting" => ConnectionState::Reconnecting,
                     "disconnected" => ConnectionState::Disconnected,
                     _ => {
-                        panic!("Invalid ConnectionState '{state}'.");
+                        error!("Invalid ConnectionState '{state}'.");
+                        return None;
                     }
                 };
                 RoomEvent::ConnectionStateChanged(state)
             }
             Some("dataReceived") => {
-                let Some(payload) = Arc::<Vec<u8>>::get_from_js_value(&js_value, "payload") else {
+                let Some(payload) = get_payload(js_value, "payload") else {
                     error!("RoomEvent::DataReceived did not have payload field.");
-                    panic!();
+                    return None;
                 };
-                let participant = RemoteParticipant::get_from_js_value(&js_value, "participant");
-                let Some(kind) = DataPacketKind::get_from_js_value(&js_value, "kind") else {
+                let participant = get_remote_participant(js_value, "participant", registry);
+                let Some(kind) = get_data_packet_kind(js_value, "kind") else {
                     error!("RoomEvent::DataReceived did not have kind field.");
-                    panic!();
+                    return None;
                 };
-                let topic = String::get_from_js_value(&js_value, "topic");
+                let topic = get_string(js_value, "topic");
 
                 RoomEvent::DataReceived {
                     payload,
@@ -171,39 +240,37 @@ impl FromWasmAbi for RoomEvent {
                 }
             }
             Some("participantConnected") => {
-                let Some(participant) =
-                    RemoteParticipant::get_from_js_value(&js_value, "participant")
+                let Some(participant) = get_remote_participant(js_value, "participant", registry)
                 else {
                     error!("RoomEvent::ParticipantConnected did not have participant field.");
-                    panic!();
+                    return None;
                 };
                 RoomEvent::ParticipantConnected(participant)
             }
             Some("participantDisconnected") => {
-                let Some(participant) =
-                    RemoteParticipant::get_from_js_value(&js_value, "participant")
+                let Some(participant) = get_remote_participant(js_value, "participant", registry)
                 else {
                     error!("RoomEvent::ParticipantDisconnected did not have participant field.");
-                    panic!();
+                    return None;
                 };
+                registry.release(participant.id);
                 RoomEvent::ParticipantDisconnected(participant)
             }
             Some("participantMetadataChanged") => {
-                let Some(participant) = Participant::get_from_js_value(&js_value, "participant")
+                let Some(participant) = get_participant(js_value, "participant", room, registry)
                 else {
                     error!("RoomEvent::ParticipantDisconnected did not have participant field.");
-                    panic!();
+                    return None;
                 };
-                let Some(old_metadata) = String::get_from_js_value(&js_value, "old_metadata")
-                else {
+                let Some(old_metadata) = get_string(js_value, "old_metadata") else {
                     error!(
                         "RoomEvent::ParticipantMetadataChanged did not have old_metadata field."
                     );
-                    panic!();
+                    return None;
                 };
-                let Some(metadata) = String::get_from_js_value(&js_value, "metadata") else {
+                let Some(metadata) = get_string(js_value, "metadata") else {
                     error!("RoomEvent::ParticipantMetadataChanged did not have metadata field.");
-                    panic!();
+                    return None;
                 };
                 RoomEvent::ParticipantMetadataChanged {
                     participant,
@@ -212,14 +279,14 @@ impl FromWasmAbi for RoomEvent {
                 }
             }
             Some("connectionQualityChanged") => {
-                let Some(quality) =
-                    ConnectionQuality::get_from_js_value(&js_value, "connection_quality")
-                else {
-                    panic!("RoomEvent::ConnectionQualityChanged did not have quality field.");
+                let Some(quality) = get_connection_quality(js_value, "connection_quality") else {
+                    error!("RoomEvent::ConnectionQualityChanged did not have quality field.");
+                    return None;
                 };
-                let Some(participant) = Participant::get_from_js_value(&js_value, "participant")
+                let Some(participant) = get_participant(js_value, "participant", room, registry)
                 else {
-                    panic!("RoomEvent::ConnectionQualityChanged did not have participant field.");
+                    error!("RoomEvent::ConnectionQualityChanged did not have participant field.");
+                    return None;
                 };
                 RoomEvent::ConnectionQualityChanged {
                     quality,
@@ -227,17 +294,14 @@ impl FromWasmAbi for RoomEvent {
                 }
             }
             Some("trackPublished") => {
-                let Some(publication) =
-                    RemoteTrackPublication::get_from_js_value(&js_value, "publication")
-                else {
+                let Some(publication) = get_publication(js_value, "publication", registry) else {
                     error!("RoomEvent::TrackPublished did not have publication field.");
-                    panic!();
+                    return None;
                 };
-                let Some(participant) =
-                    RemoteParticipant::get_from_js_value(&js_value, "participant")
+                let Some(participant) = get_remote_participant(js_value, "participant", registry)
                 else {
                     error!("RoomEvent::TrackPublished did not have participant field.");
-                    panic!();
+                    return None;
                 };
                 RoomEvent::TrackPublished {
                     publication,
@@ -245,39 +309,34 @@ impl FromWasmAbi for RoomEvent {
                 }
             }
             Some("trackUnpublished") => {
-                let Some(publication) =
-                    RemoteTrackPublication::get_from_js_value(&js_value, "publication")
-                else {
+                let Some(publication) = get_publication(js_value, "publication", registry) else {
                     error!("RoomEvent::TrackUnpublished did not have publication field.");
-                    panic!();
+                    return None;
                 };
-                let Some(participant) =
-                    RemoteParticipant::get_from_js_value(&js_value, "participant")
+                let Some(participant) = get_remote_participant(js_value, "participant", registry)
                 else {
                     error!("RoomEvent::TrackUnpublished did not have participant field.");
-                    panic!();
+                    return None;
                 };
+                registry.release(publication.id);
                 RoomEvent::TrackUnpublished {
                     publication,
                     participant,
                 }
             }
             Some("trackSubscribed") => {
-                let Some(track) = RemoteTrack::get_from_js_value(&js_value, "track") else {
+                let Some(track) = get_remote_track(js_value, "track", registry) else {
                     error!("RoomEvent::TrackSubscribed did not have track field.");
-                    panic!();
+                    return None;
                 };
-                let Some(publication) =
-                    RemoteTrackPublication::get_from_js_value(&js_value, "publication")
-                else {
+                let Some(publication) = get_publication(js_value, "publication", registry) else {
                     error!("RoomEvent::TrackSubscribed did not have publication field.");
-                    panic!();
+                    return None;
                 };
-                let Some(participant) =
-                    RemoteParticipant::get_from_js_value(&js_value, "participant")
+                let Some(participant) = get_remote_participant(js_value, "participant", registry)
                 else {
                     error!("RoomEvent::TrackSubscribed did not have participant field.");
-                    panic!();
+                    return None;
                 };
                 RoomEvent::TrackSubscribed {
                     track,
@@ -286,22 +345,23 @@ impl FromWasmAbi for RoomEvent {
                 }
             }
             Some("trackUnsubscribed") => {
-                let Some(track) = RemoteTrack::get_from_js_value(&js_value, "track") else {
+                let Some(track) = get_remote_track(js_value, "track", registry) else {
                     error!("RoomEvent::TrackUnsubscribed did not have track field.");
-                    panic!();
+                    return None;
                 };
-                let Some(publication) =
-                    RemoteTrackPublication::get_from_js_value(&js_value, "publication")
+                let Some(mut publication) = get_publication(js_value, "publication", registry)
                 else {
                     error!("RoomEvent::TrackUnsubscribed did not have publication field.");
-                    panic!();
+                    return None;
                 };
-                let Some(participant) =
-                    RemoteParticipant::get_from_js_value(&js_value, "participant")
+                // livekit-client emits this before it clears the publication's track
+                publication.track = None;
+                let Some(participant) = get_remote_participant(js_value, "participant", registry)
                 else {
                     error!("RoomEvent::TrackUnsubscribed did not have participant field.");
-                    panic!();
+                    return None;
                 };
+                registry.release(track.id());
                 RoomEvent::TrackUnsubscribed {
                     track,
                     publication,
@@ -309,26 +369,25 @@ impl FromWasmAbi for RoomEvent {
                 }
             }
             Some("activeSpeakersChanged") => {
-                let Some(speakers) = Vec::<Participant>::get_from_js_value(&js_value, "speakers")
-                else {
+                let Some(speakers) = get_array(js_value, "speakers") else {
                     error!("RoomEvent::ActiveSpeakersChanged did not have speakers field.");
-                    panic!();
+                    return None;
                 };
+                let speakers = speakers
+                    .iter()
+                    .map(|speaker| registry.participant(&speaker, room))
+                    .collect();
                 RoomEvent::ActiveSpeakersChanged { speakers }
             }
             Some(tag) => {
-                todo!("{tag:?} {js_value:?}");
+                error!("Unhandled RoomEvent {tag:?} {js_value:?}");
+                return None;
             }
             None => {
                 error!("RoomEvent's `type` was not a string, was {tag:?}.");
-                panic!()
+                return None;
             }
-        }
-    }
-}
-
-impl OptionFromWasmAbi for RoomEvent {
-    fn is_none(abi: &Self::Abi) -> bool {
-        std::mem::ManuallyDrop::new(unsafe { JsValue::from_abi(*abi) }).is_object()
+        };
+        Some(event)
     }
 }

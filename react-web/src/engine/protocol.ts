@@ -7,7 +7,7 @@
 // Domain types mirror scene/src/bevy-api/interface.ts so the bridge scene can
 // forward SystemApi results verbatim.
 
-import type { SceneLoadingUi } from './generated'
+import type { Color3, HomeScene, SatelliteView, SceneLoadingUi, WelcomeState } from './generated'
 
 export const BRIDGE_CHANNEL = 'bevy-ui-bridge'
 
@@ -52,6 +52,9 @@ export type RpcMethod =
   | 'loginIdentity'
   | 'loginCancel'
   | 'logout'
+  | 'guestLogin'
+  | 'guestSign'
+  | 'guestDiscard'
 
 // ---- page -> scene ---------------------------------------------------------
 
@@ -59,6 +62,7 @@ export interface RpcRequest {
   kind: 'rpc:req'
   id: string
   method: RpcMethod
+  params?: Record<string, string>
 }
 
 /** Send a chat message (page → engine via the scene's BevyApi.sendChat). */
@@ -66,6 +70,26 @@ export interface SendChatRequest {
   kind: 'sendChat'
   message: string
   channel: string
+}
+
+/** Add or remove the local user's reaction to a chat message (page → engine via the scene's
+ *  BevyApi.sendChatReaction). The engine echoes it back as a ChatReactionMessage. */
+export interface SendChatReactionRequest {
+  kind: 'sendChatReaction'
+  /** 'Nearby' or the DM partner's wallet. */
+  channel: string
+  messageId: string
+  emoji: string
+  remove: boolean
+}
+
+/** Redraw a Nearby chat bubble with other words (its translation), if that message is still the
+ *  sender's bubble; its timer starts again. */
+export interface ChatBubbleTextRequest {
+  kind: 'chatBubbleText'
+  sender: string
+  messageId: string
+  message: string
 }
 
 /** Reload the current scene(s) — the `/reload` chat command (scene calls SystemApi.reload). */
@@ -112,6 +136,8 @@ export interface NavActionRequest {
 /** Page→scene handshake ping, repeated until the scene answers `bridgeReady` (see BridgeChannel). */
 export interface HelloRequest {
   kind: 'hello'
+  /** The page's directory: the bridge scene keeps the first one it hears to recognise the page's own realms. */
+  pageDir?: string
 }
 
 /** Scene→page: every domain is registered and the scene is listening. */
@@ -128,10 +154,16 @@ export type PageToScene =
   | HelloRequest
   | RpcRequest
   | SendChatRequest
+  | SendChatReactionRequest
+  | ChatBubbleTextRequest
   | ReloadSceneRequest
   | ConsoleCommandRequest
   | NavActionRequest
   | FriendActionRequest
+  | DmWatchRequest
+  | DmHistoryRequest
+  | DmDeleteRequest
+  | GetMutualFriendsRequest
   | GetSettingsRequest
   | SetSettingRequest
   | GetBindingsRequest
@@ -152,22 +184,36 @@ export type PageToScene =
   | GetWearablesRequest
   | CatalogQueryRequest
   | EquipRequest
+  | CommitAvatarRequest
+  | RevertAvatarRequest
   | PreviewAvatarRequest
+  | PreviewFocusRequest
   | GetOutfitsRequest
   | SaveOutfitRequest
   | DeleteOutfitRequest
   | EquipOutfitRequest
+  | SetAvatarColorRequest
+  | SetForceRenderRequest
   | GetCommunitiesRequest
   | CreateCommunityRequest
   | JoinCommunityRequest
   | LeaveCommunityRequest
+  | RequestToJoinCommunityRequest
+  | CancelJoinRequestRequest
   | GetCommunityDetailRequest
   | GetMapRequest
+  | GetHomeSceneRequest
+  | GetWelcomeRequest
+  | RerollLookRequest
+  | AcceptWelcomeRequest
+  | OpenLegalRequest
   | TeleportRequest
   | ChangeRealmRequest
   | MinimapConfigRequest
   | PermissionResolveRequest
+  | EditorSceneRequest
   | EngineViewportRequest
+  | InteractableAreaMessage
   | GetGalleryRequest
   | GetGalleryPhotoRequest
   | DeleteGalleryPhotoRequest
@@ -210,6 +256,24 @@ export interface ChatMessage {
   sender: string
   message: string
   channel: string
+  /** What reactions name this message by; empty for system messages. */
+  messageId: string
+}
+
+/** A reaction added to or removed from a chat message, the local user's included. */
+export interface ChatReaction {
+  /** 'Nearby' or the DM partner's wallet. */
+  channel: string
+  messageId: string
+  emoji: string
+  from: string
+  remove: boolean
+}
+
+/** Streamed chat reactions (scene → page). */
+export interface ChatReactionMessage {
+  kind: 'chatReaction'
+  reaction: ChatReaction
 }
 
 /** Streamed incoming chat messages (scene → page). */
@@ -236,6 +300,15 @@ export interface NearbyMember {
   name: string
   /** Avatar face snapshot URL (when the profile has loaded). */
   picture?: string
+  /** Wears a claimed name (from the engine's profile, once it has loaded). */
+  claimed?: boolean
+}
+
+/** A player started or stopped talking in voice chat (engine getVoiceStream, scene → page). */
+export interface VoiceActivityMessage {
+  kind: 'voiceActivity'
+  address: string
+  active: boolean
 }
 
 /** Nearby members + count, polled by the scene (chat header "Nearby · N"). */
@@ -259,6 +332,19 @@ export interface Friend {
   name: string
   picture?: string
   status: FriendStatus
+  /** From the social service: a claimed name shows the verified badge instead of a #tag. */
+  claimed?: boolean
+  /** The user's chosen name colour (0..1 channels). */
+  nameColor?: { r: number; g: number; b: number }
+}
+
+/** A blocked account with the profile the social service resolved for it. */
+export interface BlockedUser {
+  address: string
+  name: string
+  picture?: string
+  claimed?: boolean
+  nameColor?: { r: number; g: number; b: number }
 }
 
 /** Mirrors the scene's FriendRequestData. */
@@ -266,6 +352,8 @@ export interface FriendRequest {
   address: string
   name: string
   picture?: string
+  claimed?: boolean
+  nameColor?: { r: number; g: number; b: number }
   message?: string
   id: string
   createdAt?: number
@@ -281,6 +369,9 @@ export interface FriendsMessage {
   sent: FriendRequest[]
   /** Blocked addresses (names/avatars not resolved here). */
   blocked: string[]
+  blockedUsers?: BlockedUser[]
+  /** Signed in but the social service hasn't initialised yet (vs a guest, who never gets it). */
+  loading?: boolean
 }
 
 /** Friends social action (page → scene → BevyApi.social.*). Guest-disabled. */
@@ -289,6 +380,106 @@ export type FriendAction = 'request' | 'accept' | 'reject' | 'cancel' | 'delete'
 export interface FriendActionRequest {
   kind: 'friendAction'
   op: FriendAction
+  address: string
+  /** Intro text sent with a friend request (≤140 chars). */
+  message?: string
+}
+
+/** The social service accepted a friend action (scene → page). */
+export interface FriendActionDoneMessage {
+  kind: 'friendActionDone'
+  op: FriendAction
+  address: string
+}
+
+/** Mutual friends with `address` (page → scene), answered by MutualFriendsMessage. */
+export interface GetMutualFriendsRequest {
+  kind: 'getMutualFriends'
+  address: string
+}
+
+export interface MutualFriendsMessage {
+  kind: 'mutualFriends'
+  address: string
+  friends: { address: string; name: string; picture?: string }[]
+}
+
+/** A friend came online after startup (scene → page), for the "is online" toast. */
+export interface FriendOnlineMessage {
+  kind: 'friendOnline'
+  address: string
+}
+
+/** The social service rejected a friend action (scene → page). */
+export interface FriendActionFailedMessage {
+  kind: 'friendActionFailed'
+  op: FriendAction
+  address: string
+  error: string
+}
+
+/** Whether the local user can DM someone, and why not. Mirrors the engine's DmUserStateData. */
+export type DmUserState =
+  | 'notConnected'
+  | 'connected'
+  | 'blockedByOwnUser'
+  | 'privateMessagesBlockedByOwnUser'
+  | 'privateMessagesBlocked'
+  | 'disconnected'
+  | 'otherClient'
+
+/** Start or stop following a partner's DM state (page → scene). The scene holds one engine
+ *  stream per watched address; the page watches each open DM tab. */
+export interface DmWatchRequest {
+  kind: 'dmWatch'
+  address: string
+  on: boolean
+}
+
+/** A watched partner's DM state, on watch and on change (scene → page). */
+export interface DmUserStateMessage {
+  kind: 'dmUserState'
+  address: string
+  state: DmUserState
+  /** In the private chat room and not blocked by the local user. */
+  online: boolean
+}
+
+/** The stored DMs with a partner (page → scene), answered by DmHistoryMessage. */
+export interface DmHistoryRequest {
+  kind: 'dmHistory'
+  address: string
+}
+
+/** One stored DM; `from` is the local user or the partner. */
+export interface DmHistoryEntry {
+  from: string
+  message: string
+  /** Unix ms when the local client stored it. */
+  receivedAt: number
+  /** What reactions name this DM by; empty for DMs stored before reactions. */
+  messageId: string
+  /** Its reactions, in the order each emoji was first used. */
+  reactions: MessageReaction[]
+}
+
+/** One emoji's reactions to a chat message. */
+export interface MessageReaction {
+  emoji: string
+  /** The wallets that reacted with it. */
+  from: string[]
+}
+
+export interface DmHistoryMessage {
+  kind: 'dmHistory'
+  address: string
+  /** Oldest first. */
+  entries: DmHistoryEntry[]
+}
+
+/** Delete the stored DMs with a partner (page → scene). */
+export interface DmDeleteRequest {
+  kind: 'dmDelete'
   address: string
 }
 
@@ -334,6 +525,8 @@ export interface Profile {
   name: string
   picture?: string
   hasClaimedName: boolean
+  /** The chosen name colour (claimed names only), 0–1 channels. */
+  nameColor?: { r: number; g: number; b: number }
   isGuest: boolean
   /** The deployed profile's version, when this came from the engine; compared against
    *  `profileChanged` to tell a stale copy from a current one. */
@@ -453,8 +646,6 @@ export interface Emote {
   name: string
   thumbnail?: string
   rarity?: string
-  /** Owned quantity (×N badge). */
-  count?: number
   /** Marketplace deep link (…/shop/item/<contract>/<itemId>) — set only for on-chain collectibles;
    *  base emotes have no listing. Resolved scene-side (see resolveShopUrls). */
   shopUrl?: string
@@ -494,6 +685,49 @@ export interface GetMapRequest {
   kind: 'getMap'
 }
 
+export interface GetHomeSceneRequest {
+  kind: 'getHomeScene'
+}
+
+export interface HomeSceneMessage extends HomeScene {
+  kind: 'homeScene'
+}
+
+/** What the welcome page must show for the signed-in account (answered with `welcome`). */
+export interface GetWelcomeRequest {
+  kind: 'getWelcome'
+}
+
+export interface WelcomeMessage extends WelcomeState {
+  kind: 'welcome'
+}
+
+/** Put another of the curated default looks on the welcome page's avatar (the Backpack's unsaved
+ *  look, so the stage shows it); deployed on `acceptWelcome`. */
+export interface RerollLookRequest {
+  kind: 'rerollLook'
+}
+
+/** The welcome page's accept: the terms, then for a new profile its `name` and look in one
+ *  setAvatar. Answered with `welcomeAccepted` once that lands. */
+export interface AcceptWelcomeRequest {
+  kind: 'acceptWelcome'
+  name?: string
+}
+
+/** Open the terms of use or the privacy policy in the user's browser (the scene's openExternalUrl,
+ *  which works from the native HUD too). */
+export interface OpenLegalRequest {
+  kind: 'openLegal'
+  doc: 'terms' | 'privacy'
+}
+
+export interface WelcomeAcceptedMessage {
+  kind: 'welcomeAccepted'
+  ok: boolean
+  error?: string
+}
+
 /** The local player's live pose, streamed for the minimap. Position is in world metres
  *  (not parcels) so the map can scroll smoothly between parcels; both yaws are degrees.
  *  `yaw` is the avatar's heading (drives the arrow), `camYaw` the camera's (drives
@@ -506,22 +740,33 @@ export interface PlayerPoseMessage {
   camYaw: number
 }
 
-/** Which realm we're in. `isWorld` distinguishes a World (worlds-content-server, or a
- *  `.eth` name) from Genesis City: Worlds have no satellite/parcel tiles, so the minimap
- *  forces the engine-rendered Camera style there. Pushed on change. */
+/** Which realm we're in. `satelliteView` is the satellite map the realm advertises in its
+ *  `/about` — only Genesis City does, so anywhere else (Worlds, local scenes) it is null and
+ *  the minimap forces the engine-rendered Camera style. Pushed on change. */
 export interface RealmInfoMessage {
   kind: 'realmInfo'
   realm: string
-  isWorld: boolean
+  satelliteView: SatelliteView | null
 }
 
 /** Title of the scene the player is standing in, for the minimap header. Resolved by parcel
  *  from the live scene list and pushed when the parcel changes — NOT the same as the
  *  `sceneLoading` title, which describes the entry overlay and goes stale the moment you
  *  walk into the next scene. Empty when the parcel has no deployed scene. */
+/** The lobby stage and its avatar have been drawn (scene → page), so the page's stand-in can go. */
+export interface LobbyStageReadyMessage {
+  kind: 'lobbyStageReady'
+}
+
 export interface SceneInfoMessage {
   kind: 'sceneInfo'
   title: string
+  /** The parcel the title was resolved for, and the realm it is in. */
+  parcel?: { x: number; y: number }
+  realm?: string
+  /** Genesis City (it advertises the satellite map); anything else is a World or a local realm. */
+  genesis?: boolean
+  preview?: boolean
 }
 
 /** Minimap style/zoom/rotation (page → scene). The scene only runs the Camera-style
@@ -550,6 +795,8 @@ export interface TeleportRequest {
    *  a full reconnect, as for changeRealm, even to the realm the player is in. Omitted: a parcel of
    *  the realm the player is in. */
   realm?: string
+  /** Set with `realm`: the scene answers with a `travelResult` carrying this id. */
+  travelId?: number
 }
 
 /** Change to a world/realm (page → scene → changeRealm). `realm` is a world name
@@ -557,6 +804,35 @@ export interface TeleportRequest {
 export interface ChangeRealmRequest {
   kind: 'changeRealm'
   realm: string
+  /** The scene answers with a `travelResult` carrying this id. */
+  travelId?: number
+}
+
+/** How a realm change the page asked for ended (scene → page). On failure the engine kept the
+ *  player in the realm they were in; `message` is the engine's reason. */
+export interface TravelResultMessage {
+  kind: 'travelResult'
+  travelId: number
+  realm: string
+  ok: boolean
+  message?: string
+}
+
+/** Spawn or kill the scene editor's super-user scene, served at `<PAGE_DIR>editor-scene/<hash>`. */
+export interface EditorSceneRequest {
+  kind: 'editorScene'
+  id: number
+  action: 'spawn' | 'kill'
+  source: string
+  hash: string
+}
+
+/** How an `editorScene` request ended (scene → page). A spawn answers once the scene is live. */
+export interface EditorSceneResultMessage {
+  kind: 'editorSceneResult'
+  id: number
+  ok: boolean
+  error?: string
 }
 
 /** A scene's pending permission prompt relayed from the engine (e.g. it wants to move you
@@ -606,12 +882,25 @@ export interface PermissionResolveRequest {
  */
 export interface EngineViewportRequest {
   kind: 'engineViewport'
-  region: 'map' | 'avatarPreview'
+  region: 'map' | 'avatarPreview' | 'lobby'
   rect: { x: number; y: number; width: number; height: number } | null
   /** `devicePixelRatio` at the time the rect was measured. The rect is in CSS pixels, so this is
    *  what turns it into the physical pixels the scene should actually render — without it a
    *  render target has to assume the worst display and oversample everywhere else. */
   dpr?: number
+}
+
+/**
+ * The screen area the persistent HUD (nav rail, minimap, chat or friends panel) occupies, as insets from each
+ * window edge in CSS pixels. The engine publishes it to scenes as
+ * UiCanvasInformation.interactable_area. Sent whenever the measured layout changes.
+ */
+export interface InteractableAreaMessage {
+  kind: 'interactableArea'
+  left: number
+  top: number
+  right: number
+  bottom: number
 }
 
 /** A community (from the scene's fetchCommunities). */
@@ -626,6 +915,21 @@ export interface Community {
   ownerName: string
   /** 'public' | 'private' — gates the join flow (public = join, private = request). */
   privacy?: string
+  /** Id of the local user's pending request to join (private communities). */
+  pendingRequestId?: string
+}
+
+/** A page request's handler threw, so its reply never came (scene → page). */
+export interface RequestFailedMessage {
+  kind: 'requestFailed'
+  request: PageToScene['kind']
+  error: string
+}
+
+/** Deploying the Backpack's look was rejected (scene → page). */
+export interface AvatarSaveFailedMessage {
+  kind: 'avatarSaveFailed'
+  message: string
 }
 
 export interface CommunitiesMessage {
@@ -655,6 +959,28 @@ export interface JoinCommunityRequest {
 export interface LeaveCommunityRequest {
   kind: 'leaveCommunity'
   id: string
+}
+
+/** Ask to join a private community (social-api POST /communities/{id}/requests). */
+export interface RequestToJoinCommunityRequest {
+  kind: 'requestToJoinCommunity'
+  id: string
+}
+
+export interface CancelJoinRequestRequest {
+  kind: 'cancelJoinRequest'
+  id: string
+  requestId: string
+}
+
+export type CommunityAction = 'join' | 'requestToJoin' | 'cancelJoinRequest' | 'leave'
+
+/** A community write the social-api rejected (scene → page), so the UI can say so. */
+export interface CommunityActionFailedMessage {
+  kind: 'communityActionFailed'
+  id: string
+  action: CommunityAction
+  message: string
 }
 
 /** A member of a community (Members tab). */
@@ -791,18 +1117,44 @@ export interface Wearable {
   rarity: string
   category: string
   thumbnail?: string
-  count?: number
   equipped: boolean
   /** Marketplace deep link (…/shop/item/<contract>/<itemId>) — set only for on-chain collectibles;
    *  base/off-chain items have no listing. Resolved scene-side (see resolveShopUrls). */
   shopUrl?: string
+  /** Body shapes the item has a representation for (from the catalog entity). */
+  bodyShapes?: string[]
+  /** Ships a scene script (runs while worn). */
+  isSmart?: boolean
+  /** Categories it hides when worn on the current body shape. */
+  hides?: string[]
 }
 
 /** Currently-equipped wearables, resolved by urn independently of the (paginated) grid so every
  *  equipped item drives its per-category slot even when it isn't on the current catalog page. */
+export type AvatarColorTarget = 'skin' | 'hair' | 'eyes'
+
 export interface WearablesMessage {
   kind: 'wearables'
   equipped: Wearable[]
+  /** The avatar's current body shape urn. */
+  bodyShape?: string
+  /** The avatar's colors (engine Color3, 0–1). */
+  colors?: { skin?: Color3; hair?: Color3; eyes?: Color3 }
+  /** Categories shown even though an equipped item hides them. */
+  forceRender?: string[]
+}
+
+/** Replace the Backpack look's force-render list (deployed when it closes). */
+export interface SetForceRenderRequest {
+  kind: 'setForceRender'
+  categories: string[]
+}
+
+/** Change one avatar color in the Backpack's look (deployed when it closes). */
+export interface SetAvatarColorRequest {
+  kind: 'setAvatarColor'
+  target: AvatarColorTarget
+  color: Color3
 }
 
 /** Load the equipped-wearables set (category slots). The owned catalog itself is paged via
@@ -827,10 +1179,11 @@ export interface CatalogQueryRequest {
   category?: string
   /** Free-text name filter (server-side). */
   search?: string
-  orderBy?: 'rarity' | 'name'
+  orderBy?: 'date' | 'rarity' | 'name'
   direction?: 'asc' | 'desc'
   /** Exclude base (off-chain) items → collectibles only. */
   collectiblesOnly?: boolean
+  smartOnly?: boolean
   /** Monotonic per-catalog id echoed in the response; the page ignores out-of-order replies. */
   requestId: number
 }
@@ -844,17 +1197,34 @@ export interface CatalogPageMessage {
   requestId: number
 }
 
-/** Equip a new full wearable set (page → scene → BevyApi.setAvatar). */
+/** Equip a new full wearable set on the Backpack's look (page → scene); deployed on commitAvatar. */
 export interface EquipRequest {
   kind: 'equip'
   urns: string[]
 }
 
-/** Preview a wearable set on the Backpack avatar WITHOUT persisting it to the profile
- *  (selecting an item, not equipping). `urns: null` clears the preview (revert to profile). */
+/** The Backpack closed: deploy its look if it changed (page → scene → BevyApi.setAvatar). */
+export interface CommitAvatarRequest {
+  kind: 'commitAvatar'
+}
+
+/** Drop the Backpack's look after a failed deploy and put back the last one that deployed. */
+export interface RevertAvatarRequest {
+  kind: 'revertAvatar'
+}
+
+/** Preview a wearable set on the Backpack avatar WITHOUT adding it to the Backpack's look
+ *  (selecting an item, not equipping). `urns: null` clears the preview (back to the look). */
 export interface PreviewAvatarRequest {
   kind: 'previewAvatar'
   urns: string[] | null
+}
+
+/** Which part of the preview avatar the camera frames (the Backpack's selected category). */
+export type PreviewFocus = 'body' | 'head' | 'top' | 'bottom' | 'shoes'
+export interface PreviewFocusRequest {
+  kind: 'previewFocus'
+  focus: PreviewFocus
 }
 
 /** RGB color, components 0..1 (matches PBAvatarBase / the deployed avatar entity). */
@@ -880,6 +1250,8 @@ export interface Outfit {
 export interface OutfitSlot {
   slot: number
   outfit: Outfit
+  /** A picture of the outfit worn (PNG data URL), kept on this device only. */
+  thumbnail?: string
 }
 
 /** The player's saved outfits + owned DCL names that unlock extra slots (beyond the 5 free). */
@@ -998,9 +1370,10 @@ export interface HoverAction {
   text: string
   /** false → out of range (shown greyed with a "get closer" hint instead of the key glyph). */
   enabled: boolean
-  /** Only meaningful when `enabled` is false — which distance rule gates the action: 'camera' (no
-   *  `maxPlayerDistance`, incl. the implicit default) → camera glyph + "Get camera closer";
-   *  'player' (`maxPlayerDistance` set) → walking glyph + "Get player closer". Defaults to 'camera'. */
+  /** Only meaningful when `enabled` is false — which distance rule gates the action: 'camera' (only
+   *  `maxCameraDistance` set) → camera glyph + "Get camera closer"; 'player' (`maxDistance` / its
+   *  deprecated alias `maxPlayerDistance`, incl. the implicit 10m default) → walking glyph +
+   *  "Get closer". Defaults to 'player'. */
   tooFarReason?: 'camera' | 'player'
 }
 /** Interaction hints for the entity under the reticle. Empty array = nothing hovered. The tooltip's
@@ -1076,12 +1449,19 @@ export type SceneToPage =
   | LoginCodeMessage
   | SceneLoadingMessage
   | ChatRelayMessage
+  | ChatReactionMessage
   | ConsoleReplyMessage
   | ChatVisibilityMessage
   | FocusChatMessage
   | MembersMessage
   | MenuVisibilityMessage
   | FriendsMessage
+  | FriendActionFailedMessage
+  | FriendActionDoneMessage
+  | MutualFriendsMessage
+  | FriendOnlineMessage
+  | DmUserStateMessage
+  | DmHistoryMessage
   | SettingsMessage
   | BindingsMessage
   | InputCapturedMessage
@@ -1097,15 +1477,25 @@ export type SceneToPage =
   | CatalogPageMessage
   | OutfitsMessage
   | CommunitiesMessage
+  | VoiceActivityMessage
+  | CommunityActionFailedMessage
+  | TravelResultMessage
+  | AvatarSaveFailedMessage
+  | RequestFailedMessage
   | CommunityDetailMessage
   | MapMessage
+  | HomeSceneMessage
+  | WelcomeMessage
+  | WelcomeAcceptedMessage
   | PlayerPoseMessage
   | RealmInfoMessage
   | SceneInfoMessage
+  | LobbyStageReadyMessage
   | GalleryMessage
   | GalleryPhotoMessage
   | PermissionRequestMessage
   | PermissionWithdrawnMessage
+  | EditorSceneResultMessage
 
 // ---- envelope --------------------------------------------------------------
 

@@ -642,7 +642,7 @@ fn update_text_shapes(
                 valign: valign_wui,
                 halign: halign_wui,
                 add_y_pix,
-                bounds: scene.bounds.clone(),
+                bounds: scene.scene_bounds.clone(),
                 view: world_ui.view,
                 ui_node,
                 vertex_billboard: false,

@@ -85,3 +85,23 @@ pub fn handle_entity_allocated_events(
         }
     }
 }
+
+/// Drop pending callbacks for scenes that can no longer reply: the scene entity is gone, its worker
+/// is no longer live (a broken scene has dropped its thread handle and never comes back), or the
+/// worker has exited and closed its end of the renderer channel.
+/// Dropping a callback drops the oneshot sender it captured, so the console reports the command
+/// as cancelled instead of polling it forever. Runs after the reply handlers so a reply received
+/// in the same frame the scene broke is still delivered.
+pub fn prune_dead_scene_requests(
+    mut snapshots: ResMut<PendingSnapshotRequests>,
+    mut allocations: ResMut<PendingEntityAllocations>,
+    scenes: Query<&RendererSceneContext>,
+) {
+    let alive = |ent: &Entity| {
+        scenes
+            .get(*ent)
+            .is_ok_and(|ctx| ctx.sender().is_some_and(|sender| !sender.is_closed()))
+    };
+    snapshots.0.retain(|ent, _| alive(ent));
+    allocations.0.retain(|ent, _| alive(ent));
+}

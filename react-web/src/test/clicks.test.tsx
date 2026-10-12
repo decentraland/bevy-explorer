@@ -7,6 +7,10 @@ import { FriendsPanel } from '../features/friends/FriendsPanel'
 import { EmotesWheel } from '../features/emotes/EmotesWheel'
 import type { EngineSession, FriendsState } from '../features/session/useEngineSession'
 import { fakeSession } from './harness'
+import { openFriendRequest } from '../features/friends/FriendRequestPopup'
+
+vi.mock('../features/friends/FriendRequestPopup', () => ({ openFriendRequest: vi.fn() }))
+vi.mock('../features/friends/friendDialogs', () => ({ confirmUnblock: vi.fn(async () => true) }))
 
 // CLICK coverage: render the real components and assert each click invokes the
 // session method. Tier 1 proves every method posts the right wire message, so
@@ -15,12 +19,10 @@ describe('sidebar clicks', () => {
   const cases: [string, (s: EngineSession) => () => void][] = [
     ['Profile', (s) => s.profile.toggle],
     ['Notifications', (s) => s.notifications.toggle],
-    ['Map', (s) => s.map.toggle],
     ['Communities', (s) => s.communities.toggle],
     ['Backpack', (s) => s.backpack.toggle],
     ['Gallery', (s) => s.gallery.toggle],
     ['Settings', (s) => s.settings.toggle],
-    ['Voice chat', (s) => s.mic.toggle],
     ['Emotes', (s) => s.emotes.toggle],
     ['Friends', (s) => s.friends.toggle],
     ['Chat', (s) => s.chat.toggle]
@@ -33,6 +35,33 @@ describe('sidebar clicks', () => {
     expect(vi.mocked(pick(s))).toHaveBeenCalledTimes(1)
   })
 
+  it('lists the reference rail, in order (Map lives in the menu, not the rail)', () => {
+    render(<Sidebar session={fakeSession()} />)
+    const labels = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'))
+    expect(labels).toEqual([
+      'Sidebar settings', 'Profile', 'Notifications', 'Events', 'Places', 'Communities', 'Backpack', 'Shop', 'Gallery', 'Settings',
+      'Help & Support', 'Report a bug', 'Nearby Voice', 'Skybox', 'Emotes', 'Friends', 'Chat'
+    ])
+  })
+
+  it('the "..." panel closes on an outside click', async () => {
+    render(<Sidebar session={fakeSession()} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Sidebar settings' }))
+    await userEvent.click(screen.getByRole('switch', { name: 'Auto-hide sidebar' }))
+    expect(screen.getByRole('dialog', { name: 'Sidebar settings' })).toBeInTheDocument()
+    await userEvent.click(document.body)
+    expect(screen.queryByRole('dialog', { name: 'Sidebar settings' })).toBeNull()
+  })
+
+  it('every rail button has a tooltip naming it', () => {
+    render(<Sidebar session={fakeSession()} />)
+    for (const b of screen.getAllByRole('button')) {
+      const label = b.getAttribute('aria-label') ?? ''
+      if (label === 'Sidebar settings') continue
+      expect(b.parentElement?.querySelector('[role="tooltip"]')).toHaveTextContent(label)
+    }
+  })
+
   it('Profile opens the passport (onViewProfile) when provided, not the small panel', async () => {
     const s = fakeSession()
     const onViewProfile = vi.fn()
@@ -40,6 +69,21 @@ describe('sidebar clicks', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Profile' }))
     expect(onViewProfile).toHaveBeenCalledTimes(1)
     expect(vi.mocked(s.profile.toggle)).not.toHaveBeenCalled()
+  })
+
+  it('Profile shows the player avatar once the profile has loaded', () => {
+    const s = fakeSession()
+    s.profile.data = { address: '0xabc', name: 'Mojito', picture: 'https://example.com/face.png', hasClaimedName: true, isGuest: false }
+    render(<Sidebar session={s} />)
+    const button = screen.getByRole('button', { name: 'Profile' })
+    expect(button.querySelector('img')).toHaveAttribute('src', 'https://example.com/face.png')
+  })
+
+  it('Profile keeps the generic icon while the profile is loading', () => {
+    const s = fakeSession()
+    s.profile.data = null
+    render(<Sidebar session={s} />)
+    expect(screen.getByRole('button', { name: 'Profile' }).querySelector('img')).toBeNull()
   })
 })
 
@@ -60,17 +104,24 @@ describe('chat input', () => {
 })
 
 describe('friends panel action clicks', () => {
+  const onMessage = vi.fn()
   function renderPanel(over: Partial<FriendsState>): FriendsState {
     const friends: FriendsState = { ...fakeSession().friends, open: true, available: true, act: vi.fn(), ...over }
-    render(<FriendsPanel friends={friends} />)
+    render(<FriendsPanel friends={friends} onMessage={onMessage} />)
     return friends
   }
+
+  it("a friend row's envelope opens a DM with them", async () => {
+    renderPanel({ list: [{ address: '0xf', name: 'F', status: 'online' }] })
+    await userEvent.click(screen.getByRole('button', { name: /^Chat with F/ }))
+    expect(onMessage).toHaveBeenCalledWith('0xf')
+  })
 
   it('accept / reject a received request', async () => {
     const friends = renderPanel({ received: [{ address: '0xr', name: 'R', id: 'r1' }] })
     await userEvent.click(screen.getByRole('tab', { name: /Requests/ }))
     await userEvent.click(screen.getByRole('button', { name: 'Accept' }))
-    expect(vi.mocked(friends.act)).toHaveBeenCalledWith('accept', '0xr')
+    expect(vi.mocked(openFriendRequest)).toHaveBeenCalledWith('accept', expect.objectContaining({ address: '0xr' }))
     await userEvent.click(screen.getByRole('button', { name: 'Delete' }))
     expect(vi.mocked(friends.act)).toHaveBeenCalledWith('reject', '0xr')
   })
@@ -86,7 +137,7 @@ describe('friends panel action clicks', () => {
     const friends = renderPanel({ blocked: ['0xb'] })
     await userEvent.click(screen.getByRole('tab', { name: /Blocked/ }))
     await userEvent.click(screen.getByRole('button', { name: 'Unblock' }))
-    expect(vi.mocked(friends.act)).toHaveBeenCalledWith('unblock', '0xb')
+    await vi.waitFor(() => expect(vi.mocked(friends.act)).toHaveBeenCalledWith('unblock', '0xb'))
   })
 })
 

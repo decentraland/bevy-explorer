@@ -7,13 +7,27 @@ use clap::Parser;
 use common::structs::AppConfig;
 use dcl_deno_ipc::init_runtime;
 use mimalloc::MiMalloc;
-use webgpu_build::{DecentralandApp, DecentralandAppConfig, DecentralandArguments};
+use webgpu_build::{
+    DecentralandApp, DecentralandAppConfig, DecentralandArguments, CONFIG_READ_ATTEMPTS,
+    CONFIG_READ_RETRY_PAUSE,
+};
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 static SESSION_LOG: OnceLock<String> = OnceLock::new();
 
 fn main() {
+    // As the registered `decentraland://` handler (windows/linux) the OS spawns a fresh process
+    // per link: a sign-in link belongs to the running explorer, hand it over through the launcher
+    // bridge file and stop here. Any other link is a place to boot into (`deep_link` below).
+    if let Some(url) = platform::deeplink::signin_link_arg() {
+        if let Err(e) = platform::deeplink::write_launcher_bridge(&url) {
+            eprintln!("failed to relay deep link: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     decentraland_log_file();
     create_logs_folder();
     create_log_files();
@@ -82,21 +96,32 @@ fn decentraland_serialized_app_config() -> AppConfig {
         .unwrap()
         .config_dir()
         .join("config.json");
-    let mut base_config: AppConfig = std::fs::read(&config_file)
-        .ok()
-        .and_then(|f| {
+    let mut base_config = read_config_file(&config_file)
+        .map(|f| {
             info!("config file loaded from {config_file:?}");
-            serde_json::from_slice(&f)
-                .map_err(|e| warn!("failed to parse config.json: {e}"))
-                .ok()
+            AppConfig::from_json(&f)
         })
         .unwrap_or_else(|| {
-            warn!("config file not found at {config_file:?}, generating default");
+            warn!("config file not read from {config_file:?}, generating default");
             Default::default()
         });
     base_config.reset_outdated_settings();
 
     base_config
+}
+
+fn read_config_file(config_file: &std::path::Path) -> Option<Vec<u8>> {
+    for _ in 0..CONFIG_READ_ATTEMPTS {
+        match std::fs::read(config_file) {
+            Ok(f) => return Some(f),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+            Err(e) => {
+                warn!("failed to read config.json: {e}");
+                std::thread::sleep(CONFIG_READ_RETRY_PAUSE);
+            }
+        }
+    }
+    None
 }
 
 fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {
@@ -113,6 +138,17 @@ fn decentraland_app_arguments() -> Result<DecentralandArguments, UserError> {
             return Err(UserError(e.exit_code()));
         }
     };
+
+    if let Some(link) = &args.client.deep_link {
+        let place = platform::deeplink::parse_place_link(link).map_err(|e| {
+            error!("{link}: {e}");
+            UserError(USAGE_ERROR)
+        })?;
+        // explicit flags win over the link
+        args.launch.realm = args.launch.realm.take().or(place.realm);
+        args.launch.position = args.launch.position.take().or(place.position);
+        args.launch.base_domain = args.launch.base_domain.take().or(place.base_domain);
+    }
 
     webgpu_build::launch::latch(&args.launch).map_err(|e| {
         error!("{e}");

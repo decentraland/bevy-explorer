@@ -81,8 +81,9 @@ fn delivery(field: &str) -> Delivery {
         | "imposter_source"
         | "content_server"
         | "log_fps"
-        | "gpu_bytes_per_frame" => Launch,
-        "editor" => Host,
+        | "gpu_bytes_per_frame"
+        | "compute_threads" => Launch,
+        "editor" | "hold_world" => Host,
         "base_domain" => Resolved,
         other => {
             panic!("launch option `{other}` has no web delivery — add it to web_params::delivery")
@@ -125,7 +126,7 @@ pub fn web_params() -> Vec<WebParam> {
         .collect();
     args.sort_by_key(|arg| section(arg));
     args.into_iter()
-        .filter(|arg| !native_only(arg.get_id().as_str()))
+        .filter(|arg| !arg.is_hide_set() && !native_only(arg.get_id().as_str()))
         .map(|arg| {
             let field = arg.get_id().as_str();
             WebParam {

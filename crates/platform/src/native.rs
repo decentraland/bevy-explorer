@@ -17,6 +17,10 @@ use futures_util::{
 use serde::Serialize;
 pub use tungstenite::client::IntoClientRequest;
 
+pub mod deeplink;
+mod dm_history;
+pub use dm_history::*;
+
 pub struct WebSocket {
     inner: WebSocketStream<ConnectStream>,
 }
@@ -132,8 +136,11 @@ impl<T> AsyncRwLock<T> {
     }
 }
 
-pub fn platform_pointer_is_locked(expected: bool) -> bool {
-    expected
+pub fn platform_pointer_lock_requested() {}
+
+/// Nothing outside the engine changes the grab natively.
+pub fn platform_pointer_is_locked() -> Option<bool> {
+    None
 }
 
 pub fn default_camera_components() -> impl Bundle {
@@ -141,22 +148,22 @@ pub fn default_camera_components() -> impl Bundle {
         Tonemapping::AcesFitted,
         DebandDither::Enabled,
         ColorGrading {
-            // ACES tonemapping with a mild saturation lift; tune live with
+            // ACES tonemapping with slightly deepened midtones; tune live with
             // /tonemap /exposure /gamma /saturation
             global: ColorGradingGlobal {
                 exposure: 0.0,
                 ..Default::default()
             },
             shadows: ColorGradingSection {
-                saturation: 1.3,
+                gamma: 0.9,
                 ..Default::default()
             },
             midtones: ColorGradingSection {
-                saturation: 1.3,
+                gamma: 0.9,
                 ..Default::default()
             },
             highlights: ColorGradingSection {
-                saturation: 1.3,
+                gamma: 0.9,
                 ..Default::default()
             },
         },

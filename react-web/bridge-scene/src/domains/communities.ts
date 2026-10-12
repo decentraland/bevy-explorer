@@ -7,7 +7,7 @@ import { getJson, isZone, signed, signedForm } from '../http'
 import { fetchIdentities } from './profile'
 import type { ProfileIdentity } from './profile'
 import type { Ctx } from '../bridge'
-import type { Community, CommunityEvent, CommunityMember, CommunityPhoto, CommunityPlace, CommunityPost } from '../../../src/engine/protocol'
+import type { Community, CommunityAction, CommunityEvent, CommunityMember, CommunityPhoto, CommunityPlace, CommunityPost } from '../../../src/engine/protocol'
 
 const ORG = 'https://social-api.decentraland.org'
 const ZONE = 'https://social-api.decentraland.zone'
@@ -31,6 +31,8 @@ type CommunityRaw = {
   role: string
   ownerAddress?: string
   privacy?: string
+  pendingActionType?: string
+  pendingInviteOrRequestId?: string
 }
 
 // The v2 rows are FLAT and address-only: no name, face, or claimed-name flag on any of them.
@@ -62,7 +64,8 @@ async function list(): Promise<Community[]> {
     membersCount: c.membersCount,
     role: c.role,
     ownerName: identity(c.ownerAddress ?? '').name,
-    privacy: c.privacy
+    privacy: c.privacy,
+    pendingRequestId: c.pendingActionType === 'request_to_join' ? c.pendingInviteOrRequestId : undefined
   }))
 }
 
@@ -154,16 +157,36 @@ export function registerCommunities(ctx: Ctx): void {
     })
     ctx.send({ kind: 'communities', communities: await list() })
   })
-  ctx.on('joinCommunity', async (msg) => {
-    await signed(`${await base('v1')}/${encodeURIComponent(msg.id)}/members`, 'POST')
+  // Every write reports a rejection to the page (the modal shows it) and then re-reads the list,
+  // so the buttons always reflect the server.
+  const write = async (id: string, action: CommunityAction, run: () => Promise<unknown>): Promise<void> => {
+    await run().catch((e: unknown) => {
+      console.error(`[communities] ${action} failed`, e)
+      ctx.send({ kind: 'communityActionFailed', id, action, message: e instanceof Error ? e.message : String(e) })
+    })
     ctx.send({ kind: 'communities', communities: await list() })
+  }
+  ctx.on('joinCommunity', async (msg) => {
+    await write(msg.id, 'join', async () => await signed(`${await base('v1')}/${encodeURIComponent(msg.id)}/members`, 'POST'))
+  })
+  ctx.on('requestToJoinCommunity', async (msg) => {
+    await write(msg.id, 'requestToJoin', async () => {
+      const url = `${await base('v1')}/${encodeURIComponent(msg.id)}/requests`
+      return await signed(url, 'POST', { targetedAddress: getPlayer()?.userId ?? '', type: 'request_to_join' })
+    })
+  })
+  ctx.on('cancelJoinRequest', async (msg) => {
+    await write(msg.id, 'cancelJoinRequest', async () => {
+      const url = `${await base('v1')}/${encodeURIComponent(msg.id)}/requests/${encodeURIComponent(msg.requestId)}`
+      return await signed(url, 'PATCH', { intention: 'cancelled' })
+    })
   })
   ctx.on('leaveCommunity', async (msg) => {
-    const me = getPlayer()?.userId
-    if (me != null && me !== '') {
-      await signed(`${await base('v1')}/${encodeURIComponent(msg.id)}/members/${encodeURIComponent(me)}`, 'DELETE').catch(() => undefined)
-    }
-    ctx.send({ kind: 'communities', communities: await list() })
+    await write(msg.id, 'leave', async () => {
+      const me = getPlayer()?.userId
+      if (me == null || me === '') throw new Error('Not signed in')
+      return await signed(`${await base('v1')}/${encodeURIComponent(msg.id)}/members/${encodeURIComponent(me)}`, 'DELETE')
+    })
   })
   ctx.on('getCommunityDetail', async (msg) => {
     const { members, posts, places, events, photos } = await detail(msg.id).catch(() => ({ members: [], posts: [], places: [], events: [], photos: [] }))

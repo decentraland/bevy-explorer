@@ -1,0 +1,24 @@
+.body {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+/* The editor's element. The shell already scales the page, so the editor must not scale again. */
+.home {
+  --ui-scale: 1;
+  flex: 1;
+  min-height: 0;
+}
+.opening {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: var(--type-14);
+  color: var(--text);
+  pointer-events: none;
+}

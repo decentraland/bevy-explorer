@@ -6,7 +6,6 @@ use std::{
 
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use bevy::{
-    asset::io::AssetReader,
     prelude::*,
     tasks::{IoTaskPool, Task},
 };
@@ -100,7 +99,7 @@ fn debug_dump_scene(
                 .unwrap()
                 .to_owned()
                 .join("scene_dump")
-                .join(&scene.hash);
+                .join(&*scene.hash);
             std::fs::create_dir_all(&dump_folder).unwrap();
 
             // total / succeed / fail
@@ -109,7 +108,7 @@ fn debug_dump_scene(
             for content_file in def.content.files() {
                 count.lock().unwrap().0 += 1;
                 let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
-                    scene.hash.to_owned(),
+                    scene.hash.to_string(),
                     content_file.to_owned(),
                 ));
 
@@ -290,7 +289,18 @@ fn handle_preview_command(
 ) {
     for command in events.read() {
         match command {
-            PreviewCommand::ReloadScene { hash } => {
+            PreviewCommand::ReloadScene { hash }
+            // TODO properly handle model commands
+            | PreviewCommand::ReloadModel {
+                hash: _,
+                src: _,
+                scene_id: hash,
+            }
+            | PreviewCommand::RemoveModel {
+                hash: _,
+                src: _,
+                scene_id: hash,
+            } => {
                 if let Some(ctx) = live_scenes
                     .scenes
                     .get(hash)

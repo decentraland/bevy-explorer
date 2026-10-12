@@ -1,11 +1,12 @@
+use std::{borrow::Cow, cell::RefCell, rc::Rc, sync::Arc};
+
+use alloy_rpc_client::{ClientBuilder, RpcClient, WsConnect};
 use anyhow::anyhow;
 use bevy::log::debug;
 use common::rpc::{RPCSendableMessage, RpcCall, RpcResultSender};
-use ethers_providers::{Provider, Ws};
-use std::{cell::RefCell, rc::Rc, sync::Arc};
 use tokio::sync::Mutex;
 
-use crate::{interface::crdt_context::CrdtContext, RpcCalls};
+use crate::RpcCalls;
 
 use super::State;
 
@@ -25,17 +26,14 @@ pub async fn op_send_async(
     let params: Vec<serde_json::Value> = serde_json::from_str(&params)?;
 
     match method.as_str() {
-        "eth_sendTransaction" | "eth_signTypedData_v4" => {
+        signing if RPCSendableMessage::SIGNING_METHODS.contains(&signing) => {
             let (sx, rx) = RpcResultSender::<Result<serde_json::Value, String>>::channel();
-
-            let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
 
             state
                 .borrow_mut()
                 .borrow_mut::<RpcCalls>()
                 .push(RpcCall::SendAsync {
                     body: RPCSendableMessage { method, params },
-                    scene,
                     response: sx,
                 })?;
 
@@ -75,7 +73,7 @@ pub async fn op_send_async(
 
 #[derive(Default)]
 pub struct EthereumProvider {
-    provider: Mutex<Option<Provider<Ws>>>,
+    provider: Mutex<Option<RpcClient>>,
 }
 
 impl EthereumProvider {
@@ -94,10 +92,18 @@ impl EthereumProvider {
 
         let provider = match &*this_provider {
             Some(p) => p,
-            None => this_provider.insert(Provider::<Ws>::connect(provider_url()).await?),
+            None => {
+                let client: RpcClient = ClientBuilder::default()
+                    .ws(WsConnect::new(provider_url()))
+                    .await?;
+
+                this_provider.insert(client)
+            }
         };
 
-        let result = provider.request(method, params).await;
+        let result = provider
+            .request(Cow::Owned(method.to_owned()), params)
+            .await;
 
         match result {
             Err(e) => {

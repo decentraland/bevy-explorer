@@ -98,16 +98,16 @@ export function startBridge(register: (ctx: Ctx) => void): void {
     if (list == null) return
     // Each handler is isolated: one domain throwing must not stop the others from seeing the
     // message they also registered for.
+    const fail = (err: unknown): void => {
+      console.error(`[bridge] ${env.msg.kind} failed`, err)
+      ctx.send({ kind: 'requestFailed', request: env.msg.kind, error: String(err) })
+    }
     for (const handler of list) {
       try {
         const r = handler(env.msg)
-        if (r instanceof Promise) {
-          r.catch((err) => {
-            console.error(`[bridge] ${env.msg.kind} failed`, err)
-          })
-        }
+        if (r instanceof Promise) r.catch(fail)
       } catch (err) {
-        console.error(`[bridge] ${env.msg.kind} failed`, err)
+        fail(err)
       }
     }
   }

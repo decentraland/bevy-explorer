@@ -93,7 +93,7 @@ fn asset_load_on_insert(
 
     for file_path in &asset_load.assets {
         let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
-            renderer_scene_context.hash.to_owned(),
+            renderer_scene_context.hash.to_string(),
             file_path.to_owned(),
         ));
         // gltfs must load with the same settings as gltf containers: assets are keyed by

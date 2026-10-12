@@ -1,0 +1,23 @@
+[package]
+name = "dcl_scene_wasm"
+version = "0.1.0"
+edition = "2021"
+
+# The scene runtime a sandbox worker runs its scene on, in its own memory. Web only; built as
+# its own wasm artifact (deploy/web/engine/pkg-scene).
+[lib]
+crate-type = ["cdylib"]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+common = { workspace = true }
+dcl = { workspace = true }
+dcl_wasm = { workspace = true }
+ipfs = { workspace = true }
+system_bridge = { workspace = true }
+bevy = { workspace = true, features = ["web-worker", "webgpu"] }
+tokio = { workspace = true }
+rmp-serde = "1.3"
+wasm-bindgen = { workspace = true }
+console_error_panic_hook = "0.1.7"
+getrandom = { workspace = true, features = ["wasm_js"] }
+uuid = { workspace = true, features = ["js"] }

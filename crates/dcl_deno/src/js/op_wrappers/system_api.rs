@@ -11,10 +11,11 @@ use std::{cell::RefCell, rc::Rc};
 use system_bridge::LivekitUpdate;
 use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
-    BlockingStatusData, ChatMessage, FriendConnectivityEvent, FriendData, FriendRequestData,
-    FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo,
-    PermanentPermissionItem, PermissionRequestEvent, ProfileChangedEvent, ProximityEvent,
-    SceneLoadingUi, SetAvatarData, VoiceMessage,
+    BlockingStatusData, ChatMessage, ChatReactionData, DmHistoryEntryData, DmUserStateData,
+    FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData,
+    FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo, PermanentPermissionItem,
+    PermissionRequestEvent, ProfileChangedEvent, ProximityEvent, SatelliteView, SceneLoadingUi,
+    SetAvatarData, VoiceMessage, WelcomeState,
 };
 
 // list of op declarations
@@ -43,11 +44,17 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_live_scene_info(),
             op_get_home_scene(),
             op_set_home_scene(),
+            op_get_welcome(),
+            op_accept_terms(),
+            op_get_satellite_view(),
             op_get_system_action_stream(),
             op_read_system_action_stream(),
             op_get_chat_stream(),
             op_read_chat_stream(),
             op_send_chat(),
+            op_get_chat_reaction_stream(),
+            op_read_chat_reaction_stream(),
+            op_send_chat_reaction(),
             op_bridge_to_page(),
             op_get_bridge_stream(),
             op_read_bridge_stream(),
@@ -98,6 +105,11 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_get_blocking_status(),
             op_get_block_update_stream(),
             op_read_block_update_stream(),
+            op_get_dm_user_state_stream(),
+            op_read_dm_user_state_stream(),
+            op_close_dm_user_state_stream(),
+            op_get_dm_history(),
+            op_delete_dm_history(),
             // Connectivity
             #[cfg(feature = "livekit")]
             op_get_livekit_status_stream(),
@@ -258,6 +270,25 @@ pub async fn op_get_home_scene(state: Rc<RefCell<OpState>>) -> Result<HomeScene,
     dcl::js::system_api::op_get_home_scene(state).await
 }
 
+#[op2(async)]
+#[serde]
+pub async fn op_get_welcome(state: Rc<RefCell<OpState>>) -> Result<WelcomeState, anyhow::Error> {
+    dcl::js::system_api::op_get_welcome(state).await
+}
+
+#[op2(async)]
+pub async fn op_accept_terms(state: Rc<RefCell<OpState>>) -> Result<(), anyhow::Error> {
+    dcl::js::system_api::op_accept_terms(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_satellite_view(
+    state: Rc<RefCell<OpState>>,
+) -> Result<Option<SatelliteView>, anyhow::Error> {
+    dcl::js::system_api::op_get_satellite_view(state).await
+}
+
 #[op2]
 pub fn op_set_home_scene(
     state: Rc<RefCell<OpState>>,
@@ -302,6 +333,31 @@ pub fn op_send_chat(
     #[string] channel: String,
 ) {
     dcl::js::system_api::op_send_chat(state, message, channel)
+}
+
+#[op2(async)]
+pub async fn op_get_chat_reaction_stream(state: Rc<RefCell<OpState>>) -> u32 {
+    dcl::js::system_api::op_get_chat_reaction_stream(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_read_chat_reaction_stream(
+    state: Rc<RefCell<OpState>>,
+    rid: u32,
+) -> Result<Option<ChatReactionData>, deno_core::anyhow::Error> {
+    dcl::js::system_api::op_read_chat_reaction_stream(state, rid).await
+}
+
+#[op2(fast)]
+pub fn op_send_chat_reaction(
+    state: Rc<RefCell<OpState>>,
+    #[string] channel: String,
+    #[string] message_id: String,
+    #[string] emoji: String,
+    remove: bool,
+) {
+    dcl::js::system_api::op_send_chat_reaction(state, channel, message_id, emoji, remove)
 }
 
 #[op2(fast)]
@@ -652,6 +708,39 @@ pub async fn op_get_blocking_status(
     state: Rc<RefCell<OpState>>,
 ) -> Result<BlockingStatusData, anyhow::Error> {
     dcl::js::system_api::op_get_blocking_status(state).await
+}
+
+#[op2(fast)]
+pub fn op_get_dm_user_state_stream(state: Rc<RefCell<OpState>>, #[string] address: String) -> u32 {
+    dcl::js::system_api::op_get_dm_user_state_stream(state, address)
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_read_dm_user_state_stream(
+    state: Rc<RefCell<OpState>>,
+    #[smi] rid: u32,
+) -> Result<Option<DmUserStateData>, anyhow::Error> {
+    dcl::js::system_api::op_read_dm_user_state_stream(state, rid).await
+}
+
+#[op2(fast)]
+pub fn op_close_dm_user_state_stream(state: Rc<RefCell<OpState>>, #[smi] rid: u32) {
+    dcl::js::system_api::op_close_dm_user_state_stream(state, rid)
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_dm_history(
+    state: Rc<RefCell<OpState>>,
+    #[string] address: String,
+) -> Result<Vec<DmHistoryEntryData>, anyhow::Error> {
+    dcl::js::system_api::op_get_dm_history(state, address).await
+}
+
+#[op2(fast)]
+pub fn op_delete_dm_history(state: Rc<RefCell<OpState>>, #[string] address: String) {
+    dcl::js::system_api::op_delete_dm_history(state, address)
 }
 
 #[op2(async)]

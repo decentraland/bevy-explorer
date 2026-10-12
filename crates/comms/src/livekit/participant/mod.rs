@@ -1,4 +1,6 @@
-pub(super) mod plugin;
+pub(crate) mod plugin;
+
+use std::collections::HashMap;
 
 use bevy::{platform::sync::Arc, prelude::*};
 #[cfg(not(target_arch = "wasm32"))]
@@ -51,6 +53,17 @@ pub struct HostedBy(Entity);
 #[relationship_target(relationship=HostedBy, linked_spawn)]
 pub struct HostingParticipants(Vec<Entity>);
 
+/// A room's participant entities by LiveKit identity, lowercased. Maintained as participants
+/// come and go, so handlers can find a participant without scanning the room.
+#[derive(Component, Default, Deref, DerefMut)]
+pub struct ParticipantIndex(HashMap<String, Entity>);
+
+impl ParticipantIndex {
+    pub fn key(identity: &str) -> String {
+        identity.to_lowercase()
+    }
+}
+
 #[derive(Event)]
 pub struct ParticipantConnected {
     pub participant: LivekitParticipant,
@@ -89,6 +102,8 @@ pub struct ParticipantPayload {
     pub room: Entity,
     pub participant: LivekitParticipant,
     pub payload: Arc<Vec<u8>>,
+    /// LiveKit data-packet topic, if the sender set one.
+    pub topic: Option<String>,
 }
 
 #[derive(Event)]

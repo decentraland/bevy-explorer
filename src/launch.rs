@@ -19,7 +19,7 @@ use bevy::{
     prelude::*,
     render::render_asset::RenderAssetBytesPerFrame,
 };
-use common::structs::{AppConfig, EditorMode, IVec2Arg, PreviewMode};
+use common::structs::{AppConfig, EditorMode, IVec2Arg, PreviewMode, WorldHold};
 use system_api_types::launch_options::{ClientOptions, LaunchOptions};
 
 /// The base domain every backend host composes from — so this runs before
@@ -77,12 +77,23 @@ pub fn apply_client(
         // the scene set is the binary's: the ui scene and the startup scenes
         system_scene: _,
         portables: _,
+        // mapped onto the launch options before they are latched (main.rs)
+        deep_link: _,
         editor,
+        hold_world,
         imposter_source,
         gpu_bytes_per_frame,
+        // sizes the task pool, which exists before plugins run (lib.rs desktop_default_plugins;
+        // web.rs engine_start spawns the workers)
+        compute_threads: _,
     } = client;
 
     app.insert_resource(EditorMode(*editor));
+
+    // preview mode refuses realm changes, so nothing could ever release the hold
+    if *hold_world && !launch.preview {
+        app.insert_resource(WorldHold);
+    }
 
     // the preview stats and sysinfo panels (system_ui) read the frame rate
     if launch.preview && !app.is_plugin_added::<FrameTimeDiagnosticsPlugin>() {

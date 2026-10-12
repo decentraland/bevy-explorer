@@ -99,6 +99,11 @@ pub struct NishitaCloud {
     /// per-octave frequency step of the cloud noise (how much finer each
     /// successive "wave" is; default 2.345).
     pub cloud_lacunarity: f32,
+    /// steepness of the logistic contrast curve applied to cloud coverage
+    /// (0 = off).
+    pub cloud_sharpness: f32,
+    /// coverage value the contrast curve is centred on.
+    pub cloud_sharp_mid: f32,
 }
 
 #[derive(ShaderType)]
@@ -128,6 +133,8 @@ pub struct NishitaCloudUniform {
     pub cloud_scale: f32,
     pub cloud_steps: u32,
     pub cloud_lacunarity: f32,
+    pub cloud_sharpness: f32,
+    pub cloud_sharp_mid: f32,
 }
 
 impl From<&NishitaCloud> for NishitaCloudUniform {
@@ -155,6 +162,8 @@ impl From<&NishitaCloud> for NishitaCloudUniform {
             cloud_scale: value.cloud_scale,
             cloud_steps: value.cloud_steps,
             cloud_lacunarity: value.cloud_lacunarity,
+            cloud_sharpness: value.cloud_sharpness,
+            cloud_sharp_mid: value.cloud_sharp_mid,
         }
     }
 }
@@ -185,6 +194,8 @@ impl Default for NishitaCloud {
             cloud_scale: 1.5,
             cloud_steps: 44,
             cloud_lacunarity: 2.0,
+            cloud_sharpness: 50.0,
+            cloud_sharp_mid: 0.1,
         }
     }
 }

@@ -11,6 +11,7 @@
 // and silently end one of the two `for await` loops. Other domains subscribe via `onSystemAction`.
 import { BevyApi } from '../bevy-api'
 import type { SystemActionEvent } from '../bevy-api'
+import { relay } from '../system-helpers'
 import type { Ctx } from '../bridge'
 
 const AXIS_ACTION = /^(Camera|Pointer)(Zoom)?(In|Out|Up|Down|Left|Right)$/
@@ -23,23 +24,16 @@ export function onSystemAction(fn: (ev: SystemActionEvent) => void): void {
 }
 
 export function registerSystemAction(ctx: Ctx): void {
-  void (async () => {
-    try {
-      const stream = await BevyApi.getSystemActionStream()
-      for await (const ev of stream) {
-        if (!AXIS_ACTION.test(ev.action)) {
-          ctx.send({ kind: 'systemAction', action: ev.action, pressed: ev.pressed })
-        }
-        for (const fn of listeners) {
-          try {
-            fn(ev)
-          } catch (e) {
-            console.error('[systemAction] listener failed', e)
-          }
-        }
-      }
-    } catch (e) {
-      console.error('[systemAction] stream failed', e)
+  relay('systemAction', async () => await BevyApi.getSystemActionStream(), (ev) => {
+    if (!AXIS_ACTION.test(ev.action)) {
+      ctx.send({ kind: 'systemAction', action: ev.action, pressed: ev.pressed })
     }
-  })()
+    for (const fn of listeners) {
+      try {
+        fn(ev)
+      } catch (e) {
+        console.error('[systemAction] listener failed', e)
+      }
+    }
+  })
 }

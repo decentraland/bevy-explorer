@@ -1,4 +1,4 @@
-// Minimap preferences, persisted across sessions in localStorage (same approach as the
+// Minimap preferences, persisted across sessions (lib/prefs, same approach as the
 // chat's emoji recents — these are page-side UI choices, not engine settings, so they don't
 // belong in the `settings` bridge domain).
 //
@@ -6,13 +6,14 @@
 // leave the minimap in a state it can't render.
 
 import type { MinimapRotation, MinimapStyle } from '../../engine/protocol'
+import { getPref, PREF, setPref } from '../../lib/prefs'
 
-const STYLE_KEY = 'dcl-minimap-style'
-const ROTATION_KEY = 'dcl-minimap-rotation'
-const ZOOM_KEY = 'dcl-minimap-zoom'
-const MARKERS_KEY = 'dcl-minimap-markers'
-const OPEN_KEY = 'dcl-minimap-open'
-const WORLD_OPEN_KEY = 'dcl-minimap-open-world'
+const STYLE_KEY = PREF.minimapStyle
+const ROTATION_KEY = PREF.minimapRotation
+const ZOOM_KEY = PREF.minimapZoom
+const MARKERS_KEY = PREF.minimapMarkers
+const OPEN_KEY = PREF.minimapOpen
+const WORLD_OPEN_KEY = PREF.minimapWorldOpen
 
 const STYLES: MinimapStyle[] = ['parcel', 'satellite', 'imposters']
 const ROTATIONS: MinimapRotation[] = ['camera', 'north']
@@ -41,21 +42,8 @@ export const ALL_MARKER_CATEGORIES = [
   'parkour'
 ]
 
-function read(key: string): string | null {
-  try {
-    return localStorage.getItem(key)
-  } catch {
-    return null
-  }
-}
-
-function write(key: string, value: string): void {
-  try {
-    localStorage.setItem(key, value)
-  } catch {
-    // ignore quota / privacy-mode failures
-  }
-}
+const read = getPref
+const write = setPref
 
 export function loadStyle(): MinimapStyle {
   const v = read(STYLE_KEY)
@@ -100,17 +88,18 @@ export function saveMarkers(categories: string[]): void {
   write(MARKERS_KEY, JSON.stringify(categories))
 }
 
-/** Whether the map circle is expanded. Kept per realm type: Genesis City defaults open, a
- *  World defaults closed — Unity shows no map in a World, so scenes built against it expect
- *  that corner of the screen to be free. Each chevron click writes only the bit for the
- *  realm the player is in, so collapsing in one never changes the other. */
-export function loadOpen(isWorld: boolean): boolean {
-  const v = read(isWorld ? WORLD_OPEN_KEY : OPEN_KEY)
+/** Whether the map circle is expanded. Kept per realm type: Genesis City defaults open,
+ *  anywhere else (a World, a local scene) defaults closed — Unity shows no map in a World, so
+ *  scenes built against it expect that corner of the screen to be free. Each chevron click
+ *  writes only the bit for the realm the player is in, so collapsing in one never changes the
+ *  other. */
+export function loadOpen(inGenesis: boolean): boolean {
+  const v = read(inGenesis ? OPEN_KEY : WORLD_OPEN_KEY)
   if (v === 'true') return true
   if (v === 'false') return false
-  return !isWorld
+  return inGenesis
 }
 
-export function saveOpen(isWorld: boolean, open: boolean): void {
-  write(isWorld ? WORLD_OPEN_KEY : OPEN_KEY, String(open))
+export function saveOpen(inGenesis: boolean, open: boolean): void {
+  write(inGenesis ? OPEN_KEY : WORLD_OPEN_KEY, String(open))
 }

@@ -11,18 +11,20 @@ use common::{
 };
 use dcl_component::proto_components::common::Vector2;
 use serde::{Deserialize, Serialize};
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use strum::IntoEnumIterator;
 #[cfg(feature = "livekit")]
 use system_bridge::LivekitUpdate;
 use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
-    BlockingStatusData, ChatMessage, FriendConnectivityEvent, FriendData, FriendRequestData,
-    FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo,
-    PermanentPermissionItem, PermissionRequestEvent, ProfileChangedEvent, ProximityEvent,
-    SceneLoadingUi, SetAvatarData, SetPermanentPermission, SetSinglePermission, SystemApi,
-    VoiceMessage,
+    BlockingStatusData, ChatMessage, ChatReactionData, DmHistoryEntryData, DmUserStateData,
+    FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData,
+    FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo, PermanentPermissionItem,
+    PermissionRequestEvent, ProfileChangedEvent, ProximityEvent, SatelliteView, SceneLoadingUi,
+    SetAvatarData, SetPermanentPermission, SetSinglePermission, SystemApi, VoiceMessage,
+    WelcomeState,
 };
+use tokio::sync::Notify;
 
 use crate::{interface::crdt_context::CrdtContext, js::player_identity, RpcCalls};
 
@@ -216,12 +218,11 @@ pub async fn op_kernel_fetch_headers(
 
     state
         .borrow_mut()
-        .borrow_mut::<RpcCalls>()
-        .push(RpcCall::SignRequest {
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::SignRequest {
             method: method.unwrap_or_else(|| String::from("get")),
             uri,
             meta,
-            scene: None,
             response: sx,
         })?;
 
@@ -368,6 +369,44 @@ pub async fn op_get_home_scene(state: Rc<RefCell<impl State>>) -> Result<HomeSce
     rx.await.map_err(|e| anyhow::anyhow!(e))
 }
 
+pub async fn op_get_welcome(state: Rc<RefCell<impl State>>) -> Result<WelcomeState, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetWelcome(sx))
+        .unwrap();
+
+    rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_accept_terms(state: Rc<RefCell<impl State>>) -> Result<(), anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::AcceptTerms(sx))
+        .unwrap();
+
+    rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_get_satellite_view(
+    state: Rc<RefCell<impl State>>,
+) -> Result<Option<SatelliteView>, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetSatelliteView(sx))
+        .unwrap();
+
+    rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
 pub fn op_set_home_scene(state: Rc<RefCell<impl State>>, realm: String, parcel: Vector2) {
     state
         .borrow_mut()
@@ -452,6 +491,59 @@ pub fn op_send_chat(state: Rc<RefCell<impl State>>, message: String, channel: St
         .unwrap();
 }
 
+pub async fn op_get_chat_reaction_stream(state: Rc<RefCell<impl State>>) -> u32 {
+    let (sx, rx) = RpcStreamSender::channel();
+    state.borrow_mut().put(rx);
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetChatReactionStream(sx))
+        .unwrap();
+
+    2
+}
+
+pub async fn op_read_chat_reaction_stream(
+    state: Rc<RefCell<impl State>>,
+    _rid: u32,
+) -> Result<Option<ChatReactionData>, anyhow::Error> {
+    let Some(mut receiver) = state
+        .borrow_mut()
+        .try_take::<RpcStreamReceiver<ChatReactionData>>()
+    else {
+        return Ok(None);
+    };
+
+    let res = match receiver.recv().await {
+        Some(data) => Ok(Some(data)),
+        None => Ok(None),
+    };
+
+    state.borrow_mut().put(receiver);
+
+    res
+}
+
+pub fn op_send_chat_reaction(
+    state: Rc<RefCell<impl State>>,
+    channel: String,
+    message_id: String,
+    emoji: String,
+    remove: bool,
+) {
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::SendChatReaction {
+            channel,
+            message_id,
+            emoji,
+            remove,
+        })
+        .unwrap();
+}
+
 // Native super-user bridge transport (backs a BroadcastChannel polyfill). scene -> page:
 pub fn op_bridge_to_page(state: Rc<RefCell<impl State>>, msg: String) {
     state
@@ -504,7 +596,6 @@ pub async fn op_get_user_profile(
         .borrow_mut::<RpcCalls>()
         .push(RpcCall::GetUserData {
             user: Some(address),
-            scene,
             response: sx,
         })?;
 
@@ -1178,6 +1269,108 @@ pub async fn op_get_blocking_status(
         .map_err(|e| anyhow::anyhow!(e))
 }
 
+/// Open DM user-state streams by stream id. Several can be open at once (one per
+/// conversation the HUD shows), so unlike the single-slot streams they are keyed rather than
+/// stored by type. A receiver is out of `receivers` while a read awaits it; `notifies` holds an
+/// entry for every open stream, and closing removes it and wakes a parked read so the receiver
+/// drops and the engine sees the stream closed.
+#[derive(Default)]
+struct DmUserStateStreams {
+    next_id: u32,
+    receivers: HashMap<u32, RpcStreamReceiver<DmUserStateData>>,
+    notifies: HashMap<u32, Arc<Notify>>,
+}
+
+pub fn op_get_dm_user_state_stream(state: Rc<RefCell<impl State>>, address: String) -> u32 {
+    let (sx, rx) = RpcStreamSender::channel();
+
+    let mut state = state.borrow_mut();
+    if !state.has::<DmUserStateStreams>() {
+        state.put(DmUserStateStreams::default());
+    }
+    let streams = state.borrow_mut::<DmUserStateStreams>();
+    streams.next_id += 1;
+    let rid = streams.next_id;
+    streams.receivers.insert(rid, rx);
+    streams.notifies.insert(rid, Arc::new(Notify::new()));
+
+    state
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetDmUserStateStream(address, sx))
+        .unwrap();
+
+    rid
+}
+
+pub async fn op_read_dm_user_state_stream(
+    state: Rc<RefCell<impl State>>,
+    rid: u32,
+) -> Result<Option<DmUserStateData>, anyhow::Error> {
+    let Some((mut receiver, notify)) = state
+        .borrow_mut()
+        .try_borrow_mut::<DmUserStateStreams>()
+        .and_then(|streams| {
+            let receiver = streams.receivers.remove(&rid)?;
+            let notify = streams.notifies.get(&rid)?.clone();
+            Some((receiver, notify))
+        })
+    else {
+        return Ok(None);
+    };
+
+    let res = tokio::select! {
+        item = receiver.recv() => item,
+        _ = notify.notified() => None,
+    };
+
+    let mut state = state.borrow_mut();
+    let streams = state.borrow_mut::<DmUserStateStreams>();
+    if !streams.notifies.contains_key(&rid) {
+        // closed while the read was parked: drop the receiver
+        return Ok(None);
+    }
+    match res {
+        Some(_) => {
+            streams.receivers.insert(rid, receiver);
+        }
+        // the engine dropped its sender
+        None => {
+            streams.notifies.remove(&rid);
+        }
+    }
+    Ok(res)
+}
+
+/// Ends the stream: wakes a parked read, and drops the receiver so the engine's sender closes.
+pub fn op_close_dm_user_state_stream(state: Rc<RefCell<impl State>>, rid: u32) {
+    if let Some(streams) = state.borrow_mut().try_borrow_mut::<DmUserStateStreams>() {
+        streams.receivers.remove(&rid);
+        if let Some(notify) = streams.notifies.remove(&rid) {
+            notify.notify_one();
+        }
+    }
+}
+
+pub async fn op_get_dm_history(
+    state: Rc<RefCell<impl State>>,
+    address: String,
+) -> Result<Vec<DmHistoryEntryData>, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetDmHistory(address, sx))?;
+    rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+pub fn op_delete_dm_history(state: Rc<RefCell<impl State>>, address: String) {
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::DeleteDmHistory(address))
+        .unwrap();
+}
+
 pub async fn op_get_block_update_stream(state: Rc<RefCell<impl State>>) -> u32 {
     let (sx, rx) = RpcStreamSender::channel();
     state.borrow_mut().put(rx);
@@ -1246,4 +1439,51 @@ pub async fn op_read_livekit_status_stream(
     state.borrow_mut().put(receiver);
 
     res
+}
+
+#[cfg(test)]
+mod kernel_fetch_tests {
+    use super::*;
+    use crate::js::test_state::TestState;
+    use futures_lite::future::{block_on, poll_once};
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    fn fetch(
+        state: &Rc<RefCell<TestState>>,
+    ) -> impl std::future::Future<Output = Result<Vec<(String, String)>, anyhow::Error>> {
+        op_kernel_fetch_headers(
+            state.clone(),
+            "https://example.com".to_owned(),
+            None,
+            Some("{}".to_owned()),
+        )
+    }
+
+    #[test]
+    fn goes_to_the_system_channel() {
+        let (sx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut state = TestState::default();
+        state.put(RpcCalls::default());
+        state.put(SuperUserScene(sx));
+        let state = Rc::new(RefCell::new(state));
+
+        assert!(block_on(poll_once(fetch(&state))).is_none());
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(SystemApi::SignRequest { meta: Some(meta), .. }) if meta == "{}"
+        ));
+        assert!(state.borrow().borrow::<RpcCalls>().is_empty());
+    }
+
+    // an ordinary scene's state has no system channel
+    #[test]
+    fn signs_nothing_without_the_system_channel() {
+        let mut state = TestState::default();
+        state.put(RpcCalls::default());
+        let state = Rc::new(RefCell::new(state));
+
+        let result = catch_unwind(AssertUnwindSafe(|| block_on(poll_once(fetch(&state)))));
+        assert!(result.is_err());
+        assert!(state.borrow().borrow::<RpcCalls>().is_empty());
+    }
 }

@@ -12,7 +12,7 @@ use dcl_component::proto_components::common::Vector3 as DclVector3;
 use serde::Serialize;
 use std::{cell::RefCell, rc::Rc};
 
-use crate::{interface::crdt_context::CrdtContext, RpcCalls};
+use crate::RpcCalls;
 use dcl_component::transform_and_parent::DclTranslation;
 
 use super::{runtime::scene_information, State};
@@ -46,11 +46,9 @@ pub async fn op_move_player_to(
 
     {
         let mut op_state = state.borrow_mut();
-        let scene = op_state.borrow::<CrdtContext>().scene_id.0;
         op_state
             .borrow_mut::<RpcCalls>()
             .push(RpcCall::MovePlayer {
-                scene: Some(scene),
                 to,
                 looking_at,
                 duration,
@@ -79,11 +77,9 @@ pub async fn op_walk_player_to(
 
     {
         let mut op_state = state.borrow_mut();
-        let scene = op_state.borrow::<CrdtContext>().scene_id.0;
         op_state
             .borrow_mut::<RpcCalls>()
             .push(RpcCall::WalkPlayer {
-                scene: Some(scene),
                 to,
                 stop_threshold,
                 timeout,
@@ -102,12 +98,10 @@ pub async fn op_teleport_to(
 ) -> Result<bool, anyhow::Error> {
     debug!("op_teleport_to");
     let (sx, rx) = RpcResultSender::<Result<(), String>>::channel();
-    let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
         .push(RpcCall::TeleportPlayer {
-            scene: Some(scene),
             to: position_x.zip(position_y).map(|(x, y)| IVec2::new(x, y)),
             realm,
             response: sx,
@@ -127,12 +121,10 @@ pub async fn op_change_realm(
 ) -> Result<bool, anyhow::Error> {
     debug!("op_change_realm");
     let (sx, rx) = RpcResultSender::<Result<(), String>>::channel();
-    let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
         .push(RpcCall::ChangeRealm {
-            scene,
             to: realm,
             message,
             response: sx,
@@ -147,15 +139,10 @@ pub async fn op_external_url(
 ) -> Result<bool, anyhow::Error> {
     debug!("op_external_url");
     let (sx, rx) = RpcResultSender::<Result<(), String>>::channel();
-    let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
-        .push(RpcCall::ExternalUrl {
-            scene,
-            url,
-            response: sx,
-        })?;
+        .push(RpcCall::ExternalUrl { url, response: sx })?;
 
     Ok(matches!(rx.await, Ok(Ok(_))))
 }
@@ -171,10 +158,7 @@ pub fn op_emote(
 
 pub fn op_stop_emote(op_state: &mut impl State) -> Result<(), anyhow::Error> {
     debug!("op_stop_emote");
-    let scene = op_state.borrow::<CrdtContext>().scene_id.0;
-    op_state
-        .borrow_mut::<RpcCalls>()
-        .push(RpcCall::StopEmote { scene })
+    op_state.borrow_mut::<RpcCalls>().push(RpcCall::StopEmote)
 }
 
 pub async fn op_scene_emote(
@@ -214,8 +198,6 @@ pub fn send_emote(
     r#loop: bool,
     upper_body: bool,
 ) -> Result<(), anyhow::Error> {
-    let context = op_state.borrow::<CrdtContext>();
-    let scene = context.scene_id.0;
     let mask = if upper_body {
         EmoteMask::UpperBody
     } else {
@@ -224,12 +206,7 @@ pub fn send_emote(
 
     op_state
         .borrow_mut::<RpcCalls>()
-        .push(RpcCall::TriggerEmote {
-            scene,
-            urn,
-            r#loop,
-            mask,
-        })
+        .push(RpcCall::TriggerEmote { urn, r#loop, mask })
 }
 
 pub async fn op_open_nft_dialog(
@@ -241,16 +218,10 @@ pub async fn op_open_nft_dialog(
 
     {
         let mut state = op_state.borrow_mut();
-        let context = state.borrow::<CrdtContext>();
-        let scene = context.scene_id.0;
 
         state
             .borrow_mut::<RpcCalls>()
-            .push(RpcCall::OpenNftDialog {
-                scene,
-                urn,
-                response: sx,
-            })?;
+            .push(RpcCall::OpenNftDialog { urn, response: sx })?;
     }
 
     rx.await.map_err(|e| anyhow!(e))?.map_err(|e| anyhow!(e))
@@ -265,16 +236,10 @@ pub async fn op_open_explorer_ui(
 
     {
         let mut state = op_state.borrow_mut();
-        let context = state.borrow::<CrdtContext>();
-        let scene = context.scene_id.0;
 
         state
             .borrow_mut::<RpcCalls>()
-            .push(RpcCall::OpenExplorerUi {
-                scene,
-                ui,
-                response: sx,
-            })?;
+            .push(RpcCall::OpenExplorerUi { ui, response: sx })?;
     }
 
     Ok(rx.await.map_err(|e| anyhow!(e))? as i32)
@@ -296,8 +261,6 @@ pub async fn op_ui_focus(
 
     {
         let mut state = op_state.borrow_mut();
-        let context = state.borrow::<CrdtContext>();
-        let scene = context.scene_id.0;
 
         let element_id = element_id.unwrap_or_default();
         let action = match (apply, element_id.is_empty()) {
@@ -307,7 +270,6 @@ pub async fn op_ui_focus(
         };
 
         state.borrow_mut::<RpcCalls>().push(RpcCall::UiFocus {
-            scene,
             action,
             response: sx,
         })?;
@@ -328,15 +290,10 @@ pub async fn op_copy_to_clipboard(
 
     {
         let mut state = state.borrow_mut();
-        let scene = state.borrow::<CrdtContext>().scene_id.0;
 
         state
             .borrow_mut::<RpcCalls>()
-            .push(RpcCall::CopyToClipboard {
-                scene,
-                text,
-                response: sx,
-            })?;
+            .push(RpcCall::CopyToClipboard { text, response: sx })?;
     }
 
     rx.await.map_err(|e| anyhow!(e))?.map_err(|e| anyhow!(e))

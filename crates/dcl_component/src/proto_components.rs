@@ -1,6 +1,6 @@
 use bevy_math::FloatOrd;
 
-use super::{FromDclReader, GlobalCrdtData, Localizer, PositionFree, ToDclWriter};
+use super::{FromDclReader, PositionFree, ToDclWriter};
 
 pub mod sdk {
     #[allow(clippy::all)]
@@ -13,6 +13,11 @@ pub mod sdk {
                 "/decentraland.sdk.components.common.rs"
             ));
         }
+    }
+
+    #[allow(clippy::all)]
+    pub mod development {
+        include!(concat!(env!("OUT_DIR"), "/decentraland.sdk.development.rs"));
     }
 }
 
@@ -56,7 +61,6 @@ pub mod social {
     ));
 }
 
-#[cfg(feature = "social")]
 pub mod social_service {
     include!(concat!(env!("OUT_DIR"), "/decentraland.social_service.rs"));
 
@@ -158,13 +162,6 @@ impl DclProtoComponent for sdk::components::PbParticleSystem {}
 impl PositionFree for sdk::components::PbPlayerIdentityData {}
 impl PositionFree for sdk::components::PbAvatarBase {}
 impl PositionFree for sdk::components::PbAvatarEquippedData {}
-
-// GlobalCrdtData impl for PbAvatarMovementInfo (walk_target is a world-space position that needs localization)
-impl GlobalCrdtData for sdk::components::PbAvatarMovementInfo {
-    fn localizer() -> Localizer {
-        Localizer::AvatarMovementInfo
-    }
-}
 
 // VECTOR2 conversions
 impl Copy for common::Vector2 {}

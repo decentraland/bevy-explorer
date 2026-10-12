@@ -10,7 +10,8 @@ use tokio::{
     task::yield_now,
 };
 
-#[derive(Clone, Resource)]
+#[derive(Clone)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Resource))]
 pub struct SocialRuntime(
     #[cfg(not(target_arch = "wasm32"))] Arc<Runtime>,
     #[cfg(target_arch = "wasm32")] Arc<LocalRuntime>,
@@ -76,19 +77,21 @@ impl SocialRuntime {
     }
 }
 
-/// SAFETY: WASM is single-threaded, so Send/Sync are safe.
+/// How systems take the runtime. On the web it is a single-threaded tokio runtime, so it is a
+/// non-send resource: that keeps every system using it on the engine thread, where its tasks run.
+#[cfg(not(target_arch = "wasm32"))]
+pub type SocialRuntimeRes<'w> = Res<'w, SocialRuntime>;
 #[cfg(target_arch = "wasm32")]
-unsafe impl Send for SocialRuntime {}
-
-/// SAFETY: WASM is single-threaded, so Send/Sync are safe.
-#[cfg(target_arch = "wasm32")]
-unsafe impl Sync for SocialRuntime {}
+pub type SocialRuntimeRes<'w> = NonSend<'w, SocialRuntime>;
 
 pub struct SocialRuntimePlugin;
 
 impl Plugin for SocialRuntimePlugin {
     fn build(&self, app: &mut App) {
+        #[cfg(not(target_arch = "wasm32"))]
         app.init_resource::<SocialRuntime>();
+        #[cfg(target_arch = "wasm32")]
+        app.init_non_send_resource::<SocialRuntime>();
         #[cfg(target_arch = "wasm32")]
         app.add_systems(First, yield_to_runtime);
     }
@@ -97,6 +100,6 @@ impl Plugin for SocialRuntimePlugin {
 /// Tokio uses cooperative scheduling, so unless we explicitly yield time for
 /// it, it will never poll the tasks on wasm.
 #[cfg(target_arch = "wasm32")]
-fn yield_to_runtime(social_runtime: Res<SocialRuntime>) {
+fn yield_to_runtime(social_runtime: SocialRuntimeRes) {
     social_runtime.block_on(yield_now());
 }

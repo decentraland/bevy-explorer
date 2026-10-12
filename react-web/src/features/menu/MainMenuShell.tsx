@@ -2,11 +2,27 @@
 // body). Every full-screen menu page (Settings, Backpack, …) renders inside this so
 // the top bar is identical and consistent. Pages pass their content as children.
 
-import { useEffect, useState } from 'react'
-import { DclLogo, Icon, type IconName } from '../../design'
+import { useContext, useEffect, useState } from 'react'
+import { Button, DclLogo, Icon, type IconName } from '../../design'
 import { keyHintFor, useBindingsSnapshot } from '../../lib/bindingLabels'
+import { EDITOR_BUILD, EditorOffered } from '../editorHost/config'
 import { ProfileChip } from './ProfileChip'
 import styles from './MainMenuShell.module.css'
+import onBackpack from '../../assets/menu-on/backpack.webp'
+import onEvents from '../../assets/menu-on/events.webp'
+import onPlaces from '../../assets/menu-on/places.webp'
+import onCommunities from '../../assets/menu-on/communities.webp'
+import onShop from '../../assets/menu-on/shop.webp'
+import onMap from '../../assets/menu-on/map.webp'
+import onSettings from '../../assets/menu-on/settings.webp'
+import onGallery from '../../assets/menu-on/gallery.webp'
+
+// The selected tab's full-colour artwork, and its display size (the map and settings art sit in a
+// larger canvas).
+const SELECTED_ART: Record<string, [string, number]> = {
+  backpack: [onBackpack, 36], events: [onEvents, 36], places: [onPlaces, 36], communities: [onCommunities, 36],
+  shop: [onShop, 36], map: [onMap, 46], settings: [onSettings, 46], gallery: [onGallery, 36]
+}
 
 // How many menu shells are currently mounted. Each full-screen page renders its own shell, so
 // SWITCHING pages unmounts one and mounts another. A shell that mounts while another is already open
@@ -27,13 +43,17 @@ export interface MenuItem {
 // The menu pages we support (others hidden). Matches the Figma nav bar
 // (icon + LABEL [shortcut]). Every item is now a React page.
 export const MENU_ITEMS: MenuItem[] = [
-  { label: 'Communities', icon: 'communities', hotkey: 'Communities', page: 'communities' },
   { label: 'Places', icon: 'places', hotkey: 'Places', page: 'places' },
+  { label: 'Events', icon: 'events', page: 'events' },
+  { label: 'Shop', icon: 'marketplace', page: 'shop' },
   { label: 'Map', icon: 'map', hotkey: 'Map', page: 'map' },
   { label: 'Backpack', icon: 'backpack', hotkey: 'Backpack', page: 'backpack' },
   { label: 'Gallery', icon: 'gallery', hotkey: 'Gallery', page: 'gallery' },
   { label: 'Settings', icon: 'settings', hotkey: 'Settings', page: 'settings' }
 ]
+
+// The scene editor's home (editorHost/CreatePage).
+const CREATE_ITEM: MenuItem = { label: 'Create', icon: 'create', page: 'create' }
 
 export function MainMenuShell({
   active,
@@ -61,6 +81,8 @@ export function MainMenuShell({
   // Animate the entrance only on a fresh open (no other shell mounted), not on page switches.
   const [animate] = useState(() => openShells === 0)
   const bindingsSnap = useBindingsSnapshot()
+  const offered = useContext(EditorOffered)
+  const items = EDITOR_BUILD && offered ? [...MENU_ITEMS, CREATE_ITEM] : MENU_ITEMS
   useEffect(() => {
     openShells++
     return () => {
@@ -72,20 +94,32 @@ export function MainMenuShell({
     <div className={`${styles.overlay} ${animate ? styles.animateIn : ''} ${transparentBody ? styles.overlayPass : ''}`.trim()}>
       <header className={styles.topbar}>
         <div className={styles.brand}>
-          <DclLogo size={26} />
+          <DclLogo size={27} />
           <span className={styles.brandName}>Decentraland</span>
         </div>
+        <Button variant="accent" size="header" className={styles.lobby} onClick={() => onNavigate('lobby')}>
+          <Icon name="lobby" size={24} />
+          Lobby
+        </Button>
         <nav className={styles.menu}>
-          {MENU_ITEMS.map((m) => {
+          {items.map((m) => {
             const shortcut = m.hotkey != null ? keyHintFor(bindingsSnap, m.hotkey) : undefined
             return (
               <button
                 key={m.label}
                 type="button"
                 className={`${styles.menuItem} ${m.page === active ? styles.menuActive : ''}`.trim()}
+                data-page={m.page}
+                aria-current={m.page === active ? 'page' : undefined}
                 onClick={() => m.page !== active && onNavigate(m.page)}
               >
-                <Icon name={m.icon} size={20} />
+                <span className={styles.menuIcon}>
+                  {m.page === active && SELECTED_ART[m.page] != null ? (
+                    <img src={SELECTED_ART[m.page][0]} alt="" width={SELECTED_ART[m.page][1]} height={SELECTED_ART[m.page][1]} />
+                  ) : (
+                    <Icon name={m.icon} size={24} />
+                  )}
+                </span>
                 <span className={styles.menuLabel}>
                   {m.label}
                   {shortcut && <span className={styles.menuKey}> [{shortcut}]</span>}
@@ -101,12 +135,11 @@ export function MainMenuShell({
             address={profileAddress}
             claimed={profileClaimed}
             onViewProfile={() => onNavigate('profile')}
-            onSignOut={() => onNavigate('signout')}
             onExit={onClose}
           />
         )}
         <button type="button" className={styles.close} aria-label="Close" onClick={onClose}>
-          ×
+          <span className={styles.closeIcon} aria-hidden="true" />
         </button>
       </header>
       <div className={styles.accent} />

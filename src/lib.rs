@@ -17,12 +17,9 @@ use avatar::AvatarPlugin;
 #[cfg(all(feature = "remote", not(target_arch = "wasm32")))]
 use bevy::remote::{http::RemoteHttpPlugin, RemotePlugin};
 #[cfg(not(target_arch = "wasm32"))]
+use bevy::window::{PresentMode, WindowResolution};
 use bevy::{
-    app::TaskPoolThreadAssignmentPolicy,
-    window::{PresentMode, WindowResolution},
-};
-use bevy::{
-    app::{PluginGroupBuilder, Propagate},
+    app::{PluginGroupBuilder, Propagate, TaskPoolThreadAssignmentPolicy},
     log::LogPlugin,
     prelude::*,
     render::view::RenderLayers,
@@ -30,7 +27,7 @@ use bevy::{
 #[cfg(target_arch = "wasm32")]
 use bevy::{
     asset::WasmLoaderHandle,
-    render::{render_resource::PipelineCompilationMode, renderer::RenderDevice, RenderPlugin},
+    render::{render_resource::PipelineCompilationMode, settings::RenderCreation, RenderPlugin},
 };
 #[cfg(not(debug_assertions))]
 use build_time::build_time_utc;
@@ -103,6 +100,12 @@ pub const DISTRIBUTION: &str = "desktop";
 #[cfg(target_arch = "wasm32")]
 pub const DISTRIBUTION: &str = "web";
 
+/// reads of an existing config.json that fail (e.g. a lock briefly held by another instance) are
+/// retried this many times, this far apart, before the config is treated as missing
+pub const CONFIG_READ_ATTEMPTS: u32 = 3;
+pub const CONFIG_READ_RETRY_PAUSE: std::time::Duration = std::time::Duration::from_millis(100);
+
+pub mod headless;
 pub mod launch;
 
 pub struct DecentralandApp(App);
@@ -114,6 +117,10 @@ pub struct DecentralandAppConfig {
     pub crash_file: Option<PathBuf>,
     #[cfg(target_arch = "wasm32")]
     pub wasm_loader_handle: Option<WasmLoaderHandle>,
+    /// Workers the page created for the compute task pool (they join it from
+    /// `web::compute_worker_main`).
+    #[cfg(target_arch = "wasm32")]
+    pub compute_threads: usize,
 }
 
 impl DecentralandAppConfig {
@@ -122,6 +129,7 @@ impl DecentralandAppConfig {
         arguments: DecentralandArguments,
         #[cfg(not(target_arch = "wasm32"))] crash_file: Option<PathBuf>,
         #[cfg(target_arch = "wasm32")] wasm_loader_handle: Option<WasmLoaderHandle>,
+        #[cfg(target_arch = "wasm32")] compute_threads: usize,
     ) -> Self {
         update_app_config_from_arguments(&mut app_config, &arguments);
         app_config.migrate_inputs();
@@ -133,6 +141,8 @@ impl DecentralandAppConfig {
             crash_file,
             #[cfg(target_arch = "wasm32")]
             wasm_loader_handle,
+            #[cfg(target_arch = "wasm32")]
+            compute_threads,
         }
     }
 
@@ -312,6 +322,7 @@ impl DecentralandArguments {
                 preview: self.startup_scenes_preview,
                 hot_reload: None,
                 hash: None,
+                failed: false,
             })
             .collect()
     }
@@ -360,16 +371,25 @@ impl DecentralandApp {
         #[cfg(all(not(target_arch = "wasm32"), feature = "react-hud-cef"))]
         if decentraland_app_config.arguments.hud && !decentraland_app_config.arguments.test_mode() {
             let launch = &decentraland_app_config.arguments.launch;
+            // an explicit destination (--realm and/or --position) or a non-default
+            // configured home realm IS the destination: injected into the page URL as
+            // ?realm= so the HUD skips its places picker (parity with ?realm= on web).
+            // Otherwise the param is omitted so the picker shows — and the HUD's own
+            // default-realm assumption then matches the realm the engine actually booted.
+            let server = (launch.realm.is_some()
+                || launch.position.is_some()
+                || decentraland_app_config.boot_server() != AppConfig::default().home_realm())
+            .then(|| decentraland_app_config.boot_server());
+            // no destination means the lobby shows, and terms not yet accepted mean the welcome
+            // page shows (except to a throwaway --guest), so hold the world until its first realm
+            // change, as the web page does with `hold_world` (preview refuses realm changes)
+            let welcome = !decentraland_app_config.app_config.terms_accepted()
+                && !decentraland_app_config.arguments.guest;
+            if (server.is_none() || welcome) && !launch.preview {
+                app.insert_resource(common::structs::WorldHold);
+            }
             app.add_plugins(react_hud_cef::ReactHudCefPlugin {
-                // an explicit destination (--realm and/or --position) or a non-default
-                // configured home realm IS the destination: injected into the page URL as
-                // ?realm= so the HUD skips its places picker (parity with ?realm= on web).
-                // Otherwise the param is omitted so the picker shows — and the HUD's own
-                // default-realm assumption then matches the realm the engine actually booted.
-                server: (launch.realm.is_some()
-                    || launch.position.is_some()
-                    || decentraland_app_config.boot_server() != AppConfig::default().home_realm())
-                .then(|| decentraland_app_config.boot_server()),
+                server,
                 position: launch.position.clone(),
                 guest: decentraland_app_config.arguments.guest,
             });
@@ -491,6 +511,7 @@ impl DecentralandApp {
                     preview: decentraland_app_config.arguments.startup_scenes_preview,
                     hot_reload: None,
                     hash: None,
+                    failed: false,
                 },
             );
         } else {
@@ -611,6 +632,7 @@ impl DecentralandApp {
         // Systems
         app.configure_sets(Startup, SetupSets::Init.before(SetupSets::Main));
         app.add_systems(Startup, setup.in_set(SetupSets::Init));
+        app.add_systems(Startup, save_fresh_user_id);
 
         // Commands
         app.add_console_command::<ChangeLocationCommand, _>(change_location);
@@ -624,21 +646,19 @@ impl DecentralandApp {
     }
 }
 
+fn save_fresh_user_id(config: Res<AppConfig>) {
+    if config.is_fresh_user_id {
+        platform::write_config_file(&*config);
+    }
+}
+
 fn setup(
     mut commands: Commands,
     mut player_resource: ResMut<PrimaryPlayerRes>,
     mut cam_resource: ResMut<PrimaryCameraRes>,
     config: Res<AppConfig>,
     boot_location: Res<BootLocation>,
-    #[cfg(target_arch = "wasm32")] render_device: ResMut<RenderDevice>,
 ) {
-    #[cfg(target_arch = "wasm32")]
-    render_device
-        .wgpu_device()
-        .on_uncaptured_error(Box::new(|e: wgpu::Error| {
-            error!("captured wgpu error: {e:?}")
-        }));
-
     info!("main::setup");
     // create the main player
     let player_id = commands
@@ -734,6 +754,7 @@ fn update_app_config_from_arguments(
 
 #[cfg(not(target_arch = "wasm32"))]
 fn desktop_default_plugins(decentraland_app_config: &DecentralandAppConfig) -> PluginGroupBuilder {
+    let compute_threads = decentraland_app_config.arguments.client.compute_threads;
     DefaultPlugins
         .set(TaskPoolPlugin {
             task_pool_options: TaskPoolOptions {
@@ -752,8 +773,8 @@ fn desktop_default_plugins(decentraland_app_config: &DecentralandAppConfig) -> P
                     on_thread_destroy: None,
                 },
                 compute: TaskPoolThreadAssignmentPolicy {
-                    min_threads: 2,
-                    max_threads: 8,
+                    min_threads: compute_threads.unwrap_or(2),
+                    max_threads: compute_threads.unwrap_or(8),
                     percent: 0.25,
                     on_thread_spawn: None,
                     on_thread_destroy: None,
@@ -801,8 +822,29 @@ fn desktop_default_plugins(decentraland_app_config: &DecentralandAppConfig) -> P
 
 #[cfg(target_arch = "wasm32")]
 fn wasm_default_plugins(decentraland_app_config: &DecentralandAppConfig) -> PluginGroupBuilder {
+    // Only the compute pool has real threads on the web (the page's compute workers); the io and
+    // async compute pools run their tasks on the engine worker's event loop, so one nominal
+    // thread each.
+    let fixed = |n: usize| TaskPoolThreadAssignmentPolicy {
+        min_threads: n,
+        max_threads: n,
+        percent: 1.0,
+        on_thread_spawn: None,
+        on_thread_destroy: None,
+    };
+    let compute_threads = decentraland_app_config.compute_threads.max(1);
     DefaultPlugins
+        .set(TaskPoolPlugin {
+            task_pool_options: TaskPoolOptions {
+                min_total_threads: compute_threads + 2,
+                max_total_threads: compute_threads + 2,
+                io: fixed(1),
+                async_compute: fixed(1),
+                compute: fixed(compute_threads),
+            },
+        })
         .set(RenderPlugin {
+            render_creation: RenderCreation::WebWorker,
             pipeline_compilation_mode: PipelineCompilationMode::async_with_handler(PipelineHandler),
             ..default()
         })
@@ -839,11 +881,22 @@ fn wasm_default_plugins(decentraland_app_config: &DecentralandAppConfig) -> Plug
         .add_before::<IpfsIoPlugin>(NftReaderPlugin)
 }
 
+/// `{os}-{DISTRIBUTION}` natively; wasm32-unknown-unknown has no os name (`std::env::consts::OS`
+/// is empty), so the web is just `web`.
+#[cfg(all(not(debug_assertions), not(target_arch = "wasm32")))]
+fn platform() -> String {
+    format!("{}-{DISTRIBUTION}", std::env::consts::OS)
+}
+#[cfg(all(not(debug_assertions), target_arch = "wasm32"))]
+fn platform() -> String {
+    DISTRIBUTION.to_owned()
+}
+
 pub fn version() -> String {
     #[cfg(not(debug_assertions))]
     return format!(
-        "bevy-{}-{DISTRIBUTION}-{}{}",
-        std::env::consts::OS,
+        "bevy-{}-{}{}",
+        platform(),
         env!("BEVY_EXPLORER_VERSION"),
         (env!("BEVY_EXPLORER_LOCAL_MODIFICATION") == "true")
             .then_some(format!("-{}", build_time_utc!("%Y-%m-%d %H:%M")))

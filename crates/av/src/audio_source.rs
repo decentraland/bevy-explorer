@@ -76,7 +76,7 @@ fn map_scene_audio_sources(
             continue;
         };
         let ipfs_path = PathBuf::from(&IpfsPath::new(IpfsType::new_content_file(
-            scene.hash.to_owned(),
+            scene.hash.to_string(),
             audio_source.0.audio_clip_url.to_owned(),
         )));
 

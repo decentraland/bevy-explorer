@@ -24,5 +24,6 @@
   "featureToggles": {
     "voiceChat": "enabled",
     "portableExperiences": "enabled"
-  }
+  },
+  "authoritativeMultiplayer": false
 }

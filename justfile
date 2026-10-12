@@ -7,8 +7,10 @@ wasm:
     wasm-pack build --target web --out-dir ./deploy/web/engine/pkg --no-default-features --features="livekit,social"
     rm -f ./deploy/web/engine/pkg/.gitignore
     WASM_SIZE=$(wc -c < ./deploy/web/engine/pkg/webgpu_build_bg.wasm) && echo "{\"wasmSize\":${WASM_SIZE}}" > ./deploy/web/engine/pkg/manifest.json
-    # inline the glue into the sandbox worker — the engine loads pkg/sandbox_worker.bundle.js,
-    # so this must re-run on every wasm build (it embeds a copy of the generated glue).
+    wasm-pack build crates/dcl_scene_wasm --target web --out-dir ../../deploy/web/engine/pkg-scene --no-default-features
+    rm -f ./deploy/web/engine/pkg-scene/.gitignore
+    # inline the scene runtime's glue into the sandbox worker — the engine loads
+    # pkg/sandbox_worker.bundle.js, so this must re-run on every wasm build.
     npx --yes esbuild@0.28.1 ./deploy/web/engine/sandbox_worker.js --bundle --format=esm --log-level=error --outfile=./deploy/web/engine/pkg/sandbox_worker.bundle.js
     cd react-web && npm install
     cd react-web/bridge-scene && npm install
@@ -32,7 +34,7 @@ _bundle-native-if-stale:
     #!/usr/bin/env sh
     set -eu
     stamp=target/.bundle-native-stamp
-    if [ -f "$stamp" ] && [ -f assets/react-hud/index.html ] \
+    if [ -f "$stamp" ] && [ -f assets/react-hud/app.html ] \
        && [ -f assets/bridge-scene/BevyExplorerUI/about ] \
        && [ -z "$(find react-web -name node_modules -prune -o -type f -newer "$stamp" -print | head -n 1)" ]; then
         echo "react-web unchanged; skipping bundle (just bundle-native to force)"

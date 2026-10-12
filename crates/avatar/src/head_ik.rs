@@ -5,7 +5,11 @@ use common::{
 };
 use dcl_component::transform_and_parent::DclTranslation;
 
-use crate::{animate::MaskedEmote, point_at_ik::apply_point_at_ik, AvatarShape};
+use crate::{
+    animate::{is_emoting, ActiveEmote, MaskedEmote},
+    point_at_ik::apply_point_at_ik,
+    AvatarShape,
+};
 
 pub struct HeadIkPlugin;
 
@@ -22,6 +26,7 @@ impl Plugin for HeadIkPlugin {
                 .chain()
                 .in_set(PostUpdateSets::InverseKinematics),
         );
+        app.add_systems(PostUpdate, reset_head_ik_chain.before(bevy::app::Animation));
     }
 }
 
@@ -147,6 +152,20 @@ fn cache_head_ik_rig(
     }
 }
 
+/// Rest the chain bones at identity (within a few degrees of the idle pose)
+/// before animation runs, so a clip with no track for a bone leaves it at
+/// rest instead of holding the previous frame's swing — the swing is only
+/// ever applied once.
+fn reset_head_ik_chain(rigs: Query<&HeadIkRig>, mut transforms: Query<&mut Transform>) {
+    for rig in &rigs {
+        for &(bone, _, _) in &rig.chain {
+            if let Ok(mut t) = transforms.get_mut(bone) {
+                t.rotation = Quat::IDENTITY;
+            }
+        }
+    }
+}
+
 #[allow(clippy::type_complexity)]
 fn apply_head_ik(
     time: Res<Time>,
@@ -156,7 +175,7 @@ fn apply_head_ik(
             &mut HeadIkRig,
             &HeadSync,
             &PointAtSync,
-            Option<&MaskedEmote>,
+            Option<(&ActiveEmote, &MaskedEmote)>,
         ),
         With<AvatarShape>,
     >,
@@ -172,7 +191,7 @@ fn apply_head_ik(
 
     let mut writes: Vec<(Entity, Quat)> = Vec::new();
 
-    for (avatar_entity, mut rig, head_sync, point_at, masked_emote) in &mut avatars {
+    for (avatar_entity, mut rig, head_sync, point_at, emotes) in &mut avatars {
         // Avatar body forward (DCL convention: sign-flipped Y from bevy
         // world). Used as the constraint reference and as the neutral pose
         // we blend back to when the gaze input is off or out of range.
@@ -235,12 +254,13 @@ fn apply_head_ik(
         // Gaze drives the head only while engaged and the requested yaw
         // stays within the reachable cone; otherwise the target is the
         // neutral (zero offset, level) pose. Both blend-in and blend-out
-        // flow through the same smoothing path below. An upper-body emote
-        // owns the head (as unity's HeadIK gate), so it releases the gaze.
+        // flow through the same smoothing path below. An emote (full or
+        // upper body) owns the head (as unity's HeadIK gate), so it releases
+        // the gaze.
         let yaw_dev = wrap_180(gaze_yaw_deg - dcl_avatar_yaw);
         let active = gaze_active
             && yaw_dev.abs() <= YAW_DISABLE_DEG
-            && !masked_emote.is_some_and(MaskedEmote::is_playing);
+            && !emotes.is_some_and(|(active, masked)| is_emoting(active, masked));
         let (target_yaw_offset, target_pitch) = if active {
             (yaw_dev.clamp(-YAW_CLAMP_DEG, YAW_CLAMP_DEG), gaze_pitch_deg)
         } else {

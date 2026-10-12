@@ -24,13 +24,25 @@ describe('chat domain', () => {
     expect(h.driver.last('sendChat')?.message).toBe('hi')
   })
 
+  it('never runs /spawn or /kill on the engine console: a spawn can start a privileged scene', async () => {
+    const h = renderSession()
+    await enterAsGuest(h)
+    act(() => h.session().chat.send('/spawn https://example.com/scene true'))
+    act(() => h.session().chat.send('/kill https://example.com/scene'))
+    expect(h.driver.sentOf('consoleCommand')).toEqual([])
+    expect(h.driver.sentOf('sendChat')).toEqual([])
+    act(() => h.session().chat.send('/time 12 0'))
+    expect(h.driver.last('consoleCommand')).toMatchObject({ command: 'time', args: ['12', '0'] })
+  })
+
   it('relayed chat messages append to the log', async () => {
     const h = renderSession()
     await enterAsGuest(h)
-    h.driver.emit({ kind: 'chat', chat: { sender: '0xabc', message: 'gm', channel: 'Nearby' } })
+    h.driver.emit({ kind: 'chat', chat: { sender: '0xabc', message: 'gm', channel: 'Nearby', messageId: '' } })
     const msgs = h.session().chat.messages
-    expect(msgs).toHaveLength(1)
-    expect(msgs[0]).toMatchObject({ sender: '0xabc', message: 'gm', channel: 'Nearby' })
+    expect(msgs).toHaveLength(2)
+    expect(msgs[0]).toMatchObject({ sender: '', message: 'Type /help for available commands.' })
+    expect(msgs[1]).toMatchObject({ sender: '0xabc', message: 'gm', channel: 'Nearby' })
   })
 
   it('members stream updates the nearby roster', async () => {

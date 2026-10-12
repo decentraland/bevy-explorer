@@ -49,7 +49,7 @@ export async function getJson<T>(url: string): Promise<T | undefined> {
 
 export async function signed<T>(
   url: string,
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' = 'GET',
   body?: object
 ): Promise<T | undefined> {
   const result = await BevyApi.kernelFetch({

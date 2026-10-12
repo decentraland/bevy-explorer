@@ -11,7 +11,9 @@ use bevy::{
 };
 use common::{
     profile::SerializedProfile,
-    rpc::{CompareSnapshot, CompareSnapshotResult, RpcCall, RpcResultSender},
+    rpc::{
+        CompareSnapshot, CompareSnapshotResult, RpcCall, RpcCallEvent, RpcOrigin, RpcResultSender,
+    },
     sets::SceneSets,
     structs::PrimaryUser,
 };
@@ -52,9 +54,9 @@ fn automatic_testing(
     ipfas: IpfsAssetServer,
     scenes: Query<&RendererSceneContext>,
     mut fails: Local<Vec<(String, String, bool)>>,
-    mut rpcs: EventReader<RpcCall>,
+    mut rpcs: EventReader<RpcCallEvent>,
     mut plans: Local<HashMap<Entity, HashSet<String>>>,
-    mut snapshot_in_progress: Local<Option<(CompareSnapshot, Entity)>>,
+    mut snapshot_in_progress: Local<Option<(Entity, CompareSnapshot, Entity)>>,
     (mut local_sender, mut local_receiver, mut screenshots, mut screenshot_in_progress): (
         Local<Option<tokio::sync::mpsc::Sender<SnapshotResult>>>,
         Local<Option<tokio::sync::mpsc::Receiver<SnapshotResult>>>,
@@ -94,8 +96,8 @@ fn automatic_testing(
     }
 
     // process pending snapshots (code run before spawning new snapshot windows in this function as we need 1 frame lag for new windows)
-    if let Some((snapshot, window)) = snapshot_in_progress.take() {
-        if let Ok(context) = scenes.get(snapshot.scene) {
+    if let Some((scene, snapshot, window)) = snapshot_in_progress.take() {
+        if let Ok(context) = scenes.get(scene) {
             let base_position =
                 Vec3::new(context.base.x as f32, 0.0, -context.base.y as f32) * PARCEL_SIZE;
 
@@ -236,16 +238,18 @@ fn automatic_testing(
 
     // process events
     for event in rpcs.read() {
-        match event {
-            RpcCall::TestPlan { scene, plan } => {
+        match (&event.origin, &event.call) {
+            (RpcOrigin::Scene { entity: scene, .. }, RpcCall::TestPlan { plan }) => {
                 plans.insert(*scene, HashSet::from_iter(plan.iter().cloned()));
             }
-            RpcCall::TestResult {
-                scene,
-                name,
-                success,
-                error,
-            } => {
+            (
+                RpcOrigin::Scene { entity: scene, .. },
+                RpcCall::TestResult {
+                    name,
+                    success,
+                    error,
+                },
+            ) => {
                 let Some(plan) = plans.get_mut(scene) else {
                     warn!("unregistered plan for scene {:?}", scene);
                     continue;
@@ -282,7 +286,7 @@ fn automatic_testing(
                     }
                 }
             }
-            RpcCall::TestSnapshot(snapshot) => {
+            (RpcOrigin::Scene { entity: scene, .. }, RpcCall::TestSnapshot(snapshot)) => {
                 if *screenshot_in_progress {
                     snapshot.response.send(CompareSnapshotResult {
                         error: Some("snapshot already in progress".to_owned()),
@@ -313,7 +317,7 @@ fn automatic_testing(
                     })
                     .id();
 
-                *snapshot_in_progress = Some((snapshot.clone(), snapshot_window));
+                *snapshot_in_progress = Some((*scene, snapshot.clone(), snapshot_window));
             }
             _ => (),
         }
@@ -369,12 +373,11 @@ fn automatic_testing(
         info!("moving to next scene {:?}", next_test_scene.location);
         let to = next_test_scene.location;
         commands.queue(move |w: &mut World| {
-            w.send_event(RpcCall::TeleportPlayer {
-                scene: None,
+            w.send_event(RpcCallEvent::engine(RpcCall::TeleportPlayer {
                 to: Some(to),
                 realm: None,
                 response: RpcResultSender::default(),
-            });
+            }));
         });
         return;
     };

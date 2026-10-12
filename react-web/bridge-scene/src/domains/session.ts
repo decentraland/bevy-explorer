@@ -2,9 +2,28 @@
 //   from: BevyApi (login + getSceneLoadingUIStream), @dcl/sdk getPlayer (player-ready).
 import { getPlayer } from '@dcl/sdk/players'
 import { BevyApi } from '../bevy-api'
+import { relay } from '../system-helpers'
+import { identity } from '../identity'
 import type { Ctx } from '../bridge'
+import { GUEST_SESSION_KEY, guestLogin, guestSign } from '../../../src/features/auth/thirdweb'
+
+// The Bevy engine injects a persistent localStorage into system scenes.
+declare const localStorage: {
+  setItem: (key: string, value: string) => void
+  removeItem: (key: string) => void
+}
+
+// thirdweb only serves origins on the project's allowlist, and the native page's cef:// origin is
+// not one. The scene's fetch runs in the engine, so it can name one that is (as Godot does).
+const THIRDWEB_HEADERS = { Origin: 'https://decentraland.org' }
+
+const SIGN_INS = new Set(['loginPrevious', 'loginNew', 'loginIdentity'])
 
 export function registerSession(ctx: Ctx): void {
+  // Player-spawned signal: one-shot per page, not per scene. The page gates its world-entry
+  // fetches on it and never retries, so a page that arrives late is re-told on `hello`.
+  let ready = false
+
   // Login surface (request/response by method). Most clients log in via the engine's
   // `/login_identity` console command now; this stays for channel-based callers.
   ctx.on('rpc:req', async (msg) => {
@@ -28,9 +47,21 @@ export function registerSession(ctx: Ctx): void {
         case 'loginIdentity': value = await BevyApi.loginPrevious(); break
         case 'loginGuest': BevyApi.loginGuest(); break
         case 'loginCancel': BevyApi.loginCancel(); break
+        // Persistent guest (native): the page builds the identity, the thirdweb calls run here.
+        case 'guestLogin': {
+          const sessionId = msg.params?.sessionId ?? ''
+          localStorage.setItem(GUEST_SESSION_KEY, sessionId)
+          value = await guestLogin(sessionId, THIRDWEB_HEADERS)
+          break
+        }
+        case 'guestSign': value = await guestSign(msg.params?.token ?? '', msg.params?.message ?? '', THIRDWEB_HEADERS); break
+        case 'guestDiscard': localStorage.removeItem(GUEST_SESSION_KEY); break
         case 'logout': BevyApi.logout(); break
         default: throw new Error(`unsupported method ${String(msg.method)}`)
       }
+      // A completed sign-in says the (possibly same) account is back and must be announced again,
+      // even if no frame saw the player gone in between.
+      if (SIGN_INS.has(msg.method) && (value as { success?: boolean } | undefined)?.success !== false) ready = false
       ctx.send({ kind: 'rpc:res', id: msg.id, ok: true, value })
     } catch (err) {
       ctx.send({ kind: 'rpc:res', id: msg.id, ok: false, error: String(err) })
@@ -48,24 +79,17 @@ export function registerSession(ctx: Ctx): void {
   })
 
   // Scene-asset loading stream → React loading screen.
-  void (async () => {
-    try {
-      const stream = await BevyApi.getSceneLoadingUIStream()
-      for await (const s of stream) {
-        ctx.send({
-          kind: 'sceneLoading',
-          state: {
-            visible: s.visible,
-            realmConnected: s.realmConnected,
-            title: s.title ?? '',
-            pendingAssets: s.pendingAssets ?? null
-          }
-        })
+  relay('sceneLoading', async () => await BevyApi.getSceneLoadingUIStream(), (s) => {
+    ctx.send({
+      kind: 'sceneLoading',
+      state: {
+        visible: s.visible,
+        realmConnected: s.realmConnected,
+        title: s.title ?? '',
+        pendingAssets: s.pendingAssets ?? null
       }
-    } catch (e) {
-      console.error('[session] sceneLoading relay failed', e)
-    }
-  })()
+    })
+  })
 
   // Livekit Updates
   void (async () => {
@@ -80,12 +104,16 @@ export function registerSession(ctx: Ctx): void {
     }
   })()
 
-  // Player-spawned signal: one-shot per page, not per scene. The page gates its world-entry
-  // fetches on it and never retries, so a page that arrives late is re-told on `hello`.
-  let ready = false
+  identity.onChange(() => {
+    ready = false
+  })
   ctx.push(() => {
+    const player = getPlayer()
+    identity.observe(player?.userId ?? null)
+    // the engine clears the player on logout; the next one is announced afresh
+    if (player == null) ready = false
     if (ready) return
-    if (getPlayer() != null) {
+    if (player != null) {
       ready = true
       ctx.send({ kind: 'event', name: 'playerReady' })
     }

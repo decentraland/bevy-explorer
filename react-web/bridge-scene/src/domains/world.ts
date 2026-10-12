@@ -26,31 +26,45 @@ const POSE_EPSILON_DEG = 0.5
 const SCENE_POLL_INTERVAL = 0.3
 const SCENE_LOOKUP_ATTEMPTS = 3
 
-// A realm is a World (rather than Genesis City) when it's served by a worlds content server
-// or named like `foo.dcl.eth`. Worlds have no map tiles, so the minimap falls back to the
-// engine-rendered Camera style there and drops its Genesis City markers.
-//
-// The two checks are not redundant — they come from different fields, and either one alone
-// misses cases: a world reached by name (`?realm=welcomeguides.dcl.eth`) need not carry the
-// content server in its base url. Same pair bevy-ui-scene's realm-change check used.
-function realmIsWorld(baseUrl: string, realmName: string): boolean {
-  return baseUrl.includes('worlds-content-server') || realmName.endsWith('.eth')
-}
-
 // Echo a "DCL System" line into the React chat (empty sender → system member). Used to relay
 // slash-command feedback (/commands output, /reload status) that isn't broadcast to other players.
 function pushSystem(ctx: Ctx, message: string): void {
-  ctx.send({ kind: 'chat', chat: { sender: '', message, channel: 'Nearby' } })
+  ctx.send({ kind: 'chat', chat: { sender: '', message, channel: 'Nearby', messageId: '' } })
 }
 
 export function registerWorld(ctx: Ctx): void {
+  ctx.on('getHomeScene', async () => {
+    const home = await BevyApi.getHomeScene()
+    ctx.send({ kind: 'homeScene', ...home })
+  })
+
   ctx.on('getMap', () => {
     const pos = getPlayer()?.position
     ctx.send({ kind: 'mapState', x: Math.floor((pos?.x ?? 0) / 16), y: Math.floor((pos?.z ?? 0) / 16) })
   })
 
+  // A realm change settles once the engine has switched realm or failed to (keeping the player
+  // where they are); the page is told either way so it can drop its loader and explain a failure.
+  const travel = (realm: string, travelId: number | undefined, request: Promise<unknown>): void => {
+    request.then(
+      () => {
+        if (travelId != null) ctx.send({ kind: 'travelResult', travelId, realm, ok: true })
+      },
+      (e: unknown) => {
+        console.error('[world] realm change failed', e)
+        const message = e instanceof Error ? e.message : String(e)
+        if (travelId != null) ctx.send({ kind: 'travelResult', travelId, realm, ok: false, message })
+      }
+    )
+  }
+
   ctx.on('teleport', (msg) => {
-    teleportTo({ worldCoordinates: { x: msg.x, y: msg.y }, realm: msg.realm }).catch((e: unknown) => {
+    const request = teleportTo({ worldCoordinates: { x: msg.x, y: msg.y }, realm: msg.realm })
+    if (msg.realm != null) {
+      travel(msg.realm, msg.travelId, request)
+      return
+    }
+    request.catch((e: unknown) => {
       console.error('[world] teleport failed', e)
     })
   })
@@ -59,9 +73,7 @@ export function registerWorld(ctx: Ctx): void {
   // realm and no parcel (changeRealm is deprecated). The engine auto-grants ChangeRealm for our
   // super-user scene, so the React HUD owns the confirmation prompt.
   ctx.on('changeRealm', (msg) => {
-    teleportTo({ realm: msg.realm }).catch((e: unknown) => {
-      console.error('[world] changeRealm failed', e)
-    })
+    travel(msg.realm, msg.travelId, teleportTo({ realm: msg.realm }))
   })
 
   // `/reload` — reload the scene the player is standing in, resolved by parcel from liveSceneInfo.
@@ -149,27 +161,34 @@ export function registerWorld(ctx: Ctx): void {
   let pendingParcel = ''
   let attempts = 0
 
-  // Realm kind → the minimap (Worlds have no map tiles). Poll ~2s, push on change.
+  // Realm → the minimap, with the satellite map it advertises: only Genesis City has one, so
+  // anywhere else (a World, a local scene) the minimap falls back to the engine-rendered Camera
+  // style and drops its Genesis City markers. Poll ~2s, push on change.
   let realmAcc = 2
   let lastRealm = ''
+  // A page that reloads or starts late missed the last push, and the realm won't change to resend it.
+  ctx.on('hello', () => {
+    lastRealm = ''
+  })
   ctx.push((dt) => {
     realmAcc += dt
     if (realmAcc < 2) return
     realmAcc = 0
-    getRealm({})
-      .then(({ realmInfo }) => {
+    Promise.all([getRealm({}), BevyApi.getSatelliteView()])
+      .then(([{ realmInfo }, satelliteViewOrNone]) => {
+        // "None" is null from the native runtime but undefined from the wasm one.
+        const satelliteView = satelliteViewOrNone ?? null
         const baseUrl = realmInfo?.baseUrl ?? ''
         const realmName = realmInfo?.realmName ?? ''
-        // Key on both, so a change in either field re-publishes.
-        const key = `${baseUrl}|${realmName}`
+        // Key on all three, so a change in any of them re-publishes.
+        const key = `${baseUrl}|${realmName}|${JSON.stringify(satelliteView)}`
         if (key === lastRealm) return
         lastRealm = key
-        const isWorld = realmIsWorld(baseUrl, realmName)
         // Only on change, so this is a handful of lines per session. Worth it: when the
         // minimap misreads a World the symptom (Genesis City markers on a world map) gives no
-        // hint which of the two fields didn't match.
-        console.log(`[world] realm baseUrl=${baseUrl} name=${realmName} isWorld=${String(isWorld)}`)
-        ctx.send({ kind: 'realmInfo', realm: realmName || baseUrl, isWorld })
+        // hint what the realm advertised.
+        console.log(`[world] realm baseUrl=${baseUrl} name=${realmName} satelliteView=${JSON.stringify(satelliteView)}`)
+        ctx.send({ kind: 'realmInfo', realm: realmName || baseUrl, satelliteView })
         // Every scene is replaced, but the player can land on the parcel they were already on
         // (a World spawns at 0,0), so the parcel guard alone would keep the old title forever.
         publishedParcel = ''
@@ -208,7 +227,16 @@ export function registerWorld(ctx: Ctx): void {
         // stale name can survive after stepping onto an undeployed parcel.
         if (current == null && attempts < SCENE_LOOKUP_ATTEMPTS) return
         publishedParcel = key
-        ctx.send({ kind: 'sceneInfo', title: current?.title ?? '' })
+        // read with the scene, so a visit is never paired with the realm the player just left
+        const [{ realmInfo }, satelliteView] = await Promise.all([getRealm({}), BevyApi.getSatelliteView()]).catch(() => [{ realmInfo: undefined }, null] as const)
+        ctx.send({
+          kind: 'sceneInfo',
+          title: current?.title ?? '',
+          parcel: { x: px, y: py },
+          realm: realmInfo?.realmName ?? '',
+          genesis: satelliteView != null,
+          preview: realmInfo?.isPreview ?? false
+        })
       })
     )
   )

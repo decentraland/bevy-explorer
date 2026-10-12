@@ -47,9 +47,13 @@ pub(super) fn spawn(
     channels: PulseDriverChannels,
     stop: Arc<AtomicBool>,
 ) {
-    spawn_local(async move {
-        run(config, channels, stop).await;
-    });
+    // `connect_pulse` may run on a compute worker; the io pool drives this on the engine
+    // worker's event loop, where the WebTransport lives.
+    bevy::tasks::IoTaskPool::get()
+        .spawn(async move {
+            run(config, channels, stop).await;
+        })
+        .detach();
 }
 
 async fn run(config: PulseTransportConfig, channels: PulseDriverChannels, stop: Arc<AtomicBool>) {

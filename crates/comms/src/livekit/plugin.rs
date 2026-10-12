@@ -1,11 +1,16 @@
 use bevy::prelude::*;
-use common::{debug_panic, structs::AudioSettings, util::ReportErr};
-use kira::{
-    manager::{AudioManager, AudioManagerSettings, DefaultBackend},
-    tween::Tween,
-};
+use common::{debug_panic, util::ReportErr};
 use system_bridge::{LivekitUpdate, SystemApi};
 use tokio::{sync::mpsc, task::JoinHandle};
+#[cfg(not(target_arch = "wasm32"))]
+use {
+    crate::livekit::LivekitAudioManager,
+    common::structs::AudioSettings,
+    kira::{
+        manager::{AudioManager, AudioManagerSettings, DefaultBackend},
+        tween::Tween,
+    },
+};
 
 #[cfg(feature = "room_debug")]
 use crate::livekit::room_debug::RoomDebugPlugin;
@@ -14,10 +19,9 @@ use crate::{
     livekit::{
         mic::MicPlugin, participant::plugin::LivekitParticipantPlugin,
         room::plugin::LivekitRoomPlugin, runtime::LivekitRuntimePlugin,
-        track::plugin::LivekitTrackPlugin, ConnectionAvailability, LivekitAudioManager,
-        LivekitChannelControl, LivekitDisconnect, LivekitNetworkMessage,
-        LivekitParticipantConnectionQuality, LivekitRuntime, LivekitSystemApiSenders,
-        LivekitTransport, StartLivekit,
+        track::plugin::LivekitTrackPlugin, ConnectionAvailability, LivekitChannelControl,
+        LivekitDisconnect, LivekitNetworkMessage, LivekitParticipantConnectionQuality,
+        LivekitRuntime, LivekitSystemApiSenders, LivekitTransport, StartLivekit,
     },
     Transport, TransportType,
 };
@@ -26,24 +30,46 @@ pub struct LivekitPlugin;
 
 impl Plugin for LivekitPlugin {
     fn build(&self, app: &mut App) {
+        #[cfg(not(target_arch = "wasm32"))]
         app.init_resource::<PlayerUpdateTasks>();
+        #[cfg(target_arch = "wasm32")]
+        app.init_non_send_resource::<PlayerUpdateTasks>();
         app.init_resource::<LivekitSystemApiSenders>();
         app.init_state::<ConnectionAvailability>();
         app.add_event::<LivekitDisconnect>();
         app.add_event::<LivekitParticipantConnectionQuality>();
 
-        app.add_plugins(MicPlugin);
+        #[cfg(target_arch = "wasm32")]
+        {
+            app.insert_resource(crate::livekit::web::take_event_receiver())
+                .init_resource::<crate::livekit::web::MicrophoneStatus>()
+                .add_systems(PreUpdate, crate::livekit::web::dispatch_page_events);
+        }
+
+        // a headless app has no microphone, and plays no voices
+        if app
+            .world()
+            .get_resource::<common::structs::NoRenderApp>()
+            .is_none()
+        {
+            app.add_plugins(MicPlugin);
+        }
         app.add_plugins(LivekitRuntimePlugin);
         app.add_plugins(LivekitRoomPlugin);
         app.add_plugins(LivekitParticipantPlugin);
         app.add_plugins(LivekitTrackPlugin);
 
         app.add_systems(Update, (start_livekit, verify_player_update_tasks));
-        app.add_systems(Startup, build_kira_audio_manager);
-        app.add_systems(
-            Update,
-            respond_to_audio_settings_change.run_if(resource_exists_and_changed::<AudioSettings>),
-        );
+        // on the web the page plays voice (livekit-client), and the engine worker has no audio output
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            app.add_systems(Startup, build_kira_audio_manager);
+            app.add_systems(
+                Update,
+                respond_to_audio_settings_change
+                    .run_if(resource_exists_and_changed::<AudioSettings>),
+            );
+        }
         app.add_systems(
             PostUpdate,
             (
@@ -62,8 +88,15 @@ impl Plugin for LivekitPlugin {
     }
 }
 
-#[derive(Default, Resource, Deref, DerefMut)]
+/// Holds [`LivekitRuntime`]s, so on the web it is non-send like them (see `runtime.rs`).
+#[derive(Default, Deref, DerefMut)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Resource))]
 pub(super) struct PlayerUpdateTasks(Vec<PlayerUpdateTask>);
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(super) type PlayerUpdateTasksMut<'w> = ResMut<'w, PlayerUpdateTasks>;
+#[cfg(target_arch = "wasm32")]
+pub(super) type PlayerUpdateTasksMut<'w> = NonSendMut<'w, PlayerUpdateTasks>;
 
 pub(super) struct PlayerUpdateTask {
     pub runtime: LivekitRuntime,
@@ -100,7 +133,7 @@ fn start_livekit(mut commands: Commands, mut room_events: EventReader<StartLivek
     }
 }
 
-fn verify_player_update_tasks(mut player_update_tasks: ResMut<PlayerUpdateTasks>) {
+fn verify_player_update_tasks(mut player_update_tasks: PlayerUpdateTasksMut) {
     let mut done = vec![];
     for (
         i,
@@ -131,6 +164,7 @@ fn verify_player_update_tasks(mut player_update_tasks: ResMut<PlayerUpdateTasks>
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn build_kira_audio_manager(mut commands: Commands) {
     match AudioManager::new(AudioManagerSettings::<DefaultBackend>::default()) {
         Ok(manager) => {
@@ -143,6 +177,7 @@ fn build_kira_audio_manager(mut commands: Commands) {
     };
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn respond_to_audio_settings_change(
     mut livekit_audio_manager: ResMut<LivekitAudioManager>,
     audio_settings: Res<AudioSettings>,

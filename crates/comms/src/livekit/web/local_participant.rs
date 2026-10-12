@@ -1,68 +1,32 @@
-use bevy::prelude::*;
-use wasm_bindgen::{
-    convert::{FromWasmAbi, IntoWasmAbi},
-    describe::WasmDescribe,
-    prelude::*,
-    JsValue,
-};
-
 use crate::livekit::web::{
-    DataPacket, JsValueAbi, LocalTrack, LocalTrackPublication, ParticipantIdentity, ParticipantSid,
-    RoomResult, TrackPublishOptions,
+    request, DataPacket, LivekitCommand, LocalTrack, LocalTrackPublication, ParticipantIdentity,
+    ParticipantSid, Reply, RoomError, RoomId, RoomResult, TrackPublishOptions,
 };
 
-#[wasm_bindgen(module = "/livekit_web_bindings.js")]
-extern "C" {
-    #[wasm_bindgen(catch)]
-    async fn local_participant_publish_data(
-        local_participant: &LocalParticipant,
-        data: &[u8],
-        reliable: bool,
-        topic: Option<String>,
-        destination_identities: Vec<String>,
-    ) -> RoomResult<()>;
-    #[wasm_bindgen(catch)]
-    async fn local_participant_publish_track(
-        local_participant: &LocalParticipant,
-        local_track: &LocalTrack,
-        track_publish_options: TrackPublishOptions,
-    ) -> RoomResult<LocalTrackPublication>;
-    #[wasm_bindgen(catch)]
-    async fn local_participant_unpublish_track(
-        local_participant: &LocalParticipant,
-        local_track: &LocalTrack,
-    ) -> RoomResult<LocalTrackPublication>;
-    #[wasm_bindgen]
-    fn local_participant_is_local(local_participant: &LocalParticipant) -> bool;
-    #[wasm_bindgen]
-    fn local_participant_sid(local_participant: &LocalParticipant) -> String;
-    #[wasm_bindgen]
-    fn local_participant_identity(local_participant: &LocalParticipant) -> String;
-    #[wasm_bindgen]
-    fn local_participant_metadata(local_participant: &LocalParticipant) -> String;
-}
-
+/// The local participant of a room, as of the connect.
 #[derive(Debug, Clone)]
 pub struct LocalParticipant {
-    inner: JsValue,
+    pub(super) room: RoomId,
+    pub(super) sid: ParticipantSid,
+    pub(super) identity: ParticipantIdentity,
+    pub(super) metadata: String,
 }
 
 impl LocalParticipant {
     pub async fn publish_data(&self, data: DataPacket) -> RoomResult<()> {
-        let DataPacket {
-            payload,
-            reliable,
-            topic,
-            destination_identities,
-        } = data;
-
-        let destination_identities = destination_identities
-            .into_iter()
-            .map(|participant_identity| participant_identity.0)
-            .collect();
-
-        local_participant_publish_data(self, &payload, reliable, topic, destination_identities)
-            .await
+        let room = self.room;
+        match request(|request| LivekitCommand::PublishData {
+            request,
+            room,
+            packet: data,
+        })
+        .await?
+        {
+            Reply::PublishData(result) => result.map_err(RoomError),
+            other => Err(RoomError(format!(
+                "unexpected reply to publish_data: {other:?}"
+            ))),
+        }
     }
 
     pub async fn publish_track(
@@ -70,65 +34,57 @@ impl LocalParticipant {
         track: LocalTrack,
         options: TrackPublishOptions,
     ) -> RoomResult<LocalTrackPublication> {
-        local_participant_publish_track(self, &track, options).await
+        let room = self.room;
+        let track = track.id();
+        match request(|request| LivekitCommand::PublishTrack {
+            request,
+            room,
+            track,
+            options,
+        })
+        .await?
+        {
+            Reply::Publish(result) => result.map_err(RoomError),
+            other => Err(RoomError(format!(
+                "unexpected reply to publish_track: {other:?}"
+            ))),
+        }
     }
 
     pub async fn unpublish_track(
         &self,
         local_track: &LocalTrack,
     ) -> RoomResult<LocalTrackPublication> {
-        local_participant_unpublish_track(self, local_track).await
+        let room = self.room;
+        let track = local_track.id();
+        match request(|request| LivekitCommand::UnpublishTrack {
+            request,
+            room,
+            track,
+        })
+        .await?
+        {
+            Reply::Publish(result) => result.map_err(RoomError),
+            other => Err(RoomError(format!(
+                "unexpected reply to unpublish_track: {other:?}"
+            ))),
+        }
     }
 
     pub fn is_local(&self) -> bool {
         // Should always be true
-        local_participant_is_local(self)
+        true
     }
 
     pub fn identity(&self) -> ParticipantIdentity {
-        ParticipantIdentity(local_participant_identity(self))
+        self.identity.clone()
     }
 
     pub fn sid(&self) -> ParticipantSid {
-        ParticipantSid(local_participant_sid(self))
+        self.sid.clone()
     }
 
     pub fn metadata(&self) -> String {
-        local_participant_metadata(self)
-    }
-}
-
-impl From<JsValue> for LocalParticipant {
-    fn from(value: JsValue) -> Self {
-        Self { inner: value }
-    }
-}
-
-/// SAFETY: should be fine while WASM remains single threaded
-unsafe impl Send for LocalParticipant {}
-/// SAFETY: should be fine while WASM remains single threaded
-unsafe impl Sync for LocalParticipant {}
-
-impl WasmDescribe for LocalParticipant {
-    fn describe() {
-        JsValue::describe();
-    }
-}
-
-impl FromWasmAbi for LocalParticipant {
-    type Abi = JsValueAbi;
-
-    unsafe fn from_abi(value: JsValueAbi) -> Self {
-        Self {
-            inner: unsafe { JsValue::from_abi(value) },
-        }
-    }
-}
-
-impl IntoWasmAbi for &LocalParticipant {
-    type Abi = JsValueAbi;
-
-    fn into_abi(self) -> JsValueAbi {
-        self.inner.clone().into_abi()
+        self.metadata.clone()
     }
 }

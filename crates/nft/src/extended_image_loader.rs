@@ -5,7 +5,7 @@ use bevy::{
     },
     log::debug,
     prelude::{FromWorld, Image},
-    render::renderer::RenderDevice,
+    render::renderer::RenderCapabilities,
 };
 
 pub struct SvgLoader;
@@ -94,8 +94,8 @@ pub struct ExtendedImageLoader {
 
 impl FromWorld for ExtendedImageLoader {
     fn from_world(world: &mut bevy::prelude::World) -> Self {
-        let supported_compressed_formats = match world.get_resource::<RenderDevice>() {
-            Some(render_device) => CompressedImageFormats::from_features(render_device.features()),
+        let supported_compressed_formats = match world.get_resource::<RenderCapabilities>() {
+            Some(capabilities) => CompressedImageFormats::from_features(capabilities.features()),
             None => CompressedImageFormats::NONE,
         };
 

@@ -7,13 +7,13 @@
 // bridge scene. Many calls (friend accept, community leave, mark-read) need seeded data
 // a fresh guest doesn't have, so they live only in tier 1.
 
-import { type Page, expect, test } from '@playwright/test'
+import { type Frame, type Page, expect, test } from '@playwright/test'
 
-export const APP_URL = process.env.E2E_URL ?? 'http://localhost:5173/'
+export const APP_URL = process.env.E2E_URL ?? 'http://localhost:5173/app.html'
 export const BRIDGE_CHANNEL = 'bevy-ui-bridge'
 
 /** Wait until the engine console RPC is live (same document as the app — no iframe). */
-async function engineReady(page: Page): Promise<void> {
+async function engineReady(page: Page | Frame): Promise<void> {
   for (let i = 0; i < 240; i++) {
     const ready = await page
       .evaluate(() => typeof (window as unknown as { engine_console_command?: unknown }).engine_console_command === 'function')
@@ -25,7 +25,7 @@ async function engineReady(page: Page): Promise<void> {
 }
 
 /** Run a bevy/engine console command and return its string reply. */
-export async function cmd(page: Page, line: string): Promise<string> {
+export async function cmd(page: Page | Frame, line: string): Promise<string> {
   await engineReady(page)
   return page.evaluate(
     (l) => (window as unknown as { engine_console_command: (s: string) => Promise<string> }).engine_console_command(l),
@@ -142,8 +142,10 @@ export async function enterAsGuest(page: Page): Promise<void> {
   await installBridgeSpy(page)
   await page.goto(APP_URL)
   await page.getByRole('button', { name: /EXPLORE AS GUEST/i }).click({ timeout: 90000 })
-  // Entry now goes through the destination picker — skip to home (default spawn → Genesis Plaza on a fresh profile).
-  await page.getByRole('button', { name: /SKIP TO HOME/i }).click({ timeout: 60000 })
+  // Entry goes through the lobby: its landing card's JUMP IN goes home (Genesis Plaza on a fresh
+  // profile), enabled once sign-in has finished.
+  await page.getByRole('heading', { name: /Welcome/ }).waitFor({ timeout: 120000 })
+  await page.getByRole('button', { name: /^jump in$/i }).first().click({ timeout: 120000 })
   // World-ready: the React sidebar nav mounts once phase === 'world'.
   await page.waitForSelector('nav[aria-label="Main navigation"]', { timeout: 360000 })
 }

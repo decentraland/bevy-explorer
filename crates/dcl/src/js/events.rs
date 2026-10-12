@@ -4,7 +4,7 @@ use bevy::log::{debug, warn};
 use common::rpc::{RpcCall, RpcEventSender, RpcStreamReceiver};
 use serde::Serialize;
 
-use crate::{interface::crdt_context::CrdtContext, RpcCalls};
+use crate::RpcCalls;
 
 use super::State;
 
@@ -67,24 +67,20 @@ pub fn op_subscribe(state: &mut impl State, id: &str) -> Result<(), anyhow::Erro
         }};
     }
 
-    let context = state.borrow::<CrdtContext>();
-    let scene = context.scene_id.0;
-    let hash = context.hash.clone();
-
     register!(id, state, PlayerConnected, |sender| {
-        RpcCall::SubscribePlayerConnected { sender, scene }
+        RpcCall::SubscribePlayerConnected { sender }
     });
     register!(id, state, PlayerDisconnected, |sender| {
-        RpcCall::SubscribePlayerDisconnected { sender, scene }
+        RpcCall::SubscribePlayerDisconnected { sender }
     });
     register!(id, state, PlayerEnteredScene, |sender| {
-        RpcCall::SubscribePlayerEnteredScene { sender, scene }
+        RpcCall::SubscribePlayerEnteredScene { sender }
     });
     register!(id, state, PlayerLeftScene, |sender| {
-        RpcCall::SubscribePlayerLeftScene { sender, scene }
+        RpcCall::SubscribePlayerLeftScene { sender }
     });
     register!(id, state, SceneReady, |sender| {
-        RpcCall::SubscribeSceneReady { sender, scene }
+        RpcCall::SubscribeSceneReady { sender }
     });
     register!(id, state, PlayerExpression, |sender| {
         RpcCall::SubscribePlayerExpression { sender }
@@ -107,7 +103,7 @@ pub fn op_subscribe(state: &mut impl State, id: &str) -> Result<(), anyhow::Erro
         let (sender, rx) = RpcEventSender::channel_with_capacity(MAX_NETWORK_MESSAGE_QUEUE);
         state
             .borrow_mut::<RpcCalls>()
-            .push(RpcCall::SubscribeMessageBus { sender, hash })?;
+            .push(RpcCall::SubscribeMessageBus { sender })?;
         state.put(EventReceiver::<MessageBus> {
             inner: rx,
             _p: Default::default(),

@@ -10,7 +10,7 @@ use bevy::{
     math::{Affine2, FloatOrd, Mat2},
     platform::collections::{HashMap, HashSet},
     prelude::*,
-    render::{render_resource::Extent3d, renderer::RenderDevice},
+    render::{render_resource::Extent3d, renderer::RenderCapabilities},
     transform::TransformSystem,
     ui::{CameraCursorPosition, FocusPolicy, UiSystem},
     window::PrimaryWindow,
@@ -33,7 +33,7 @@ use crate::{
 };
 use common::{
     asset_cache::{clean_asset_cache, AssetCache},
-    rpc::{RpcCall, RpcUiFocusAction},
+    rpc::{RpcCall, RpcCallEvent, RpcOrigin, RpcUiFocusAction},
     structs::{AppConfig, PrimaryPlayerRes, PrimaryUser, ZOrder},
     util::{DespawnWith, ModifyComponentExt},
 };
@@ -714,7 +714,7 @@ fn create_ui_roots(
             let display = if maybe_super.is_some()
                 || hidden_uis
                     .scenes
-                    .get(&context.hash)
+                    .get(&*context.hash)
                     .copied()
                     .unwrap_or(hidden_uis.show_all)
             {
@@ -875,7 +875,7 @@ fn update_canvas_atlas(
     mut images: ResMut<Assets<Image>>,
     mut cameras: Query<(&mut Camera, &mut Projection)>,
     // absent in headless tests (no render plugin); without a gpu there is nothing to overflow
-    render_device: Option<Res<RenderDevice>>,
+    render_device: Option<Res<RenderCapabilities>>,
 ) {
     // required atlas extent per scene = max bottom-right corner over its canvas slots
     let mut required: HashMap<Entity, UVec2> = HashMap::new();
@@ -1534,7 +1534,7 @@ fn toggle_scene_ui_command(
 
 fn set_ui_focus(
     mut commands: Commands,
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
     containing_scene: ContainingScene,
     player: Res<PrimaryPlayerRes>,
     ui_data: Query<&SceneUiData>,
@@ -1542,11 +1542,8 @@ fn set_ui_focus(
     scene_hierarchy: Query<(Option<&LinkedScene>, Option<&ChildOf>)>,
 ) {
     'event: for (scene, action, response) in events.read().flat_map(|ev| {
-        let RpcCall::UiFocus {
-            scene,
-            action,
-            response,
-        } = ev
+        let (RpcOrigin::Scene { entity: scene, .. }, RpcCall::UiFocus { action, response }) =
+            (&ev.origin, &ev.call)
         else {
             return None;
         };

@@ -11,6 +11,8 @@ use common::structs::{AppConfig, PrimaryCameraRes, ShadowSetting};
 
 use super::{AppSetting, EnumAppSetting, IntAppSetting};
 
+const MIN_CASCADE: f32 = 0.1;
+
 impl EnumAppSetting for ShadowSetting {
     fn variants() -> Vec<Self> {
         vec![Self::Off, Self::Low, Self::High]
@@ -79,9 +81,15 @@ impl AppSetting for ShadowSetting {
                     light.shadows_enabled = true;
                     *cascades = CascadeShadowConfigBuilder {
                         num_cascades: 1,
-                        minimum_distance: 0.1,
-                        maximum_distance: config.graphics.shadow_distance,
-                        first_cascade_far_bound: config.graphics.shadow_distance,
+                        minimum_distance: MIN_CASCADE,
+                        maximum_distance: config
+                            .graphics
+                            .shadow_distance
+                            .max(MIN_CASCADE + f32::EPSILON),
+                        first_cascade_far_bound: config
+                            .graphics
+                            .shadow_distance
+                            .max(MIN_CASCADE + f32::EPSILON),
                         overlap_proportion: 0.2,
                     }
                     .build()
@@ -90,9 +98,13 @@ impl AppSetting for ShadowSetting {
                     light.shadows_enabled = true;
                     *cascades = CascadeShadowConfigBuilder {
                         num_cascades: 4,
-                        minimum_distance: 0.1,
-                        maximum_distance: config.graphics.shadow_distance,
-                        first_cascade_far_bound: config.graphics.shadow_distance / 15.0,
+                        minimum_distance: MIN_CASCADE,
+                        maximum_distance: config
+                            .graphics
+                            .shadow_distance
+                            .max(MIN_CASCADE + f32::EPSILON),
+                        first_cascade_far_bound: (config.graphics.shadow_distance / 15.0)
+                            .max(MIN_CASCADE + f32::EPSILON),
                         overlap_proportion: 0.2,
                     }
                     .build()

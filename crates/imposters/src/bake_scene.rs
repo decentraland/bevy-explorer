@@ -24,7 +24,7 @@ use common::{
 };
 use crc::CRC_32_CKSUM;
 use ipfs::IpfsAssetServer;
-use scene_material::{BoundRegion, SceneBound, SceneMaterial};
+use scene_material::{BoundRegion, SceneBound, SceneBounds, SceneMaterial};
 
 use scene_runner::{
     initialize_scene::{
@@ -458,7 +458,9 @@ fn bake_scene_imposters(
                     let Some(mat) = materials.get_mut(h_mat) else {
                         continue;
                     };
-                    mat.extension.data = SceneBound::new(vec![region], bound_tolerance).data;
+                    let bound = SceneBound::new(&SceneBounds::rect(&region), bound_tolerance);
+                    mat.extension.data = bound.data;
+                    mat.extension.cells = bound.cells;
                 }
 
                 debug!("region: {rmin}-{rmax}, snap: {}-{}", aabb.min(), aabb.max());

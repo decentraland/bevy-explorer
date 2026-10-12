@@ -10,6 +10,7 @@
   --brand-active: rgba(229, 39, 75, 0.5);
   --panel: #161518; /* dark panel surface */
   --accent: #ff743a; /* category / selected orange */
+  --accent-hover: #ff8a5a;
   --accent-ink: #1a1206; /* dark text/icon on an --accent (orange) fill */
   --text: #fcfcfc;
   --gold: #ffc95b;
@@ -25,9 +26,21 @@
   --lavender: #c640cd; /* DCL/Lavender — secondary badge */
   --red: #ff0000; /* DCL/Red — blocked */
   --white-10: rgba(255, 255, 255, 0.1); /* DCL/White10% — dividers */
+  --divider-strong: rgba(255, 255, 255, 0.2); /* list section hairlines (friends) */
+  --panel-translucent: rgba(0, 0, 0, 0.72); /* see-through side panel over the world */
+  --panel-head: rgba(0, 0, 0, 0.55); /* header band layered on --panel-translucent */
+  --list-row-hover: rgba(255, 255, 255, 0.15); /* list row hover over --panel-translucent */
+  --row-action: rgba(255, 255, 255, 0.14); /* compact secondary action on a hovered row */
+  --row-action-hover: rgba(255, 255, 255, 0.24);
+  --row-menu-hover: rgba(255, 255, 255, 0.2);
+  --brand-strong: #f02148; /* compact primary hover */
+  --brand-pressed: #e41e43;
+  --menu-rim: #302d36; /* user menu popover rim */
+  --danger-strong: #ff0000; /* destructive hover outline (remove friend / cancel request) */
+  --black-40: rgba(0, 0, 0, 0.4);
 
   /* status */
-  --online: var(--green);
+  --online: #57df41;
   --away: #ffa25a;
   --offline: #a09ba8;
   --error: #ff2424;
@@ -68,9 +81,11 @@
   /* ---- elevation ---- */
   --shadow-panel: 0 8px 24px rgba(0, 0, 0, 0.35);
   --shadow-modal: 0 30px 80px rgba(0, 0, 0, 0.5);
+  --shadow-popup: 0 4px 10px rgba(0, 0, 0, 0.25);
 
   /* ---- stacking order ---- */
   --z-hud: 100; /* in-world chrome: sidebar, chat, minimap */
+  --z-editor: 200; /* the scene editor's container: over the in-world chrome, under modals */
   --z-panel: 50;
   --z-overlay: 60;
   --z-modal: 1000;
@@ -106,6 +121,166 @@
   --dur-fast: 140ms;
   --dur-mid: 300ms;
   --dur-fade: 600ms;
+
+  /* ---- menu pages (1920×1080 reference canvas) ----
+     Alphas here are sRGB equivalents of overlays designed for linear-space blending, which reads
+     lighter: 50% black ≈ 29%, 40% ≈ 22%, 10% white ≈ 26%. */
+  --scrim-head: rgba(0, 0, 0, 0.29);
+  --surface-light: var(--text); /* light buttons, fields, popups */
+  --surface-light-hover: #f5f5f5;
+  --surface-light-press: #c8c8c8;
+  --ink-on-light: var(--panel);
+  --ink-muted: #716b7c; /* placeholders, idle nav labels */
+  --ink-subtle: var(--offline); /* section labels on light surfaces */
+  --ink-50: rgba(255, 255, 255, 0.68);
+  --row-hover: var(--pearl);
+  --row-press: #cfcdd4;
+  --black: #000000;
+  --white: #ffffff;
+  --fill-faint: rgba(255, 255, 255, 0.06); /* hover wash on dark buttons */
+  --scrim-40: rgba(0, 0, 0, 0.22);
+  --scrim-20: rgba(0, 0, 0, 0.1);
+  --divider-pink: rgba(247, 85, 255, 0.25);
+  --tab-idle: rgba(120, 90, 160, 0.14); /* a faint lift on the header */
+  --tab-hover: rgba(255, 255, 255, 0.26);
+  --cover-dark: rgba(22, 21, 24, 0.6); /* incompatible-item cover */
+  --outline-faint: rgba(255, 255, 255, 0.45); /* clear boxes on chips */
+  --menu-bar: var(--panel);
+  --menu-tab-hover: #232226;
+  --menu-tab-selected: #393641;
+  --menu-key: #524e5b;
+  --menu-icon: #898989;
+  --menu-rainbow: linear-gradient(90deg, #bd38c6 0%, #ff5246 50%, #fda163 100%);
+  --slot-empty: #582987;
+  --slot-edge: #a14bf3;
+  --slot-edge-20: rgba(161, 75, 243, 0.2);
+  --skeleton: rgba(138, 65, 212, 0.62);
+  --pager-idle: rgba(161, 75, 243, 0.28);
+  --unequip-hover: #43404a;
+  --outfit-banner: #67279b;
+  --outfit-edge: rgba(130, 69, 190, 0.6);
+  --glow-pink: rgba(255, 75, 237, 0.2);
+  --glow-pink-faint: rgba(255, 75, 237, 0.14);
+  --hide-overlay: #4e0e78;
+  --shown: #36d41d; /* a hidden item shown anyway */
+  --smart-badge: linear-gradient(90deg, #e82af7 0%, #b229df 100%);
+  --cta-flare: linear-gradient(90deg, #ff3156 0%, #ff5757 50%, #ff7d58 100%);
+  --scrim-60: rgba(0, 0, 0, 0.4);
+  --lava-1: #500090; /* backpack background: left */
+  --lava-2: #8619a8; /* right */
+  --lava-3: #591681; /* bottom */
+  --lava-4: #470071; /* deep */
+
+  /* loading screen */
+  /* sidebar rail — sRGB equivalents of the reference's linear-space blends */
+  --rail-bg: rgba(0, 0, 0, 0.65);
+  --rail-divider: rgba(255, 255, 255, 0.2);
+  --rail-selected: rgba(255, 255, 255, 0.16);
+  --rail-avatar-ring: rgba(255, 255, 255, 0.47);
+  /* compact switches / thick sliders / nearby voice (sRGB equivalents of linear blends) */
+  --switch-off: rgba(255, 255, 255, 0.38);
+  --switch-knob-off: rgba(236, 235, 237, 0.73);
+  --slider-track: rgba(255, 255, 255, 0.19);
+  --voice-divider: rgba(255, 255, 255, 0.14);
+  --voice-fill: rgba(255, 255, 255, 0.19);
+  --voice-fill-hover: #696473;
+  --voice-green: #34ce76;
+  --voice-live: #30cd00;
+  --voice-speaking-fill: rgba(26, 198, 45, 0.2);
+  --loading-vignette: radial-gradient(ellipse 100% 100% at 50% 50%, #bf00ff 16.7%, #4c0080 66.7%);
+  --loading-glow: rgba(168, 0, 190, 0.5);
+  --loading-track: #242424;
+  --loading-lava: linear-gradient(90deg, #edb602 0%, #edb602 45%, #f68002 75%, #fe6f00 100%);
+  --loading-key: #ffbe47; /* key names in tip actions, the current tip dot */
+  --loading-pill-edge: #ba67f1;
+
+  --r-xs: 6px;
+  --r-sm: 8px;
+  --r-button: 9.6px;
+  --r-md: 12px; /* light buttons and popups */
+  --r-slot: 15px;
+  --r-lg: 16px;
+  --r-xl: 24px;
+
+  --type-9: 9px;
+  --type-11: 11px;
+  --type-12: 12px;
+  --type-13: 13px;
+  --type-14: 14px;
+  --type-15: 15px;
+  --type-16: 16px;
+  --type-18: 18px;
+  --type-22: 22px;
+  --type-24: 24px;
+  --type-30: 30px;
+  --type-32: 32px;
+  --type-36: 36px;
+
+  /* Lobby cards. Translucent values are measured on screen against the parity capture, not
+     copied from layout alphas (those blend in linear space). */
+  --lobby-card: rgba(20, 20, 26, 0.84);
+  --lobby-pill: rgb(22, 21, 24);
+  --lobby-online: rgb(48, 205, 0);
+  --lobby-live: rgb(255, 0, 0);
+  --lobby-ink: rgb(252, 252, 252);
+  --lobby-ink-dim: rgb(191, 191, 199);
+  --lobby-tooltip: rgba(0, 0, 0, 0.7);
+  /* titles set semibold with a faux-bold flag, ~11% wider than plain bold */
+  --lobby-title-tracking: 0.068em;
+  --lobby-skeleton: linear-gradient(90deg, rgba(143, 66, 219, 0.35), rgba(143, 66, 219, 0.7), rgba(143, 66, 219, 0.35));
+  --header-btn: var(--black);
+  --header-btn-hover: rgb(31, 31, 31);
+  --header-btn-ring: rgba(255, 255, 255, 0.18); /* measured: rgb(46,46,46) over black */
+  --rail-dot: rgba(255, 255, 255, 0.6);
+  --rail-dot-active: rgb(255, 51, 153);
+  --rail-arrow: rgba(28, 28, 33, 0.7);
+  --rail-arrow-hover: rgb(56, 56, 66);
+  --rail-arrow-pressed: rgb(13, 13, 15);
+  --ease-outcubic: cubic-bezier(0.215, 0.61, 0.355, 1);
+  --type-96: 96px;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+
+  --dur-hover: 83ms;
+  --dur-tap: 100ms;
+  --dur-pop: 200ms;
+  --dur-panel: 333ms;
+  --dur-slide: 400ms;
+  --dur-shimmer: 1000ms;
+  --ease-inout: cubic-bezier(0.333, 0, 0.667, 1); /* flat-tangent keyframe curve */
+  --ease-outquad: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --ease-inoutquad: cubic-bezier(0.455, 0.03, 0.515, 0.955);
+
+  /* ---- chat ----
+     On-screen (sRGB) values measured from captures: a translucent overlay blended in linear light
+     reads lighter than the same CSS alpha. */
+  --chat-focus: rgba(0, 0, 0, 0.44); /* messages column while hovered/focused */
+  --chat-head: rgba(0, 0, 0, 0.72);
+  --chat-members: rgba(0, 0, 0, 0.7);
+  --chat-members-head: rgba(0, 0, 0, 0.94);
+  --chat-bubble: rgba(0, 0, 0, 0.7);
+  --chat-mention: #3a0f50;
+  --chat-mention-rim: linear-gradient(180deg, #fe2d57 0%, #c740cd 100%);
+  --chat-day: rgba(0, 0, 0, 0.6);
+  --chat-input: rgba(0, 0, 0, 0.37);
+  --chat-input-focus: rgba(0, 0, 0, 0.71);
+  --chat-new: rgba(255, 45, 85, 0.73);
+  --chat-system: #0cde00;
+  --chat-link: #00b2ff;
+  --chat-hover: rgba(255, 255, 255, 0.24); /* white α0.051 over black, in linear light */
+  --chat-pressed: rgba(255, 255, 255, 0.18);
+  --chat-divider: rgba(255, 255, 255, 0.2);
+  --chat-avatar-ring: rgba(255, 255, 255, 0.48);
+  --counter-half: #ffbc5b;
+  --emoji-tab: #a09ba8;
+  --emoji-header: #cfcdd4;
+  --emoji-hover: #43404a;
+  --emoji-search: #d6d6d6;
+  --chat-dur-chrome: var(--dur-slide);
+  --chat-dur-arrive: 500ms;
+  --chat-dur-idle: 3s;
 
   /* ---- modal (ported from dcl-react-ui) ---- */
   --modal-pad: 30px;

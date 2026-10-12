@@ -50,6 +50,30 @@ describe('pointer domain', () => {
   })
 })
 
+describe('pointer state does not churn the HUD', () => {
+  const sit = [{ button: 0, text: 'Sit', enabled: true }]
+
+  it('a proximity update that only moves a tip by a fraction of a pixel does not re-render', async () => {
+    const h = renderSession()
+    await enterAsGuest(h)
+    h.driver.emit({ kind: 'proximity', tips: [{ id: 7, x: 100.2, y: 200.4, actions: sit }] })
+    const before = h.session()
+    h.driver.emit({ kind: 'proximity', tips: [{ id: 7, x: 100.4, y: 199.6, actions: sit }] })
+    expect(h.session()).toBe(before)
+    h.driver.emit({ kind: 'proximity', tips: [{ id: 7, x: 140, y: 200, actions: sit }] })
+    expect(h.session()).not.toBe(before)
+  })
+
+  it('an empty hover while nothing is hovered does not re-render', async () => {
+    const h = renderSession()
+    await enterAsGuest(h)
+    const before = h.session()
+    h.driver.emit({ kind: 'hover', actions: [] })
+    h.driver.emit({ kind: 'proximity', tips: [] })
+    expect(h.session()).toBe(before)
+  })
+})
+
 // COMPONENT: the Pointer overlay actually renders the crosshair / chips from that state.
 describe('Pointer overlay rendering', () => {
   it('renders the crosshair reticle when the cursor is locked (engine-relayed)', () => {
@@ -63,14 +87,14 @@ describe('Pointer overlay rendering', () => {
     expect(container.firstChild).toBeNull()
   })
 
-  it('shows the camera-gated hint (default reason) but no reticle when unlocked', () => {
+  it('shows the player-gated hint (default reason) but no reticle when unlocked', () => {
     const hover: HoverAction[] = [
       { button: 1, text: 'Open', enabled: true },
       { button: 0, text: 'Pick up', enabled: false }
     ]
     const { getByText, queryByTestId } = render(<Pointer locked={false} hover={hover} proximity={[]} />)
     expect(getByText('Open')).toBeTruthy()
-    expect(getByText('Get camera closer')).toBeTruthy()
+    expect(getByText('Get closer')).toBeTruthy()
     expect(queryByTestId('reticle')).toBeNull()
   })
 
@@ -81,11 +105,11 @@ describe('Pointer overlay rendering', () => {
     expect(getByText('Get camera closer')).toBeTruthy()
   })
 
-  it('shows the walking glyph + "Get player closer" when the player-distance rule gates it', () => {
+  it('shows the walking glyph + "Get closer" when the player-distance rule gates it', () => {
     const hover: HoverAction[] = [{ button: 0, text: 'Show Profile', enabled: false, tooFarReason: 'player' }]
     const { queryByTestId, getByText } = render(<Pointer locked={false} hover={hover} proximity={[]} />)
     expect(queryByTestId('too-far-icon-player')).toBeTruthy()
-    expect(getByText('Get player closer')).toBeTruthy()
+    expect(getByText('Get closer')).toBeTruthy()
   })
 
   it('anchors each proximity tooltip at its projected screen coords', () => {

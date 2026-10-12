@@ -56,7 +56,7 @@ const EXTENSION_MAP: &[(&[&str], &str)] = &[
     (&["txt"], "text/plain"),
     (&["css"], "text/css"),
     (&["csv"], "text/csv"),
-    (&["js"], "text/javascript"),
+    (&["js", "mjs"], "text/javascript"),
     (&["jpeg", "jpg"], "image/jpeg"),
     (&["png"], "image/png"),
     (&["gif"], "image/gif"),

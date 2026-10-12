@@ -1,18 +1,19 @@
 // Emotes: the player's OWNED emote collection + which are equipped to the 10 wheel slots, playing
 // one, and assigning one to a slot.
-//   from: @dcl/sdk getPlayer().emotes (equipped, by slot index), catalyst GET
-//         /explorer/:address/emotes (owned catalog), /lambdas/collections/emotes (equipped-by-urn
-//         resolve, via ./collections), RestrictedActions.triggerEmote (play),
-//         BevyApi.setAvatar (assign).
+//   from: the Backpack's look (equipped, by slot index; ./avatarDraft, which deploys it on close),
+//         catalyst GET /explorer/:address/emotes (owned catalog), /lambdas/collections/emotes
+//         (equipped-by-urn resolve, via ./collections), RestrictedActions.triggerEmote (play).
 import { getPlayer } from '@dcl/sdk/players'
 import { triggerEmote } from '~system/RestrictedActions'
-import { BevyApi } from '../bevy-api'
 import { catalystBase, getJson } from '../http'
 import { resolveDefsByUrn, thumbnailUrl } from './collections'
 import { resolveShopUrls } from './marketplace'
 import { itemUrn, tokenUrnOf } from './urns'
 import type { Ctx } from '../bridge'
 import type { Emote } from '../../../src/engine/protocol'
+import { readAllPages, type Page } from '../../../src/engine/paging'
+import { currentLook, editLook } from './avatarDraft'
+import { identity } from '../identity'
 
 const SLOT_COUNT = 10 // the emote wheel has 10 slots
 const BASE_EMOTE_PREFIX = 'urn:decentraland:off-chain:base-emotes:'
@@ -52,15 +53,22 @@ type CatalogElement = {
   urn: string
   name?: string
   rarity?: string
-  amount?: number
   individualData?: Array<{ id?: string; tokenId?: string }>
   entity?: { metadata?: { name?: string; thumbnail?: string; rarity?: string }; content?: Array<{ file: string; hash: string }> }
 }
 
+const OWNED_PAGE_SIZE = 200
+const OWNED_MAX_PAGES = 25
+
+// Every page, not just the first 200: collectors own more. A failure rejects (see getOwned).
 async function fetchOwned(base: string, address: string): Promise<CatalogElement[]> {
-  const url = `${base}/explorer/${address}/emotes?pageNum=1&pageSize=200&includeEntities=true`
-  const data = await getJson<{ elements?: CatalogElement[] }>(url).catch(() => undefined)
-  return data?.elements ?? []
+  return await readAllPages<CatalogElement>(
+    async (pageNum) =>
+      (await getJson<Page<CatalogElement>>(
+        `${base}/explorer/${address}/emotes?pageNum=${pageNum}&pageSize=${OWNED_PAGE_SIZE}&includeEntities=true`
+      )) ?? {},
+    { pageSize: OWNED_PAGE_SIZE, maxPages: OWNED_MAX_PAGES }
+  )
 }
 
 function thumbUrl(base: string, el: CatalogElement): string {
@@ -75,8 +83,12 @@ const tokenUrnByItem = new Map<string, string>()
 
 // The owned-emotes catalog rarely changes within a session, so cache it (and the item→token map it
 // feeds) per address — re-opening the backpack then costs nothing. Equipped SLOTS are NOT cached;
-// they're recomputed live from getPlayer().emotes on every getEmotes, so assignments stay current.
+// they're recomputed from the Backpack's look on every getEmotes, so assignments stay current.
 let ownedCache: { address: string; elements: CatalogElement[] } | null = null
+identity.onChange(() => {
+  ownedCache = null
+  tokenUrnByItem.clear()
+})
 async function getOwned(base: string, address: string): Promise<CatalogElement[]> {
   if (ownedCache?.address === address) return ownedCache.elements
   const elements = await fetchOwned(base, address)
@@ -134,20 +146,18 @@ export function registerEmotes(ctx: Ctx): void {
   })
 
   // Assign an emote to a wheel slot: rebuild the 10-slot emoteUrns array (preserving the rest) with
-  // the chosen emote (token form for collection emotes) at `slot`, then persist via setAvatar.
+  // the chosen emote (token form for collection emotes) at `slot`, in the Backpack's draft.
   ctx.on('equipEmote', async (msg) => {
     const me = getPlayer()
     if (me == null) return
     if (!isBase(msg.urn) && tokenUrnByItem.size === 0) await getOwned(await catalystBase(), me.userId).catch(() => [])
+    const look = currentLook()
+    if (look == null) return
     // Seed from the effective slots (base defaults when the wheel is empty) so equipping into a fresh
     // profile persists the defaults alongside the new one, instead of blanking the other 9 slots.
-    const slots = equippedSlots(me.emotes)
+    const slots = equippedSlots(look.emotes)
     slots[msg.slot] = equipUrn(msg.urn)
-    BevyApi.setAvatar({
-      equip: { wearableUrns: (me.wearables ?? []).map(String), emoteUrns: slots, forceRender: [] }
-    }).catch((e: unknown) => {
-      console.error('[emotes] equip failed', e)
-    })
+    editLook({ emotes: slots })
   })
 
   ctx.on('getEmotes', async () => {
@@ -157,7 +167,7 @@ export function registerEmotes(ctx: Ctx): void {
     // equipped array index = wheel slot; map item-urn → slot (base defaults when the wheel is empty).
     // Normalize short base-emote names to the full urn so equipped base emotes match a slot.
     const slotByItem = new Map<string, number>()
-    equippedSlots(player?.emotes).forEach((urn, slot) => {
+    equippedSlots(currentLook()?.emotes).forEach((urn, slot) => {
       if (urn !== '') slotByItem.set(itemUrn(fullEmoteUrn(urn)), slot)
     })
 
@@ -177,7 +187,6 @@ export function registerEmotes(ctx: Ctx): void {
       name: el.entity?.metadata?.name ?? el.name ?? baseEmoteName(el.urn),
       rarity: el.rarity ?? el.entity?.metadata?.rarity ?? 'base',
       thumbnail: thumbUrl(base, el),
-      count: el.amount,
       slot: slotByItem.get(itemUrn(el.urn))
     }))
 

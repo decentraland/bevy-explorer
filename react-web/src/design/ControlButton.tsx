@@ -5,16 +5,16 @@
 
 import styles from './ControlButton.module.css'
 
-type Variant = 'ghost' | 'solid'
+type Variant = 'ghost' | 'solid' | 'dark' | 'faint'
 type Shape = 'square' | 'circle' | 'pill'
-type Size = 'sm' | 'md'
+type Size = 'sm' | 'md' | 'lg'
 
 interface ControlButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  /** ghost = transparent→white-10 hover (default); solid = dark fill. */
+  /** ghost = transparent→white-10 hover (default); solid = dark fill; dark / faint = black / clear with a faint wash on hover (chat). */
   variant?: Variant
   /** square (default), circle, or pill (for label + value like a count). */
   shape?: Shape
-  /** md = 30px (default), sm = 26px. */
+  /** md = 30px (default), sm = 26px, lg = 32px. */
   size?: Size
   /** Selected/pressed state. */
   active?: boolean

@@ -30,8 +30,6 @@ pub enum Localizer {
     /// Localization strategy not yet defined. Acceptable at scene startup (initial CRDT store
     /// may contain pre-localized static data), but will cause an error at global update receipt.
     Unimplemented,
-    /// Localize `PbAvatarMovementInfo`: offset `walk_target` (field 8) by scene origin.
-    AvatarMovementInfo,
     /// Localize `DclTransformAndParent`: world-space transforms (parented to `WORLD_ORIGIN`)
     /// get their translation offset by scene origin and are re-parented to `ROOT`, so scenes
     /// read scene-relative positions for foreign players.
@@ -45,27 +43,6 @@ impl Localizer {
         match self {
             Localizer::None => payload.to_vec(),
             Localizer::Unimplemented => payload.to_vec(),
-            Localizer::AvatarMovementInfo => {
-                use prost::Message;
-                use proto_components::sdk::components::PbAvatarMovementInfo;
-
-                let Ok(mut info) = PbAvatarMovementInfo::decode(payload) else {
-                    return payload.to_vec();
-                };
-
-                let origin = &scene_origin.0;
-
-                // walk_target is a world-space position → make scene-relative
-                if let Some(ref mut target) = info.walk_target {
-                    target.x -= origin.x;
-                    target.y -= origin.y;
-                    target.z -= origin.z;
-                }
-
-                let mut buf = Vec::with_capacity(payload.len());
-                info.encode(&mut buf).expect("re-encode failed");
-                buf
-            }
             Localizer::Transform => {
                 use transform_and_parent::DclTransformAndParent;
 

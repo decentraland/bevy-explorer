@@ -1,5 +1,11 @@
 use serde::Serialize;
 
+/// The os natively; wasm32-unknown-unknown has no os name (`std::env::consts::OS` is empty).
+#[cfg(not(target_arch = "wasm32"))]
+const PLATFORM: &str = std::env::consts::OS;
+#[cfg(target_arch = "wasm32")]
+const PLATFORM: &str = "web";
+
 #[derive(Serialize)]
 pub struct SegmentMetricEventBody {
     #[serde(rename = "type")]
@@ -31,7 +37,7 @@ pub struct SegmentEventCommonExplorerFields {
 
 impl SegmentEventCommonExplorerFields {
     pub fn new(session_id: String, version: String) -> Self {
-        let dcl_renderer_type = format!("dao-bevy-{}", std::env::consts::OS);
+        let dcl_renderer_type = format!("dao-bevy-{PLATFORM}");
 
         Self {
             dcl_eth_address: "".into(),
@@ -51,6 +57,7 @@ pub enum SegmentEvent {
     ExplorerSceneLoadTimes(SegmentEventExplorerSceneLoadTimes),
     ExplorerMoveToParcel(String, SegmentEventExplorerMoveToParcel),
     SystemInfoReport(SegmentEventSystemInfoReport),
+    ChatMessageSent(SegmentEventChatMessageSent),
 }
 
 #[derive(Serialize)]
@@ -140,6 +147,41 @@ pub struct SegmentEventSystemInfoReport {
     system_memory_size_mb: u32,
 }
 
+// Same shape as godot's event
+#[derive(Serialize)]
+pub struct SegmentEventChatMessageSent {
+    // Length of the message sent.
+    pub length: u32,
+    // Whether it is Public or Private.
+    pub channel: String,
+    // Whether the message typed is a command or not (if applies).
+    pub is_command: bool,
+    // Whether the message is Private or not.
+    pub is_private: bool,
+    // ID of the Community the message was sent to. Otherwise NULL.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub community_id: Option<String>,
+    // Whether the message contains a mention from another User (i.e. @XYZ).
+    pub is_mention: bool,
+    // If the user is not in world, this is the screen where the event is fired.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub screen_name: Option<String>,
+}
+
+impl SegmentEventChatMessageSent {
+    pub fn new(message: &str, is_private: bool) -> Self {
+        Self {
+            length: message.chars().count() as u32,
+            channel: if is_private { "private" } else { "nearby" }.to_owned(),
+            is_command: message.starts_with('/'),
+            is_private,
+            community_id: None,
+            is_mention: message.contains('@'),
+            screen_name: None,
+        }
+    }
+}
+
 pub fn build_segment_event_batch_item(
     user_id: String,
     common: &SegmentEventCommonExplorerFields,
@@ -168,6 +210,11 @@ pub fn build_segment_event_batch_item(
         ),
         SegmentEvent::SystemInfoReport(event) => (
             "System Info Report".to_string(),
+            serde_json::to_value(event).unwrap(),
+            None,
+        ),
+        SegmentEvent::ChatMessageSent(event) => (
+            "Chat Message Sent".to_string(),
             serde_json::to_value(event).unwrap(),
             None,
         ),

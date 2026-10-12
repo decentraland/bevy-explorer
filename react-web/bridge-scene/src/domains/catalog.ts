@@ -21,7 +21,8 @@ export function registerCatalog(ctx: Ctx): void {
           search: msg.search,
           orderBy: msg.orderBy,
           direction: msg.direction,
-          collectiblesOnly: msg.collectiblesOnly
+          collectiblesOnly: msg.collectiblesOnly,
+          smartOnly: msg.smartOnly
         }).catch(() => empty)
       } else {
         // TODO(emotes): route emotes through the same paged fetcher.

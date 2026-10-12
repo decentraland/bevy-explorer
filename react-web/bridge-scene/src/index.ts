@@ -15,21 +15,26 @@ import { registerSession } from './domains/session'
 import { registerProfile } from './domains/profile'
 import { registerFriends } from './domains/friends'
 import { registerChat } from './domains/chat'
+import { registerDm } from './domains/dm'
 import { registerEmotes } from './domains/emotes'
-import { registerWearables } from './domains/wearables'
+import { registerWearables, sendEquipped } from './domains/wearables'
 import { registerCatalog } from './domains/catalog'
 import { registerOutfits } from './domains/outfits'
+import { registerAvatarDraft } from './domains/avatarDraft'
+import { registerWelcome } from './domains/welcome'
 import { registerNotifications } from './domains/notifications'
 import { registerSettings } from './domains/settings'
 import { registerCommunities } from './domains/communities'
 import { registerGallery } from './domains/gallery'
 import { registerWorld } from './domains/world'
+import { registerVoice } from './domains/voice'
 import { registerPointer } from './domains/pointer'
 import { registerProximity } from './domains/proximity'
 import { registerSystemAction } from './domains/systemAction'
 import { registerBindings } from './domains/bindings'
 import { registerAvatarPointer } from './domains/avatarPointer'
 import { registerPermissions } from './domains/permissions'
+import { registerEditor } from './domains/editor'
 import { initNametags } from './domains/nametags'
 
 export function main(): void {
@@ -41,10 +46,16 @@ export function main(): void {
     registerProfile(ctx)
     registerFriends(ctx)
     registerChat(ctx)
+    registerDm(ctx)
+    registerVoice(ctx)
     registerEmotes(ctx)
     registerWearables(ctx)
     registerCatalog(ctx)
     registerOutfits(ctx)
+    registerAvatarDraft(ctx, async () => {
+      await sendEquipped(ctx)
+    })
+    registerWelcome(ctx)
     registerNotifications(ctx)
     registerSettings(ctx)
     registerCommunities(ctx)
@@ -56,6 +67,7 @@ export function main(): void {
     registerBindings(ctx)
     registerAvatarPointer(ctx)
     registerPermissions(ctx)
+    registerEditor(ctx)
     registerAvatarPreview(ctx)
     registerMinimap(ctx)
   })

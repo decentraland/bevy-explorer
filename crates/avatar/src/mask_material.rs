@@ -1,9 +1,12 @@
 use bevy::{
     prelude::*,
     reflect::TypePath,
-    render::render_resource::{AsBindGroup, ShaderRef},
+    render::{
+        render_resource::{AsBindGroup, ShaderRef},
+        storage::ShaderStorageBuffer,
+    },
 };
-use scene_material::BoundRegion;
+use scene_material::{SceneBound, SceneBoundData, SceneBounds};
 
 pub struct MaskMaterialPlugin;
 
@@ -33,11 +36,7 @@ mod decl {
 
     #[derive(ShaderType, Debug, Clone)]
     pub struct MaskData {
-        pub(super) bounds: [scene_material::BoundRegion; 8],
         pub(super) color: Vec4,
-        pub(super) distance: f32,
-        pub(super) num_bounds: u32,
-        pub(super) _pad: u32,
     }
 }
 use decl::*;
@@ -53,6 +52,10 @@ pub struct MaskMaterial {
     #[texture(3)]
     #[sampler(4)]
     pub mask_texture: Handle<Image>,
+    #[uniform(100)]
+    pub bounds: SceneBoundData,
+    #[storage(101, read_only, visibility(fragment))]
+    pub cells: Handle<ShaderStorageBuffer>,
 }
 
 impl MaskMaterial {
@@ -60,39 +63,16 @@ impl MaskMaterial {
         color: Color,
         base_texture: Handle<Image>,
         mask_texture: Handle<Image>,
-        bounds: Vec<BoundRegion>,
+        bounds: &SceneBounds,
         distance: f32,
     ) -> Self {
-        let num_bounds = bounds.len() as u32;
-        let bounds: [BoundRegion; 8] = if bounds.len() > 8 {
-            warn!("super janky scene shape not supported");
-            let overall_min = bounds.iter().fold(IVec2::MAX, |t, b| t.min(b.parcel_min()));
-            let overall_max = bounds.iter().fold(IVec2::MIN, |t, b| t.max(b.parcel_max()));
-            let overall_region = BoundRegion::new(overall_min, overall_max, bounds[0].parcel_count);
-            [overall_region]
-                .into_iter()
-                .chain(std::iter::repeat(Default::default()))
-                .take(8)
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap()
-        } else {
-            bounds
-                .into_iter()
-                .chain(std::iter::repeat(Default::default()))
-                .take(8)
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap()
-        };
+        let bounds = SceneBound::new(bounds, distance);
         Self {
             mask_data: MaskData {
-                num_bounds,
                 color: color.to_linear().to_vec4(),
-                bounds,
-                distance,
-                _pad: 0,
             },
+            bounds: bounds.data,
+            cells: bounds.cells,
             base_texture,
             mask_texture,
         }

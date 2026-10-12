@@ -45,6 +45,30 @@ describe('system-action menu shortcuts', () => {
     expect(h.session().chat.open).toBe(true)
   })
 
+  it("stands down for the scene editor: no page hotkeys or Enter-to-chat in 'edit', the emote wheel in 'play'", async () => {
+    const h = await world()
+    h.driver.emit(action('Map'))
+    act(() => h.session().editor.setMode('edit'))
+    expect(h.session().map.open).toBe(false)
+    h.driver.emit(action('Places'))
+    h.driver.emit(action('Emote'))
+    expect(h.session().places.open).toBe(false)
+    expect(h.session().emotes.open).toBe(false)
+    const focusTick = h.session().chat.focusTick
+    h.driver.emit({ kind: 'focusChat' })
+    expect(h.session().chat.focusTick).toBe(focusTick)
+
+    act(() => h.session().editor.setMode('play'))
+    h.driver.emit(action('Places'))
+    h.driver.emit(action('Emote'))
+    expect(h.session().places.open).toBe(false)
+    expect(h.session().emotes.open).toBe(true)
+
+    act(() => h.session().editor.setMode('off'))
+    h.driver.emit(action('Places'))
+    expect(h.session().places.open).toBe(true)
+  })
+
   it('ignores release edges', async () => {
     const h = await world()
     h.driver.emit(action('Places', false))
@@ -148,11 +172,25 @@ describe('system-action menu shortcuts', () => {
     expect(screen.queryByText('realm error')).toBeNull()
   })
 
-  it('declares the loading overlay as covered until the world is revealed', async () => {
+  it('Cancel closes what the in-world lobby opened before the lobby itself', async () => {
+    const h = renderSession({ userId: null })
+    await enterAsGuest(h)
+    act(() => h.session().lobbyPage.toggle())
+    act(() => h.session().profile.toggle())
+    expect(h.session().lobbyPage.open).toBe(true)
+    act(() => h.driver.emit(action('Cancel')))
+    expect(h.session().profile.open).toBe(false)
+    expect(h.session().lobbyPage.open).toBe(true)
+    act(() => h.driver.emit(action('Cancel')))
+    expect(h.session().lobbyPage.open).toBe(false)
+  })
+
+  it('declares the lobby and the loading overlay as covered until the world is revealed', async () => {
     const h = renderSession({ userId: null })
     await enterAsGuest(h, { keepSent: true })
     const focus = h.driver.sent.filter((m) => m.kind === 'uiFocus').map((m) => m.covered)
-    expect(focus).toEqual([true, false])
+    // the welcome stage while sign-in is answered, the lobby, the loading overlay, then the world
+    expect(focus).toEqual([true, true, true, false])
   })
 
   it("declares uiFocus to the engine: panels/popups set ui, a full-screen page sets covered, a focused text field sets text", async () => {

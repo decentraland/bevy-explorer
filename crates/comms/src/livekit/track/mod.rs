@@ -9,7 +9,7 @@ use common::structs::AudioDecoderError;
 #[cfg(not(target_arch = "wasm32"))]
 use livekit::webrtc::prelude::I420Buffer;
 #[cfg(target_arch = "wasm32")]
-use media::HtmlMedia;
+use media::{AVCommand, VideoData};
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -120,10 +120,13 @@ struct VideoFrameReceiver {
     receiver: mpsc::Receiver<I420Buffer>,
 }
 
+/// A track's page video element, adopted into the media host; dropping this releases it.
 #[cfg(target_arch = "wasm32")]
-#[derive(Component, Deref, DerefMut)]
+#[derive(Component)]
 struct HtmlMediaEntity {
-    element: HtmlMedia,
+    _commands: tokio::sync::mpsc::UnboundedSender<AVCommand>,
+    video: tokio::sync::mpsc::Receiver<VideoData>,
+    image: Handle<Image>,
 }
 
 #[derive(Component)]

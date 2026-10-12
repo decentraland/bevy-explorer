@@ -7,7 +7,7 @@ use bevy::{
 use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_RADIUS},
     inputs::CommonInputAction,
-    rpc::{RpcCall, RpcEventSender},
+    rpc::{RpcCall, RpcCallEvent, RpcEventSender},
     sets::SceneSets,
     structs::{PlayerModifiers, PointerTargetType, PrimaryCamera, PrimaryUser},
 };
@@ -41,7 +41,7 @@ impl Plugin for AvatarColliderPlugin {
                 update_avatar_colliders.in_set(SceneSets::PostInit),
                 (
                     clean_player_clicked_senders,
-                    collect_player_clicked_senders.run_if(on_event::<RpcCall>),
+                    collect_player_clicked_senders.run_if(on_event::<RpcCallEvent>),
                     update_avatar_collider_actions.in_set(SceneSets::Input),
                     send_message_to_scene.run_if(in_state(AvatarHighlighted(true))),
                 )
@@ -138,10 +138,10 @@ fn clean_player_clicked_senders(mut senders: ResMut<PlayerClickedSenders>) {
 
 fn collect_player_clicked_senders(
     mut senders: ResMut<PlayerClickedSenders>,
-    mut subscribe_events: EventReader<RpcCall>,
+    mut subscribe_events: EventReader<RpcCallEvent>,
 ) {
     // gather any event receivers
-    for sender in subscribe_events.read().filter_map(|ev| match ev {
+    for sender in subscribe_events.read().filter_map(|ev| match &ev.call {
         RpcCall::SubscribePlayerClicked { sender } => Some(sender),
         _ => None,
     }) {

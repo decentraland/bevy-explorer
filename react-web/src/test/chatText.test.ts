@@ -53,22 +53,28 @@ describe('parseMessage', () => {
 })
 
 describe('buildNameIndex + mentionsMe', () => {
-  const members = [{ address: '0xme', name: 'Me' }, { address: '0xal', name: 'Alice#1a2b' }]
+  const ALICE = '0x00000000000000000000000000000000000a1b2c'
+  const members = [
+    { address: '0x00000000000000000000000000000000000000aa', name: 'Me', claimed: true },
+    { address: ALICE, name: 'Alice', claimed: false }
+  ]
 
-  it('indexes both the full name and the bare name', () => {
+  it('indexes an unclaimed name with its wallet tag, and bare while unambiguous', () => {
     const idx = buildNameIndex(members)
-    expect(idx.get('me')).toBe('0xme')
-    expect(idx.get('alice#1a2b')).toBe('0xal')
-    expect(idx.get('alice')).toBe('0xal')
+    expect(idx.get('me')).toBe(members[0].address)
+    expect(idx.get('alice#1b2c')).toBe(ALICE)
+    expect(idx.get('alice')).toBe(ALICE)
   })
 
-  it('detects a mention of me by resolved address', () => {
-    const idx = buildNameIndex(members)
-    expect(mentionsMe('hey @Me!', { address: '0xme', name: 'Me' }, idx)).toBe(true)
-    expect(mentionsMe('hey @Alice', { address: '0xme', name: 'Me' }, idx)).toBe(false)
+  it('a claimed name is mentioned by name alone', () => {
+    const me = { address: '0x00000000000000000000000000000000000000aa', name: 'Me', hasClaimedName: true }
+    expect(mentionsMe('hey @Me!', me)).toBe(true)
+    expect(mentionsMe('hey @Alice', me)).toBe(false)
   })
 
-  it('detects a mention of me by bare name even if not in the roster', () => {
-    expect(mentionsMe('@Zed yo', { address: '0xz', name: 'Zed' }, new Map())).toBe(true)
+  it('an unclaimed name is mentioned only with its own wallet tag', () => {
+    const me = { address: ALICE, name: 'Alice#1b2c', hasClaimedName: false }
+    expect(mentionsMe('hi @Alice#1b2c', me)).toBe(true)
+    expect(mentionsMe('hi @Alice#ffff', me)).toBe(false)
   })
 })

@@ -37,6 +37,8 @@ export default defineConfig({
   webServer: {
     command: 'npm run dev',
     url: 'http://localhost:5173',
+    // Vite's detached bridge-scene child would keep the runner's stdio open and hang teardown.
+    env: { BRIDGE_SCENE_PREVIEW: '0' },
     reuseExistingServer: true,
     timeout: 120_000
   }

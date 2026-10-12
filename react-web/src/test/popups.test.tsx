@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
-import { PopupHost, openPopup, closeTopPopup, showConfirm, resetPopups } from '../design'
+import { PopupHost, openPopup, closeTopPopup, showConfirm, showDialog, resetPopups } from '../design'
 import { CrashModal } from '../features/error/CrashModal'
 
 // The popup layer has NO keyboard handling of its own: the cancel key flows to the engine
@@ -53,6 +53,19 @@ describe('popup stack', () => {
     })
     fireEvent.click(document.querySelector('[class*="backdrop"]') as HTMLElement)
     expect(screen.getByText('locked')).toBeTruthy() // stayed open
+  })
+
+  it('a dismissible:false dialog has no × and ignores backdrop clicks; Cancel still resolves null', async () => {
+    render(<PopupHost />)
+    let choice: Promise<string | null> = Promise.resolve('unset')
+    act(() => {
+      choice = showDialog({ title: 'Pick one', dismissible: false, actions: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }] })
+    })
+    expect(screen.queryByRole('button', { name: /close/i })).toBeNull()
+    fireEvent.click(document.querySelector('[class*="backdrop"]') as HTMLElement)
+    expect(screen.getByText('Pick one')).toBeTruthy() // stayed open
+    act(() => closeTopPopup()) // the session's Cancel (Escape) path
+    expect(await choice).toBeNull()
   })
 
   it('backdropClickCloses can be a predicate, re-read on every click (the passport vetoes while editing)', () => {

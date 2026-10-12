@@ -2,8 +2,9 @@
 // Profile, Sign Out, Exit). Matches the Explorer 2.0 menu profile popover.
 
 import { useEffect, useRef, useState } from 'react'
-import { Avatar } from '../../design'
-import { nameColor, shortAddr } from '../../lib/identity'
+import { Avatar, HeaderButton } from '../../design'
+import { shortAddr } from '../../lib/identity'
+import { knownUserColor } from '../session/profileStore'
 import styles from './ProfileChip.module.css'
 
 function Verified(): React.JSX.Element {
@@ -58,15 +59,20 @@ export function ProfileChip({
   claimed,
   onViewProfile,
   onSignOut,
-  onExit
+  onExit,
+  variant = 'menu'
 }: {
   name: string
   picture?: string
   address?: string
   claimed?: boolean
   onViewProfile: () => void
-  onSignOut: () => void
-  onExit: () => void
+  /** Only the startup lobby can sign out: once in world the account is fixed for the session. */
+  onSignOut?: () => void
+  /** Absent in the lobby, which has no menu page to exit. */
+  onExit?: () => void
+  /** The menu top bar's chip, or the lobby header's pill. */
+  variant?: 'menu' | 'lobby'
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -92,13 +98,20 @@ export function ProfileChip({
     )
   }
 
-  const color = nameColor(address ?? name)
+  const color = knownUserColor(address ?? '', name)
   return (
     <div className={styles.root} ref={ref}>
-      <button type="button" className={styles.chip} onClick={() => setOpen((o) => !o)}>
-        <Avatar src={picture} name={name} color={color} size={32} />
-        <span className={styles.chipName}>{name}</span>
-      </button>
+      {variant === 'lobby' ? (
+        <HeaderButton shape="pill" className={styles.lobbyChip} onClick={() => setOpen((o) => !o)}>
+          <Avatar src={picture} name={name} size={40} framed />
+          <span className={styles.lobbyName}>{name}</span>
+        </HeaderButton>
+      ) : (
+        <button type="button" className={styles.chip} onClick={() => setOpen((o) => !o)}>
+          <Avatar src={picture} name={name} color={color} size={32} />
+          <span className={styles.chipName}>{name}</span>
+        </button>
+      )}
 
       {open && (
         <div className={styles.menu}>
@@ -131,14 +144,18 @@ export function ProfileChip({
           </div>
 
           <div className={styles.actions}>
-            <button type="button" className={styles.action} onClick={onSignOut}>
-              <PowerIcon />
-              SIGN OUT
-            </button>
-            <button type="button" className={`${styles.action} ${styles.exit}`} onClick={onExit}>
-              <ExitIcon />
-              EXIT
-            </button>
+            {onSignOut && (
+              <button type="button" className={styles.action} onClick={onSignOut}>
+                <PowerIcon />
+                SIGN OUT
+              </button>
+            )}
+            {onExit && (
+              <button type="button" className={`${styles.action} ${styles.exit}`} onClick={onExit}>
+                <ExitIcon />
+                EXIT
+              </button>
+            )}
           </div>
 
           <div className={styles.footer}>

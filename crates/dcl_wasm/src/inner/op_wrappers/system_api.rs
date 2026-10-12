@@ -175,6 +175,23 @@ pub async fn op_get_home_scene(state: &WorkerContext) -> Result<JsValue, WasmErr
 }
 
 #[wasm_bindgen]
+pub async fn op_get_welcome(state: &WorkerContext) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_get_welcome(state.rc()).await)
+}
+
+#[wasm_bindgen]
+pub async fn op_accept_terms(state: &WorkerContext) -> Result<(), WasmError> {
+    dcl::js::system_api::op_accept_terms(state.rc())
+        .await
+        .map_err(WasmError::from)
+}
+
+#[wasm_bindgen]
+pub async fn op_get_satellite_view(state: &WorkerContext) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_get_satellite_view(state.rc()).await)
+}
+
+#[wasm_bindgen]
 pub fn op_set_home_scene(state: &WorkerContext, realm: String, parcel: JsValue) {
     serde_parse!(parcel);
     dcl::js::system_api::op_set_home_scene(state.rc(), realm, parcel);
@@ -206,6 +223,30 @@ pub async fn op_read_chat_stream(state: &WorkerContext, rid: u32) -> Result<JsVa
 #[wasm_bindgen]
 pub fn op_send_chat(state: &WorkerContext, message: String, channel: String) {
     dcl::js::system_api::op_send_chat(state.rc(), message, channel)
+}
+
+#[wasm_bindgen]
+pub async fn op_get_chat_reaction_stream(state: &WorkerContext) -> u32 {
+    dcl::js::system_api::op_get_chat_reaction_stream(state.rc()).await
+}
+
+#[wasm_bindgen]
+pub async fn op_read_chat_reaction_stream(
+    state: &WorkerContext,
+    rid: u32,
+) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_read_chat_reaction_stream(state.rc(), rid).await)
+}
+
+#[wasm_bindgen]
+pub fn op_send_chat_reaction(
+    state: &WorkerContext,
+    channel: String,
+    message_id: String,
+    emoji: String,
+    remove: bool,
+) {
+    dcl::js::system_api::op_send_chat_reaction(state.rc(), channel, message_id, emoji, remove)
 }
 
 #[wasm_bindgen]
@@ -549,6 +590,37 @@ pub async fn op_get_blocked_users(state: &WorkerContext) -> Result<JsValue, Wasm
 #[wasm_bindgen]
 pub async fn op_get_blocking_status(state: &WorkerContext) -> Result<JsValue, WasmError> {
     serde_result!(dcl::js::system_api::op_get_blocking_status(state.rc()).await)
+}
+
+#[wasm_bindgen]
+pub fn op_get_dm_user_state_stream(state: &WorkerContext, address: String) -> u32 {
+    dcl::js::system_api::op_get_dm_user_state_stream(state.rc(), address)
+}
+
+#[wasm_bindgen]
+pub async fn op_read_dm_user_state_stream(
+    state: &WorkerContext,
+    rid: u32,
+) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_read_dm_user_state_stream(state.rc(), rid).await)
+}
+
+#[wasm_bindgen]
+pub fn op_close_dm_user_state_stream(state: &WorkerContext, rid: u32) {
+    dcl::js::system_api::op_close_dm_user_state_stream(state.rc(), rid)
+}
+
+#[wasm_bindgen]
+pub async fn op_get_dm_history(
+    state: &WorkerContext,
+    address: String,
+) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_get_dm_history(state.rc(), address).await)
+}
+
+#[wasm_bindgen]
+pub fn op_delete_dm_history(state: &WorkerContext, address: String) {
+    dcl::js::system_api::op_delete_dm_history(state.rc(), address)
 }
 
 #[wasm_bindgen]

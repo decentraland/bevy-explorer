@@ -5,18 +5,15 @@
 //     from the super-user bridge scene over the `bevy-ui-bridge` BroadcastChannel
 //     and are delivered through ONE generic `on(msg => …)` subscription.
 
-import { getStoredLogin, rootAddress, type AuthIdentity } from '../features/auth/sso'
+import { encodeIdentity, getLogin, rootAddress, type AuthIdentity, type StoredLogin } from '../features/auth/sso'
+import { inShell, shellRequest } from '../lib/shell'
 import type { LoginDriver } from './driver'
-import type { EngineRpc } from './engineRpc'
+import type { EngineRpc, LaunchHostOptions } from './engineRpc'
 import { BridgeChannel } from './bridgeChannel'
 import { bridgeChannelName, type PageToScene, type SceneToPage } from './protocol'
 
-// Pack a same-domain SSO AuthIdentity into a single base64 console-command argument. The
-// engine's `/login_identity` command decodes this (root address = authChain[0].payload,
-// ephemeral key + delegate chain) and finalizes the wallet without any auth-server round-trip.
-function encodeIdentity(identity: AuthIdentity): string {
-  return btoa(JSON.stringify(identity))
-}
+// Two thirdweb round-trips.
+const CREATE_GUEST_TIMEOUT_MS = 30_000
 
 export class EngineDriver implements LoginDriver {
   private readonly ch: BridgeChannel
@@ -38,7 +35,7 @@ export class EngineDriver implements LoginDriver {
   async getPreviousLogin(): Promise<{ userId: string | null }> {
     // The engine has no console command to query a saved login, but a same-domain SSO identity
     // in localStorage is exactly that — a previous login we can hand back via `/login_identity`.
-    const login = getStoredLogin()
+    const login = await getLogin()
     return { userId: login ? rootAddress(login.identity) : null }
   }
 
@@ -54,16 +51,29 @@ export class EngineDriver implements LoginDriver {
     this.scheduleReadyFallback()
   }
 
+  // The shell creates the guest account and keeps it, key included, like a sign-in; the engine
+  // gets the public identity and signs through the shell. Outside the shell (a credentialless
+  // embed) there is nowhere to keep it, so the guest is a throwaway one.
+  async loginPersistentGuest(): Promise<void> {
+    if (!inShell) return this.loginGuest()
+    const login = await shellRequest<StoredLogin>('createGuest', undefined, CREATE_GUEST_TIMEOUT_MS)
+    await this.loginWithIdentity(login.identity, false, true)
+  }
+
   async loginCancel(): Promise<void> {
     // SSO login is a redirect/console-command; there is no in-engine flow to cancel.
   }
 
   async logout(): Promise<void> {
+    // The next account spawns anew, so its world handoff must fire again.
+    this.playerReadyFired = false
+    if (this.readyFallbackTimer != null) clearTimeout(this.readyFallbackTimer)
+    this.readyFallbackTimer = null
     await this.rpc.command('/logout')
   }
 
-  async loginWithIdentity(identity: AuthIdentity, defaultOnError?: boolean): Promise<void> {
-    const flag = defaultOnError === true ? ' --default-on-error' : ''
+  async loginWithIdentity(identity: AuthIdentity, defaultOnError?: boolean, guest?: boolean): Promise<void> {
+    const flag = (defaultOnError === true ? ' --default-on-error' : '') + (guest === true ? ' --guest' : '')
     await this.rpc.command(`/login_identity ${encodeIdentity(identity)}${flag}`)
     this.scheduleReadyFallback()
   }
@@ -71,8 +81,8 @@ export class EngineDriver implements LoginDriver {
   // "Jump in": reuse the SSO identity via `/login_identity`; if none is stored, fall back to
   // the engine's own saved login.
   async jumpIn(defaultOnError?: boolean): Promise<void> {
-    const login = getStoredLogin()
-    if (login) await this.loginWithIdentity(login.identity, defaultOnError)
+    const login = await getLogin()
+    if (login) await this.loginWithIdentity(login.identity, defaultOnError, login.guest === true)
     else await this.loginPrevious(defaultOnError)
   }
 
@@ -101,7 +111,7 @@ export class EngineDriver implements LoginDriver {
 
   engineReady(): boolean {
     // Ready-to-launch (WASM compiled + GPU warm), not console-ready — the console only comes up after
-    // launch (which we defer until the user picks a destination).
+    // launch.
     return this.rpc.readyToLaunch()
   }
 
@@ -125,12 +135,20 @@ export class EngineDriver implements LoginDriver {
     this.rpc.rearmCrashWatchdog()
   }
 
-  launch(realm?: string, position?: string): void {
-    this.rpc.launch(realm, position)
+  launch(realm?: string, position?: string, host?: LaunchHostOptions): void {
+    this.rpc.launch(realm, position, host)
   }
 
   homeScene(): { realm: string | null; parcel: string } | null {
     return this.rpc.homeScene()
+  }
+
+  termsAccepted(): boolean | null {
+    return this.rpc.termsAccepted()
+  }
+
+  command(line: string): Promise<string> {
+    return this.rpc.command(line)
   }
 
   private emit(msg: SceneToPage): void {

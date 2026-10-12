@@ -101,6 +101,26 @@ async function storeRequiredItems() {
   });
 }
 
+// The small settings that lived in localStorage, which a worker has no access to.
+async function getConfig(key) {
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const request = db.transaction("deviceConfig", "readonly").objectStore("deviceConfig").get(key);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => resolve(undefined);
+  });
+}
+
+async function setConfig(key, value) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("deviceConfig", "readwrite");
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.objectStore("deviceConfig").put(value, key);
+  });
+}
+
 async function fetchInstance(type, hash) {
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -140,12 +160,56 @@ export async function initGpuCache(key, fakeAsync) {
   await createGpuCache(key);
 }
 
+// Console marker boot.js (the page, where this worker's console is mirrored) turns into the crash
+// modal at once. Keep in sync with boot.js.
+const GPU_FATAL_PREFIX = "[gpu fatal]";
+
+function describeBuffer(descriptor) {
+  const d = descriptor ?? {};
+  return `label=${JSON.stringify(d.label ?? "")} size=${d.size} usage=0x${Number(d.usage ?? 0).toString(16)} mappedAtCreation=${!!d.mappedAtCreation}`;
+}
+
+// Chrome's createBuffer throws (rather than raising an uncaptured error) only for a mappedAtCreation
+// buffer: a size that isn't a multiple of 4, or when the wire client can't allocate the shared-memory
+// staging region for the mapping — renderer memory pressure, or the GPU channel already gone. wgpu
+// unwraps the result, so the throw surfaces as a panic; put the descriptor in the error message so
+// the panic text the crash modal shows says what was being created.
+function patchCreateBuffer(device) {
+  const originalCreateBuffer = device.createBuffer;
+  device.createBuffer = (descriptor) => {
+    try {
+      return originalCreateBuffer.call(device, descriptor);
+    } catch (err) {
+      let detail = `createBuffer(${describeBuffer(descriptor)}) threw ${err?.name ?? "error"}: ${err?.message ?? err}`;
+      if (device.__gpu_lost) detail += " (device lost)";
+      if (err instanceof Error) {
+        err.message = detail;
+        throw err;
+      }
+      throw new Error(detail);
+    }
+  };
+}
+
+// A lost device silently no-ops every call: the render loop keeps beating over a dead canvas and
+// nothing else raises the crash modal (a lost device raises no uncaptured errors either).
+function armDeviceLost(device) {
+  if (device.__gpu_lost_armed) return;
+  device.__gpu_lost_armed = true;
+  device.lost.then((info) => {
+    device.__gpu_lost = true;
+    if (info.reason === "destroyed") return; // deliberate teardown, not a fault
+    console.error(`${GPU_FATAL_PREFIX} WebGPU device lost (${info.reason}): ${info.message}`);
+  });
+}
+
 function patchWebgpuAdapter(fakeAsync) {
   const originalRequestDevice = GPUAdapter.prototype.requestDevice;
   GPUAdapter.prototype.requestDevice = async function (descriptor) {
     const jsonDescriptor = JSON.stringify(descriptor || {});
     if (gpuSessionState.deviceDescriptor === jsonDescriptor) {
       console.log("[GPU Cache] using precached device");
+      armDeviceLost(gpuSessionState.device);
       return gpuSessionState.device;
     }
 
@@ -170,7 +234,10 @@ function patchWebgpuAdapter(fakeAsync) {
       device = await originalRequestDevice.apply(this, []);
     }
     gpuSessionState.device = device;
-    localStorage.setItem("deviceDescriptor", jsonDescriptor);
+    await setConfig("deviceDescriptor", jsonDescriptor);
+    patchCreateBuffer(device);
+    // The precache device is only armed if the engine ends up using it (the branch above).
+    if (!precaching) armDeviceLost(device);
 
     function wrapDeviceFunction(itemType, originalFunction) {
       return (...args) => {
@@ -222,9 +289,9 @@ function patchWebgpuAdapter(fakeAsync) {
     } else {
       let inline_function = wrapDeviceFunction("pipeline", device.createRenderPipeline);
 
-      window.pendingAsyncPipelineCount = 0;
-      window.lastPipelineWasValidFlag = false;
-      window.wgpuResolveIdle = [];
+      globalThis.pendingAsyncPipelineCount = 0;
+      globalThis.lastPipelineWasValidFlag = false;
+      globalThis.wgpuResolveIdle = [];
       const itemType = "pipeline";
       const placeholderPipeline = getPlaceholder(device);
 
@@ -233,26 +300,26 @@ function patchWebgpuAdapter(fakeAsync) {
         const hash = simpleHash(jsonArgs);
         const cachedItem = gpuSessionState[itemType].get(hash);
         if (cachedItem !== undefined) {
-          window.nextPipelineCanFail = false;
-          window.lastPipelineWasValidFlag = true;
+          globalThis.nextPipelineCanFail = false;
+          globalThis.lastPipelineWasValidFlag = true;
           return cachedItem;
         }
 
         console.log(`[GPU Cache] (async) no cached ${itemType} for ${hash}`);
 
-        if (!window.nextPipelineCanFail) {
+        if (!globalThis.nextPipelineCanFail) {
           return inline_function.apply(device, args);
         }
-        const sc = document.getElementById("shader-compiling"); if (sc) sc.style.display = "flex";
-        window.nextPipelineCanFail = false;
-        window.lastPipelineWasValidFlag = false;
-        window.pendingAsyncPipelineCount++;
+        globalThis.__setShaderCompiling?.(true);
+        globalThis.nextPipelineCanFail = false;
+        globalThis.lastPipelineWasValidFlag = false;
+        globalThis.pendingAsyncPipelineCount++;
 
         const promise = device.createRenderPipelineAsync(args[0]).then(async (item) => {
           item.__gpu_item_type = itemType;
           item.__gpu_hash = hash;
           gpuSessionState[itemType].set(hash, item);
-          window.pendingAsyncPipelineCount--;
+          globalThis.pendingAsyncPipelineCount--;
 
           if (!requiredItemTypes.has(itemType)) {
             requiredItemTypes.set(itemType, new Set());
@@ -264,11 +331,11 @@ function patchWebgpuAdapter(fakeAsync) {
             await storeInstance(itemType, hash, args);
           }
 
-          if (window.pendingAsyncPipelineCount === 0) {
-            while (window.wgpuResolveIdle.length > 0) {
-              window.wgpuResolveIdle.pop()();
+          if (globalThis.pendingAsyncPipelineCount === 0) {
+            while (globalThis.wgpuResolveIdle.length > 0) {
+              globalThis.wgpuResolveIdle.pop()();
             }
-            const sc2 = document.getElementById("shader-compiling"); if (sc2) sc2.style.display = "none";
+            globalThis.__setShaderCompiling?.(false);
           }
 
           return item;
@@ -283,19 +350,20 @@ function patchWebgpuAdapter(fakeAsync) {
 }
 
 async function createGpuCache(key) {
-  const cachedKey = localStorage.getItem("gpuCacheKey");
+  const cachedKey = await getConfig("gpuCacheKey");
   if (cachedKey != key) {
     console.log("shaders updated, clearing db");
     await clearDatabase();
-    localStorage.setItem("gpuCacheKey", key);
+    await setConfig("gpuCacheKey", key);
     return;
   }
 
-  const cachedDeviceDescriptor = localStorage.getItem("deviceDescriptor");
-  if (cachedDeviceDescriptor === null) {
+  const cachedDeviceDescriptor = await getConfig("deviceDescriptor");
+  if (cachedDeviceDescriptor === undefined) {
     return;
   }
   precaching = true;
+  const started = performance.now();
   const adapter = await navigator.gpu.requestAdapter();
   const device = await adapter.requestDevice(
     JSON.parse(cachedDeviceDescriptor)
@@ -322,7 +390,7 @@ async function createGpuCache(key) {
   const stats = Object.keys(gpuSessionState).map(
     (k) => `\n${k}: ${gpuSessionState[k].size ?? "ok"}`
   );
-  console.log(`[GPU Cache]: preloaded ${stats}`);
+  console.log(`[GPU Cache]: preloaded in ${Math.round(performance.now() - started)} ms ${stats}`);
 }
 
 async function createItemType(itemType, asyncCreateFunction) {
@@ -400,19 +468,19 @@ function getPlaceholder(device) {
   });
 }
 
-window.allowADummyPipeline = function() {
-    window.nextPipelineCanFail = true;
+globalThis.allowADummyPipeline = function() {
+    globalThis.nextPipelineCanFail = true;
 }
 
-window.lastPipelineWasValid = function() {
-    return window.lastPipelineWasValidFlag;
+globalThis.lastPipelineWasValid = function() {
+    return globalThis.lastPipelineWasValidFlag;
 }
 
-window.waitForPipelines = function() {
-    if (window.pendingAsyncPipelineCount === 0) {
+globalThis.waitForPipelines = function() {
+    if (globalThis.pendingAsyncPipelineCount === 0) {
         return Promise.resolve();
     }
     return new Promise((resolve) => {
-        window.wgpuResolveIdle.push(resolve);
+        globalThis.wgpuResolveIdle.push(resolve);
     });
 };

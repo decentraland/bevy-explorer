@@ -3,6 +3,7 @@
 // (clickable → profile viewer; highlighted when they mention you). Parsing is a pure
 // function so it's unit-testable; <MessageText> renders the tokens with handlers.
 
+import { MENTION_PATTERN, mentionName, mentionsName } from '../../engine/mention'
 import type { NearbyMember } from '../../engine/protocol'
 
 export type Token =
@@ -14,10 +15,11 @@ export type Token =
 
 // URL → world name → location (x,y) → @mention, scanned in one pass to keep original order.
 // Worlds are ENS names (e.g. boedo.dcl.eth) → clickable "jump to realm". Coords require both
-// signs/commas so we don't linkify every number; mentions allow an optional #tag suffix
-// (Name#a1b2) like the engine's claimed-name disambiguation.
-const TOKEN_RE =
-  /(?<url>https?:\/\/[^\s<>"']+)|(?<world>[a-z0-9][\w-]*\.(?:dcl\.)?eth\b)|(?<loc>-?\d{1,3}\s*,\s*-?\d{1,3})|(?<mention>@[\w-]+(?:#[\w]+)?)/gi
+// signs/commas so we don't linkify every number; mentions use the shared MENTION_PATTERN.
+const TOKEN_RE = new RegExp(
+  String.raw`(?<url>https?:\/\/[^\s<>"']+)|(?<world>[a-z0-9][\w-]*\.(?:dcl\.)?eth\b)|(?<loc>-?\d{1,3}\s*,\s*-?\d{1,3})|` + MENTION_PATTERN,
+  'gi'
+)
 
 export function parseMessage(text: string): Token[] {
   const tokens: Token[] = []
@@ -34,8 +36,8 @@ export function parseMessage(text: string): Token[] {
       const [x, y] = g.loc.split(',').map((s) => parseInt(s.trim(), 10))
       tokens.push({ type: 'location', value: g.loc, x, y })
     } else if (g.mention) {
-      const [name, tag] = g.mention.slice(1).split('#')
-      tokens.push({ type: 'mention', value: g.mention, name, tag })
+      const [name, tag] = g.mention.split('#')
+      tokens.push({ type: 'mention', value: `@${g.mention}`, name, tag })
     }
     last = i + m[0].length
   }
@@ -43,31 +45,28 @@ export function parseMessage(text: string): Token[] {
   return tokens
 }
 
-/** Lowercased name (and name#tag) → address, from the nearby roster. */
+/** Lowercased mention name (Name, or Name#1a2b when unclaimed) → address, from the nearby roster. */
 export function buildNameIndex(members: NearbyMember[]): Map<string, string> {
   const idx = new Map<string, string>()
   for (const m of members) {
-    if (m.name.trim()) {
-      idx.set(m.name.toLowerCase(), m.address)
-      idx.set(m.name.split('#')[0].toLowerCase(), m.address)
-    }
+    if (!m.name.trim()) continue
+    const mention = mentionName(m.name, m.address, m.claimed).toLowerCase()
+    idx.set(mention, m.address)
+    // A bare @Name still resolves to an unclaimed Name#1a2b when it's the only one nearby.
+    const base = mention.split('#')[0]
+    if (!idx.has(base)) idx.set(base, m.address)
   }
   return idx
 }
 
 function resolveMention(t: Extract<Token, { type: 'mention' }>, index: Map<string, string>): string | undefined {
-  return index.get(`${t.name}#${t.tag}`.toLowerCase()) ?? index.get(t.name.toLowerCase())
+  return t.tag ? index.get(`${t.name}#${t.tag}`.toLowerCase()) : index.get(t.name.toLowerCase())
 }
 
-/** Does this message @-mention me (by resolved address or by my bare name)? */
-export function mentionsMe(text: string, me: { address?: string; name?: string } | null, index: Map<string, string>): boolean {
-  if (!me) return false
-  const myName = me.name?.split('#')[0].toLowerCase()
-  return parseMessage(text).some((t) => {
-    if (t.type !== 'mention') return false
-    const addr = resolveMention(t, index)
-    return (addr && me.address && addr.toLowerCase() === me.address.toLowerCase()) || (!!myName && t.name.toLowerCase() === myName)
-  })
+/** Does this message @-mention me? Exactly my mention name, so a different Name#ffff doesn't count. */
+export function mentionsMe(text: string, me: { address?: string; name?: string; hasClaimedName?: boolean } | null): boolean {
+  if (!me?.name || !me.address) return false
+  return mentionsName(text, mentionName(me.name, me.address, me.hasClaimedName))
 }
 
 export function MessageText({

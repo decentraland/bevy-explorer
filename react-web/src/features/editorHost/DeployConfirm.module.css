@@ -1,0 +1,24 @@
+/* The facts of a deployment, label beside value; the values are the editor's and may be long. */
+.facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 16px;
+  margin: 0;
+  font-size: var(--fs-md);
+}
+.facts dt {
+  color: var(--ink-7);
+}
+.facts dd {
+  margin: 0;
+  color: var(--ink-95);
+  overflow-wrap: anywhere;
+}
+.wallet {
+  font-family: var(--font-mono);
+}
+.note {
+  margin: 16px 0 0;
+  font-size: var(--fs-md);
+  color: var(--ink-7);
+}

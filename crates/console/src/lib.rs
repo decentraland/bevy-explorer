@@ -4,7 +4,7 @@ use bevy_console::{
     ConsoleSet, PrintConsoleLine,
 };
 use clap::Parser;
-use common::{rpc::RpcResultReceiver, sets::SceneSets, structs::PreviewMode};
+use common::{rpc::RpcResultReceiver, sets::SceneSets};
 use std::sync::Mutex;
 
 pub trait DoAddConsoleCommand {
@@ -21,7 +21,8 @@ pub trait DoAddConsoleCommand {
     ) -> &mut Self;
 }
 
-fn is_preview(preview: Option<Res<PreviewMode>>) -> bool {
+#[cfg(not(test))]
+fn is_preview(preview: Option<Res<common::structs::PreviewMode>>) -> bool {
     preview.is_some_and(|p| p.is_preview)
 }
 

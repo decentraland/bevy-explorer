@@ -17,7 +17,7 @@
 //
 // Run (files only, no servers):
 //   cd react-web && npm run bundle:native   # page -> assets/react-hud, scene -> assets/bridge-scene
-//   cargo run --release --features react-hud-cef --bin decentra-bevy -- --server <realm>
+//   cargo run --release --features react-hud-cef --bin decentra-bevy -- --realm <realm>
 // The page loads from cef://localhost/react-hud (the bevy assets dir) and the bridge-scene loads
 // as a file realm from assets/bridge-scene. Override: REACT_HUD_URL (e.g. a vite dev server with
 // ?native=1 for HMR). The CEF framework loads bundle-relative
@@ -45,7 +45,8 @@ use cef_offscreen::prelude::{
 use common::rpc::{RpcResultReceiver, RpcResultSender, RpcStreamSender};
 use common::structs::{OutOfWorld, PrimaryUser};
 use input_manager::{InputPriorities, MouseInteractionComponent};
-use system_bridge::SystemApi;
+use std::collections::BTreeMap;
+use system_bridge::{SystemApi, SystemBridge};
 
 pub struct ReactHudCefPlugin {
     /// The boot realm when it is an explicit destination. Injected into the page URL as ?realm= —
@@ -128,6 +129,10 @@ struct ReactHudCef {
     // loginNew verification codes awaiting the engine (forwarded to the page as 'loginCode'
     // messages mid-flight; the rpc result itself rides pending_login).
     pending_code: Vec<RpcResultReceiver<Result<Option<i32>, String>>>,
+    // The page's `window.engine_console_command` calls awaiting the engine, paired with its call id.
+    pending_console: Vec<(u64, RpcResultReceiver<Result<String, String>>)>,
+    // The page's stored values (react-web lib/prefs), kept in hud-prefs.json beside config.json.
+    prefs: BTreeMap<String, String>,
     player_ready_sent: bool,
     // The page's bridge listener is live once it has sent us anything; until then events like
     // playerReady would be fired into the void (the page hasn't subscribed yet).
@@ -138,7 +143,7 @@ struct ReactHudCef {
 }
 
 fn react_hud_url() -> Option<String> {
-    // explicit override, e.g. a live vite server (REACT_HUD_URL=http://localhost:5173/?native=1)
+    // explicit override, e.g. a live vite server (REACT_HUD_URL=http://localhost:5173/app.html?native=1)
     // for HMR against the native engine.
     if let Ok(url) = std::env::var("REACT_HUD_URL") {
         return Some(url);
@@ -158,9 +163,9 @@ fn react_hud_url() -> Option<String> {
     }
     if roots
         .iter()
-        .any(|root| root.join("assets/react-hud/index.html").is_file())
+        .any(|root| root.join("assets/react-hud/app.html").is_file())
     {
-        return Some("cef://localhost/react-hud/index.html?native=1".to_string());
+        return Some("cef://localhost/react-hud/app.html?native=1".to_string());
     }
     None
 }
@@ -262,6 +267,8 @@ fn spawn_hud(
         pending_prev: Vec::new(),
         pending_login: Vec::new(),
         pending_code: Vec::new(),
+        pending_console: Vec::new(),
+        prefs: read_prefs(),
         player_ready_sent: false,
         page_seen: false,
         bridge_sender: None,
@@ -533,19 +540,77 @@ fn pump_bridge(
     }
 }
 
-// page -> engine: textFocus control messages, the bridge-scene pipe, and the fallback login rpcs.
+// page -> engine: console commands, the bridge-scene pipe, and the fallback login rpcs.
 fn on_page_envelope(
     trigger: Trigger<PageEnvelope>,
     state: Option<ResMut<ReactHudCef>>,
     mut sys: EventWriter<SystemApi>,
+    bridge: Res<SystemBridge>,
     mut commands: Commands,
 ) {
     let Some(mut state) = state else { return };
     state.page_seen = true;
     let env = &trigger.event().0;
     debug!("[react-hud-cef] page -> engine: {env}");
+    // `window.engine_console_command(line)` (the shim's native stand-in for web.rs's wasm export):
+    // dispatched through the SystemBridge channel like on web, answered by pump_streams.
+    if env.get("to").and_then(|t| t.as_str()) == Some("engine")
+        && env.get("kind").and_then(|k| k.as_str()) == Some("consoleCommand")
+    {
+        let id = env.get("id").and_then(|i| i.as_u64()).unwrap_or_default();
+        let line = env.get("line").and_then(|l| l.as_str()).unwrap_or("");
+        let mut parts = line.split_whitespace();
+        let Some(cmd) = parts.next() else {
+            console_reply(
+                &mut commands,
+                state.hud,
+                id,
+                Err("empty command".to_owned()),
+            );
+            return;
+        };
+        let cmd = if cmd.starts_with('/') {
+            cmd.to_owned()
+        } else {
+            format!("/{cmd}")
+        };
+        let (sx, rx) = RpcResultSender::channel();
+        let _ = bridge.sender.send(SystemApi::ConsoleCommand(
+            cmd,
+            parts.map(String::from).collect(),
+            sx,
+        ));
+        state.pending_console.push((id, rx));
+        return;
+    }
+    // The page's stored values (react-web lib/prefs): read once before it renders, then written
+    // through one at a time.
+    if env.get("to").and_then(|t| t.as_str()) == Some("engine") {
+        match env.get("kind").and_then(|k| k.as_str()) {
+            Some("prefsLoad") => {
+                commands.trigger_targets(
+                    HostEmitEvent {
+                        id: "prefs".to_string(),
+                        payload: serde_json::to_string(&state.prefs).unwrap(),
+                    },
+                    state.hud,
+                );
+            }
+            Some("prefSet") => {
+                if let (Some(key), Some(value)) = (
+                    env.get("key").and_then(|k| k.as_str()),
+                    env.get("value").and_then(|v| v.as_str()),
+                ) {
+                    state.prefs.insert(key.to_owned(), value.to_owned());
+                    write_prefs(&state.prefs);
+                }
+            }
+            _ => {}
+        }
+        return;
+    }
     // HUD focus (incl. text focus) now flows page -> bridge scene -> SystemApi::SetUiFocus,
-    // the same route as on web — no engine-addressed control messages remain.
+    // the same route as on web; the only engine-addressed messages are the ones above.
     if env.get("to").and_then(|t| t.as_str()) != Some("scene") {
         return;
     }
@@ -623,11 +688,73 @@ fn on_page_envelope(
     }
 }
 
-// engine -> page: resolved login RPCs. These are only armed while the fallback is driving
-// (pre-bridge); if the bridge-scene takes the wire mid-flight they still resolve here.
+fn prefs_file() -> Option<std::path::PathBuf> {
+    Some(
+        platform::project_directories()?
+            .config_dir()
+            .join("hud-prefs.json"),
+    )
+}
+
+// A missing or unreadable file leaves the page's defaults.
+fn read_prefs() -> BTreeMap<String, String> {
+    let Some(file) = prefs_file() else {
+        return BTreeMap::new();
+    };
+    match std::fs::read(&file) {
+        Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|e| {
+            warn!("[react-hud-cef] failed to parse {file:?}: {e}");
+            BTreeMap::new()
+        }),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => BTreeMap::new(),
+        Err(e) => {
+            warn!("[react-hud-cef] failed to read {file:?}: {e}");
+            BTreeMap::new()
+        }
+    }
+}
+
+fn write_prefs(prefs: &BTreeMap<String, String>) {
+    let Some(file) = prefs_file() else { return };
+    if let Some(folder) = file.parent() {
+        let _ = std::fs::create_dir_all(folder);
+    }
+    if let Err(e) = std::fs::write(&file, serde_json::to_string(prefs).unwrap()) {
+        warn!("[react-hud-cef] failed to write {file:?}: {e}");
+    }
+}
+
+// Answer an `engine_console_command` call (the shim resolves/rejects the matching promise).
+fn console_reply(commands: &mut Commands, hud: Entity, id: u64, result: Result<String, String>) {
+    let (ok, output) = match result {
+        Ok(output) => (true, output),
+        Err(e) => (false, e),
+    };
+    commands.trigger_targets(
+        HostEmitEvent {
+            id: "consoleReply".to_string(),
+            payload: serde_json::json!({ "id": id, "ok": ok, "output": output }).to_string(),
+        },
+        hud,
+    );
+}
+
+// engine -> page: console command results, and resolved login RPCs. The login RPCs are only armed
+// while the fallback is driving (pre-bridge); if the bridge-scene takes the wire mid-flight they
+// still resolve here.
 fn pump_streams(state: Option<ResMut<ReactHudCef>>, mut commands: Commands) {
     let Some(mut state) = state else { return };
     let hud = state.hud;
+
+    state.pending_console.retain_mut(|(id, rx)| {
+        let result = match rx.poll_once() {
+            Ok(None) => return true,
+            Ok(Some(result)) => result,
+            Err(()) => Err("command response dropped".to_owned()),
+        };
+        console_reply(&mut commands, hud, *id, result);
+        false
+    });
 
     // forward loginNew verification codes as they arrive (a code error also lands on the
     // result sender, so the closed/error entries are just dropped here)

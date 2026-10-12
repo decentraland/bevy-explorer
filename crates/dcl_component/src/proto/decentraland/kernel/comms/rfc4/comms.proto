@@ -244,7 +244,14 @@ message Reaction {
 }
 
 message ChatReaction {
-  int32 emoji_index = 1;
+  // bevy-private: optional, so a client that sends only `emoji` can leave it out. Unity reads a
+  // missing index as tile 0, so we always send one.
+  optional int32 emoji_index = 1;
   string message_id = 2;
   string address = 3;
+  // bevy-private: the emoji itself. emoji_index still carries the closest tile in Unity's emoji
+  // atlas, which other clients use; they drop this unknown field.
+  string emoji = 10001;
+  // bevy-private: a remove, as is a negative emoji_index.
+  bool remove = 10002;
 }

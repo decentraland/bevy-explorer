@@ -6,7 +6,8 @@ import { defineConfig, devices } from '@playwright/test'
 // bridge scene on :8100. See e2e/README.md.
 export default defineConfig({
   testDir: './e2e',
-  testIgnore: '**/visual.spec.ts', // tier 1.5 visual regression runs via playwright.visual.config.ts
+  // tier 1.5 visual regression and the preview-realm gate run via their own configs
+  testIgnore: ['**/visual.spec.ts', '**/*.gate.spec.ts'],
   fullyParallel: false,
   workers: 1, // the engine is heavy — one world at a time
   retries: 0,

@@ -237,6 +237,32 @@ module.exports.setHomeScene = async function(args) {
     await Deno.core.ops.op_set_home_scene(args.realm, args.parcel)
 }
 
+// {
+//   terms: boolean, // the terms aren't accepted on this install; the world is held until they are
+//   newProfile: boolean, // the account has no profile; its new one deploys with the next setAvatar
+//                        // once the terms are accepted
+// }
+module.exports.getWelcome = async function() {
+    return await Deno.core.ops.op_get_welcome()
+}
+
+// the welcome page's accept: records the terms for this install
+module.exports.acceptTerms = async function() {
+    await Deno.core.ops.op_accept_terms()
+}
+
+// the current realm's `configurations.map.satelliteView`; null (native) or undefined (wasm)
+// when it has none
+// {
+//   version: string,
+//   baseUrl: string,
+//   suffixUrl: string,
+//   topLeftOffset: Vector2,
+// }
+module.exports.getSatelliteView = async function() {
+    return await Deno.core.ops.op_get_satellite_view()
+}
+
 // get system actions as a stream
 // type SystemAction = {
 //   action: string,
@@ -261,6 +287,7 @@ module.exports.getSystemActionStream = async function() {
 //   senderAddress: string,
 //   message: string,
 //   channel: string,
+//   message_id: string, // what reactions name it by; empty for system messages
 // }
 module.exports.getChatStream = async function() {
   const rid = await Deno.core.ops.op_get_chat_stream();
@@ -283,6 +310,33 @@ module.exports.getChatStream = async function() {
 // }
 module.exports.sendChat = async function(message, channel) {
     Deno.core.ops.op_send_chat(message, channel ?? "Nearby")
+}
+
+// get reactions to chat messages (the local user's included) as a stream
+// type ChatReaction = {
+//   channel: string, // "Nearby" or the DM partner's wallet
+//   message_id: string,
+//   emoji: string,
+//   from: string,
+//   remove: boolean,
+// }
+module.exports.getChatReactionStream = async function() {
+  const rid = await Deno.core.ops.op_get_chat_reaction_stream();
+
+  async function* streamGenerator() {
+    while (true) {
+      const next = await Deno.core.ops.op_read_chat_reaction_stream(rid);
+      if (next === null) break;
+      yield next;
+    }
+  }
+
+  return streamGenerator();
+}
+
+// add or remove the local user's reaction to a chat message
+module.exports.sendChatReaction = function(channel, messageId, emoji, remove) {
+  Deno.core.ops.op_send_chat_reaction(channel, messageId, emoji, remove ?? false)
 }
 
 module.exports.quit = function() {
@@ -578,6 +632,39 @@ module.exports.social = {
     }
 
     return streamGenerator();
+  },
+
+  // DM state of `address`: emitted now, then on change. Several may be open at once. The
+  // stream's close() ends it (a pending read resolves done); async generator return() would
+  // only run after that read, so it is not enough on its own.
+  // type DmUserStateData = { address: string, state: string, online: boolean }
+  getDmUserStateStream: function(address) {
+    const rid = Deno.core.ops.op_get_dm_user_state_stream(address);
+
+    async function* streamGenerator() {
+      try {
+        while (true) {
+          const next = await Deno.core.ops.op_read_dm_user_state_stream(rid);
+          if (next === null) break;
+          yield next;
+        }
+      } finally {
+        Deno.core.ops.op_close_dm_user_state_stream(rid);
+      }
+    }
+
+    const stream = streamGenerator();
+    stream.close = () => Deno.core.ops.op_close_dm_user_state_stream(rid);
+    return stream;
+  },
+
+  // local DM history. Which conversations are shown is the HUD's own state.
+  // type DmHistoryEntryData = { from: string, message: string, timestamp: number, receivedAt: number }
+  getDmHistory: async function(address) {
+    return await Deno.core.ops.op_get_dm_history(address);
+  },
+  deleteDmHistory: function(address) {
+    Deno.core.ops.op_delete_dm_history(address);
   }
 }
 

@@ -3,6 +3,14 @@
 
 import { Button } from './Button'
 import { IconButton } from './IconButton'
+import { VoiceBars } from './VoiceBars'
+import { ColorPicker } from './ColorPicker'
+import { Chip } from './Chip'
+import { Pager } from './Pager'
+import { Rail } from './Rail'
+import { HeaderButton } from './HeaderButton'
+import { OptionMenu } from './OptionMenu'
+import { HintsButton, KeyCap } from './HintsButton'
 import { useState } from 'react'
 import { ControlButton } from './ControlButton'
 import { Tooltip } from './Tooltip'
@@ -11,7 +19,7 @@ import { Slider } from './Slider'
 import { Select } from './Select'
 import { TextInput } from './TextInput'
 import { Tabs } from './Tabs'
-import { Bag, People, Pin } from './Glyphs'
+import { Bag, Close, People, Pin, VerifiedBadge } from './Glyphs'
 import { TextArea } from './TextArea'
 import { DateField } from './DateField'
 import { Panel } from './Panel'
@@ -44,7 +52,8 @@ const NAV: { icon: IconName; label: string }[] = [
   { icon: 'friends', label: 'Friends' },
   { icon: 'chat', label: 'Chat' },
   { icon: 'emotes', label: 'Emotes' },
-  { icon: 'help', label: 'Help' }
+  { icon: 'help', label: 'Help' },
+  { icon: 'create', label: 'Create' }
 ]
 
 // DCL named palette (Explorer 2.0). token = CSS var when one exists.
@@ -201,6 +210,8 @@ export function Showcase(): React.JSX.Element {
         </div>
         <div style={{ ...row, marginTop: 12 }}>
           <Button size="sm">Small</Button>
+          <Button size="row">Row</Button>
+          <Button size="row" variant="secondary">Row</Button>
           <Button size="md">Medium</Button>
           <Button size="lg">Large</Button>
         </div>
@@ -267,10 +278,13 @@ export function Showcase(): React.JSX.Element {
         <div style={row}>
           <ControlButton aria-label="ghost square">✕</ControlButton>
           <ControlButton variant="solid" aria-label="solid square">✕</ControlButton>
+          <ControlButton variant="dark" aria-label="dark square">✕</ControlButton>
+          <ControlButton variant="faint" aria-label="faint square">✕</ControlButton>
           <ControlButton shape="circle" aria-label="circle">＋</ControlButton>
           <ControlButton shape="pill">＋ Pill</ControlButton>
           <ControlButton active aria-label="active">✓</ControlButton>
           <ControlButton size="sm" aria-label="small">✕</ControlButton>
+          <ControlButton size="lg" aria-label="large">✕</ControlButton>
         </div>
       </Section>
 
@@ -403,7 +417,75 @@ export function Showcase(): React.JSX.Element {
           {NAV.map((n, i) => (
             <IconButton key={n.icon} icon={n.icon} label={n.label} active={i === 8} badge={i === 1 ? 3 : undefined} />
           ))}
+          <IconButton icon="profile" label="Profile (avatar)" avatar={{ name: 'Mojito', color: 'var(--lavender)' }} />
+          <IconButton icon="voice-hearing" label="Voice (connected)" indicator />
         </Panel>
+      </Section>
+
+      <Section title="VoiceBars (speaking)">
+        <VoiceBars />
+      </Section>
+
+      <Section title="Chip (breadcrumb filter)">
+        <div style={{ ...row, gap: 20 }}>
+          <Chip label="All" selected onClick={() => undefined} />
+          <Chip label="All" onClick={() => undefined} />
+          <Chip label="Hair" selected onClick={() => undefined} onClear={() => undefined} />
+        </div>
+      </Section>
+
+      <Section title="OptionMenu">
+        <OptionMenu
+          onClose={() => undefined}
+          sections={[
+            { label: 'Sort by', options: [{ id: 'newest', label: 'Newest' }, { id: 'oldest', label: 'Oldest' }], value: 'newest', onChange: () => undefined },
+            { label: 'View', options: [{ id: 'all', label: 'All Items' }, { id: 'col', label: 'Collectibles only' }], value: 'all', onChange: () => undefined }
+          ]}
+        />
+      </Section>
+
+      <Section title="HintsButton (opens upward)">
+        <div style={{ paddingTop: 120 }}>
+          <HintsButton hints={[{ icon: <KeyCap label="1" />, text: 'Press a number key to pick a slot.' }, { icon: <KeyCap label="E" />, text: 'Press E to open emotes.' }]} />
+        </div>
+      </Section>
+
+      <Section title="Rail">
+        <div style={{ width: 600 }}>
+          <Rail perPage={3} gap={8}>
+            {Array.from({ length: 8 }, (_, i) => (
+              <div key={i} style={{ width: 194, height: 120, borderRadius: 'var(--lobby-card-radius)', background: 'var(--lobby-card)', display: 'grid', placeItems: 'center' }}>
+                Card {i + 1}
+              </div>
+            ))}
+          </Rail>
+        </div>
+      </Section>
+      <Section title="HeaderButton">
+        <HeaderButton aria-label="Close">
+          <Close size={12} />
+        </HeaderButton>
+        <HeaderButton shape="pill" style={{ width: 163 }}>
+          Profile
+        </HeaderButton>
+      </Section>
+      <Section title="Button (card sizes)">
+        <Button size="card">Jump in</Button>
+        <div style={{ width: 264 }}>
+          <Button size="cardSm">Jump in</Button>
+        </div>
+      </Section>
+      <Section title="VerifiedBadge">
+        <VerifiedBadge />
+      </Section>
+      <Section title="Pager">
+        <Pager page={2} count={9} onChange={() => undefined} />
+      </Section>
+
+      <Section title="ColorPicker (avatar colors)">
+        <div style={{ maxWidth: 320 }}>
+          <ColorPicker label="Hair color" value="#5b310f" presets={['#1c1c1c', '#3c210b', '#5b310f', '#7b4818', '#985f37', '#8c2014', '#e98234', '#ffbe28', '#fad281', '#d4d4d4']} onChange={() => undefined} />
+        </div>
       </Section>
 
       <Section title="Panel">
@@ -439,7 +521,7 @@ export function Showcase(): React.JSX.Element {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, 84px)', gap: 10 }}>
           {(['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'unique', 'exotic', 'base'] as Rarity[]).map((r, i) => (
             <div key={r} style={{ width: 84 }}>
-              <WearableCard rarity={r} equipped={i === 4} isNew={i === 1} count={i === 7 ? 2 : undefined} />
+              <WearableCard rarity={r} equipped={i === 4} isNew={i === 1} />
             </div>
           ))}
         </div>
@@ -463,8 +545,8 @@ export function Showcase(): React.JSX.Element {
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-start' }}>
           <div style={{ width: 300, display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: 'rgba(19,19,19,0.6)', borderRadius: 14 }}>
             <DaySeparator ts={Date.now()} />
-            <ChatBubble line={{ id: 1, sender: MOJITO, message: 'gm everyone 👋 welcome to the plaza', channel: 'Nearby', ts: Date.now() }} />
-            <ChatBubble line={{ id: 2, sender: 'system', message: 'Type /help for available commands.', channel: 'System', ts: Date.now() }} />
+            <ChatBubble line={{ id: 1, sender: MOJITO, message: 'gm everyone 👋 welcome to the plaza', channel: 'Nearby', messageId: '', ts: Date.now() }} />
+            <ChatBubble line={{ id: 2, sender: 'system', message: 'Type /help for available commands.', channel: 'System', messageId: '', ts: Date.now() }} />
           </div>
           <div style={{ width: 300, display: 'flex', flexDirection: 'column', gap: 2, padding: 8, background: 'rgba(12,11,14,0.97)', borderRadius: 14 }}>
             <MemberRow member={{ address: '0x5854cce95d5e25817b41f4c41f06b695a83bc495', name: 'Mojito', picture: 'https://profile-images.decentraland.org/entities/bafkreid5btlh76opew65hxu6dtkdo6ybqhymdof6vrrmjy2p5a74oy4huq/face.png' }} />

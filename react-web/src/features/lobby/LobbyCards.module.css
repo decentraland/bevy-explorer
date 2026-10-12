@@ -1,0 +1,256 @@
+/* Lobby cards, at the parity sizes on the 1920×1080 canvas. */
+.thumb {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: var(--r-lg);
+  background: var(--lobby-card);
+}
+.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  animation: imgIn var(--dur-mid) linear;
+}
+@keyframes imgIn {
+  from {
+    opacity: 0;
+  }
+}
+.skeleton {
+  background: var(--lobby-skeleton) 0 0 / 200% 100%;
+  animation: shimmer var(--dur-shimmer) linear infinite;
+}
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+.badges {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  gap: 6px;
+  height: 28px;
+}
+.counter,
+.liveBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 4px 6px;
+  border-radius: var(--r-sm);
+  background: var(--lobby-pill);
+  color: var(--lobby-ink);
+  font-size: var(--type-14);
+  font-weight: var(--fw-semibold);
+  box-sizing: border-box;
+}
+.onlineDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--lobby-online);
+}
+.liveBadge {
+  padding: 4px 8px 4px 6px;
+  background: var(--lobby-live);
+  font-size: var(--type-12);
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+}
+
+/* Landing hero 520×300, and the live event card 358×214 (same text layout). */
+.landing,
+.liveEvent {
+  position: relative;
+  width: 520px;
+  height: 300px;
+  border-radius: var(--r-lg);
+  color: var(--white);
+}
+.liveEvent {
+  display: block;
+  width: 358px;
+  height: 214px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.liveEvent:disabled {
+  cursor: default;
+}
+.liveEvent:focus-visible,
+.friend:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.landingTitle {
+  position: absolute;
+  left: 16px;
+  right: 174px;
+  bottom: 42px;
+  height: 30px;
+  font-size: var(--type-22);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--lobby-title-tracking);
+  line-height: 30px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.liveEvent .landingTitle {
+  right: 16px;
+}
+.landingCreator {
+  position: absolute;
+  left: 16px;
+  right: 174px;
+  bottom: 16px;
+  height: 22px;
+  font-size: var(--type-14);
+  line-height: 22px;
+  color: var(--lobby-ink-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.landingJump {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+}
+
+/* Place card 280×165: the header shrinks 110→86 on hover as JUMP IN replaces the creator. */
+.place {
+  position: relative;
+  width: 280px;
+  height: 165px;
+  border-radius: var(--r-lg);
+  background: var(--lobby-card);
+  color: var(--white);
+  overflow: hidden;
+}
+.placeWide {
+  width: 358px;
+}
+.placeHeader {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 110px;
+  transition: height var(--dur-mid) var(--ease-outquad);
+}
+.placeFooter {
+  position: absolute;
+  inset: auto 0 0;
+  height: 55px;
+  transition: height var(--dur-mid) var(--ease-outquad);
+}
+.place:hover .placeHeader,
+.place:focus-within .placeHeader {
+  height: 86px;
+}
+.place:hover .placeFooter,
+.place:focus-within .placeFooter {
+  height: 79px;
+}
+.placeTitle {
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  right: 10px;
+  height: 20px;
+  font-size: var(--type-14);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--lobby-title-tracking);
+  line-height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.placeCreator {
+  position: absolute;
+  top: 30px;
+  left: 10px;
+  right: 10px;
+  height: 16px;
+  font-size: var(--type-11);
+  line-height: 16px;
+  color: var(--lobby-ink-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: opacity var(--dur-mid) var(--ease-outquad);
+}
+.placeJump {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  opacity: 0;
+  transition: opacity var(--dur-mid) var(--ease-outquad);
+}
+.place:hover .placeCreator,
+.place:focus-within .placeCreator {
+  opacity: 0;
+}
+.place:hover .placeJump,
+.place:focus-within .placeJump {
+  opacity: 1;
+}
+
+/* Friend card 124×132. */
+.friend {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 124px;
+  height: 132px;
+  padding: 10px 0 0;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: var(--r-lg);
+  background: var(--lobby-card);
+  font: inherit;
+  cursor: pointer;
+}
+.friendName {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 4px;
+  max-width: 112px;
+  height: 20px;
+  font-size: var(--type-12);
+  font-weight: var(--fw-semibold);
+  line-height: 20px;
+}
+.friendName span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.friendWhere {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 10px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: var(--lobby-ink-dim);
+  font-size: var(--type-11);
+}
+.friendWhere span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

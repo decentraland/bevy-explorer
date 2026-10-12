@@ -18,6 +18,21 @@
   overflow: hidden;
 }
 
+/* the lobby's dropdown: 420×621 under the bell, its right edge on the bell's */
+.lobby,
+.lobbyInWorld {
+  left: auto;
+  right: calc(223px * var(--ui-scale));
+  top: calc(80px * var(--ui-scale));
+  bottom: auto;
+  width: 420px;
+  height: 621px;
+  transform-origin: top right;
+}
+.lobbyInWorld {
+  right: calc(273px * var(--ui-scale));
+}
+
 .head {
   display: flex;
   align-items: center;
@@ -73,6 +88,9 @@
 }
 .row:hover {
   background: rgba(255, 255, 255, 0.05);
+}
+.clickable {
+  cursor: pointer;
 }
 .unread {
   background: rgba(255, 45, 85, 0.06);

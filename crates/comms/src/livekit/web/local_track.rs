@@ -1,25 +1,15 @@
-use wasm_bindgen::{convert::IntoWasmAbi, describe::WasmDescribe, JsValue};
-
-use crate::livekit::web::{JsValueAbi, LocalAudioTrack, LocalVideoTrack};
+use crate::livekit::web::{LocalAudioTrack, LocalVideoTrack, ObjectId};
 
 pub enum LocalTrack {
     Audio(LocalAudioTrack),
     Video(LocalVideoTrack),
 }
 
-impl WasmDescribe for LocalTrack {
-    fn describe() {
-        JsValue::describe();
-    }
-}
-
-impl IntoWasmAbi for &LocalTrack {
-    type Abi = JsValueAbi;
-
-    fn into_abi(self) -> Self::Abi {
+impl LocalTrack {
+    pub(super) fn id(&self) -> ObjectId {
         match self {
-            LocalTrack::Audio(audio) => audio.inner.clone().into_abi(),
-            LocalTrack::Video(video) => video.inner.clone().into_abi(),
+            LocalTrack::Audio(audio) => audio.id,
+            LocalTrack::Video(video) => video.id,
         }
     }
 }

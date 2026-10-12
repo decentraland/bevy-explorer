@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 use bevy::log::debug;
 use common::rpc::{RpcCall, RpcResultSender};
 
-use crate::{interface::crdt_context::CrdtContext, RpcCalls};
+use crate::RpcCalls;
 
 use super::State;
 
@@ -15,14 +15,10 @@ pub async fn op_get_connected_players(
 
     {
         let mut state = state.borrow_mut();
-        let scene = state.borrow::<CrdtContext>().scene_id.0;
 
         state
             .borrow_mut::<RpcCalls>()
-            .push(RpcCall::GetConnectedPlayers {
-                scene,
-                response: sx,
-            })?;
+            .push(RpcCall::GetConnectedPlayers { response: sx })?;
     }
 
     Ok(rx.await.unwrap_or_default())
@@ -37,15 +33,10 @@ pub async fn op_get_players_in_scene(
 
     {
         let mut state = state.borrow_mut();
-        let context = state.borrow::<CrdtContext>();
-        let scene = context.scene_id.0;
 
         state
             .borrow_mut::<RpcCalls>()
-            .push(RpcCall::GetPlayersInScene {
-                scene,
-                response: sx,
-            })?;
+            .push(RpcCall::GetPlayersInScene { response: sx })?;
     }
 
     Ok(rx.await.unwrap_or_default())

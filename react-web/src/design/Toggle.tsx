@@ -7,6 +7,8 @@ interface ToggleProps {
   checked: boolean
   onChange: (checked: boolean) => void
   disabled?: boolean
+  /** sm: the compact 39×24 switch used in HUD popovers. */
+  size?: 'md' | 'sm'
   'aria-label'?: string
 }
 
@@ -14,6 +16,7 @@ export function Toggle({
   checked,
   onChange,
   disabled = false,
+  size = 'md',
   'aria-label': ariaLabel
 }: ToggleProps): React.JSX.Element {
   return (
@@ -23,7 +26,7 @@ export function Toggle({
       aria-checked={checked}
       aria-label={ariaLabel}
       disabled={disabled}
-      className={`${styles.track} ${checked ? styles.on : ''}`.trim()}
+      className={`${styles.track} ${size === 'sm' ? styles.sm : ''} ${checked ? styles.on : ''}`.trim()}
       onClick={() => onChange(!checked)}
     >
       <span className={styles.knob} />

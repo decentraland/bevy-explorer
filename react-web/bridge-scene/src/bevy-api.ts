@@ -9,23 +9,31 @@ import type {
   BlockedUserData,
   BlockingStatusData,
   ChatMessage,
+  ChatReactionData,
+  DmHistoryEntryData,
+  DmUserStateData,
+  VoiceMessage,
+  FriendData,
   FriendRequestData,
   FriendStatusData,
   HoverAction,
   HoverEvent,
+  HomeScene,
   LivekitUpdate,
   LiveSceneInfo,
   PermissionRequestEvent,
   ProfileChangedEvent,
   ProximityEvent,
+  SatelliteView,
   SceneLoadingUi,
   SetAvatarData,
   SetSinglePermission,
-  Vector3
+  Vector3,
+  WelcomeState
 } from '../../src/engine/generated'
 
 // --- raw social-service shapes (BevyApi.social.*), generated from the Rust structs ---
-export type { FriendStatusData, FriendRequestData }
+export type { FriendData, FriendStatusData, FriendRequestData }
 export type BlockingStatus = BlockingStatusData
 
 // Per-player modifiers from AvatarModifierArea (privacy zones etc), only for players carrying one —
@@ -36,6 +44,10 @@ export type { AvatarModifierState }
 export type SocialApi = {
   getSocialInitialized: () => Promise<boolean>
   getOnlineFriends: () => Promise<FriendStatusData[]>
+  getMutualFriends: (address: string) => Promise<FriendData[]>
+  getFriendshipEventStream: () => Promise<AsyncIterable<unknown>>
+  getFriendConnectivityStream: () => Promise<AsyncIterable<unknown>>
+  getBlockUpdateStream: () => Promise<AsyncIterable<unknown>>
   getReceivedFriendRequests: () => Promise<FriendRequestData[]>
   getSentFriendRequests: () => Promise<FriendRequestData[]>
   getBlockingStatus?: () => Promise<BlockingStatus>
@@ -47,6 +59,10 @@ export type SocialApi = {
   deleteFriend: (address: string) => Promise<void>
   blockUser: (address: string) => Promise<void>
   unblockUser: (address: string) => Promise<void>
+  /** One stream per address; `close()` ends it. */
+  getDmUserStateStream: (address: string) => AsyncIterable<DmUserStateData> & { close: () => void }
+  getDmHistory: (address: string) => Promise<DmHistoryEntryData[]>
+  deleteDmHistory: (address: string) => void
 }
 
 export type ChatStreamMessage = ChatMessage
@@ -72,7 +88,7 @@ export type SystemActionEvent = { action: string; pressed: boolean }
 
 export type KernelFetchRequest = {
   url: string
-  init: { headers?: Record<string, string>; method: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: string }
+  init: { headers?: Record<string, string>; method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; body?: string }
   meta: string
 }
 export type KernelFetchResponse = { ok: boolean; status: number; statusText?: string; body: string }
@@ -91,6 +107,12 @@ export type SetPermanentPermissionBody = {
 }
 
 export type BevyApiInterface = {
+  getHomeScene: () => Promise<HomeScene>
+  /** What the welcome page must show for the signed-in account (all false when the host shows none). */
+  getWelcome?: () => Promise<WelcomeState>
+  /** The welcome page's accept: records the terms for this install. A held new profile deploys with
+   *  the setAvatar after it. */
+  acceptTerms?: () => Promise<void>
   getSettings: () => Promise<Setting[]>
   setSetting: (name: string, value: number) => Promise<void>
   /** Full binding table: [Action, InputIdentifier[]] pairs, e.g. [{System:'Map'}, ['KeyM','Tab']].
@@ -111,8 +133,16 @@ export type BevyApiInterface = {
    *  that toggles it ('Map', 'Backpack', ...), else null (backs the scene-facing openExplorerUi
    *  action: its WAS_ALREADY_OPEN verdict and the page's opened/closed events). */
   setUiFocus: (focus: { ui: boolean; text: boolean; scroll: boolean; covered: boolean; menu: string | null }) => Promise<void>
+  /** Insets (px from each window edge) of the area the HUD leaves free; scenes read it from
+   *  UiCanvasInformation.interactable_area. */
+  setInteractableArea: (area: { left: number; top: number; right: number; bottom: number }) => void
   sendChat: (message: string, channel: string) => void
   getChatStream: () => Promise<AsyncIterable<ChatStreamMessage>>
+  /** Add or remove the local user's reaction to a chat message; echoed on getChatReactionStream. */
+  sendChatReaction: (channel: string, messageId: string, emoji: string, remove: boolean) => void
+  /** Every reaction to a chat message, the local user's included. */
+  getChatReactionStream: () => Promise<AsyncIterable<ChatReactionData>>
+  getVoiceStream: () => Promise<AsyncIterable<VoiceMessage>>
   getSystemActionStream: () => Promise<AsyncIterable<SystemActionEvent>>
   getSceneLoadingUIStream: () => Promise<AsyncIterable<SceneLoadingState>>
   getHoverStream: () => Promise<AsyncIterable<SystemHoverEvent>>
@@ -132,6 +162,9 @@ export type BevyApiInterface = {
    *  scene to reload — `/reload` uses `parcels`/`isSuper` to target the scene the player stands in,
    *  never the bridge. */
   liveSceneInfo: () => Promise<LiveSceneInfo[]>
+  /** The current realm's satellite map tiles (`configurations.map.satelliteView` in its
+   *  `/about`), null or undefined when it advertises none — only Genesis City realms do. */
+  getSatelliteView: () => Promise<SatelliteView | null | undefined>
   setAvatar: (data: SetAvatarData) => Promise<unknown>
   /** Any user's full deployed profile as the engine holds it (own, nearby and remote players,
    *  guests included), resolved through its profile cache and fetch cascade. Rejects once the

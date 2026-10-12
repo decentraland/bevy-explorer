@@ -88,6 +88,11 @@ pub struct ClientOptions {
     #[arg(long, value_name = "bytes", help_heading = SETTINGS)]
     pub gpu_bytes_per_frame: Option<usize>,
 
+    /// Compute task-pool threads (on web, the workers the page spawns for it); absent = from the
+    /// core count
+    #[arg(long, value_name = "n", help_heading = SETTINGS)]
+    pub compute_threads: Option<usize>,
+
     /// Base url of the imposter store; absent = the default store. The realm-keyed path under
     /// it is the same as the default store's
     #[arg(long, value_name = "url", help_heading = SERVICES)]
@@ -96,6 +101,18 @@ pub struct ClientOptions {
     /// Embedded in a scene editor (creator hub). Set by editor front-ends.
     #[arg(long, help_heading = HOST)]
     pub editor: bool,
+
+    /// Load no realm scenes and join no realm comms (Pulse still connects) until the first
+    /// successful realm change request. For a lobby shown before entering the world. Set by the
+    /// host page.
+    #[arg(long, help_heading = HOST)]
+    pub hold_world: bool,
+
+    /// A `decentraland://` link as the scheme handler or the launcher passes it: `realm`,
+    /// `position` and `dclenv` fill the matching launch options (main.rs)
+    #[arg(hide = true, value_name = "decentraland://…")]
+    #[serde(skip)]
+    pub deep_link: Option<String>,
 }
 
 /// The web page's `engine_run` options: both structs as ONE flat object, which is also what the

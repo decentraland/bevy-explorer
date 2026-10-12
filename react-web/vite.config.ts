@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { createReadStream, statSync } from 'node:fs'
+import { createReadStream, existsSync, statSync } from 'node:fs'
 import { createConnection } from 'node:net'
 import { extname, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -77,7 +77,7 @@ const MIME: Record<string, string> = {
 // the COOP/COEP headers WebGPU + wasm threads require. Used to host the engine
 // bundle (../deploy/web) and the built bridge scene in a same-origin iframe —
 // no npm download needed.
-function serveStatic(prefix: string, dirFromConfig: string): Plugin {
+export function serveStatic(prefix: string, dirFromConfig: string): Plugin {
   const root = fileURLToPath(new URL(dirFromConfig, import.meta.url))
   return {
     name: `serve-static:${prefix}`,
@@ -111,18 +111,38 @@ function serveStatic(prefix: string, dirFromConfig: string): Plugin {
   }
 }
 
+// Dev-only: the scene editor package (a dcl-editor checkout's packages/web/dist, named by
+// WEB_EDITOR_DIR) served same-origin under /editor/, where `?editor` loads it from on localhost
+// (src/features/editorHost). Without the variable nothing is mounted.
+function editorPackage(): Plugin[] {
+  const checkout = process.env.WEB_EDITOR_DIR
+  if (!checkout) return []
+  const dist = join(checkout, 'packages/web/dist')
+  if (!existsSync(join(dist, 'editor.js'))) console.warn(`[editor] ${dist}/editor.js is missing: build the editor's web package`)
+  return [serveStatic('/editor/', dist)]
+}
+
 // Apply the cross-origin-isolation headers the engine needs to every response EXCEPT the
 // proxied auth dapp (/auth). The auth site is a normal web page that signs in with popups /
 // OAuth redirects, which `Cross-Origin-Opener-Policy: same-origin` would break — and it does
 // not need SharedArrayBuffer. Excluding it lets local sign-in work while the engine stays
 // isolated. (In production the app and /auth are genuinely same-origin and the deploy host
 // sets headers per-path; this only governs the dev server.)
+//
+// The two pages are the exception the other way: the app (app.html) isolates itself with
+// Document-Isolation-Policy, which puts it in a process of its own, and the shell (index.html) that
+// embeds it must NOT be isolated, or the app would share its process. The service worker does the
+// same for prod (deploy/web/service_worker.js).
 function coiHeadersExceptAuth(): Plugin {
   return {
     name: 'coi-headers-except-auth',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        if (!req.url || !req.url.startsWith('/auth')) {
+        const path = req.url?.split('?')[0]
+        // the scene server's frame (engine/headless.html) takes the app's policy, as in the worker
+        if (path === '/app.html' || path === '/engine/headless.html') {
+          res.setHeader('Document-Isolation-Policy', 'isolate-and-credentialless')
+        } else if (path !== '/' && path !== '/index.html' && !req.url?.startsWith('/auth')) {
           for (const [k, v] of Object.entries(crossOriginIsolation)) res.setHeader(k, v)
         }
         next()
@@ -142,6 +162,9 @@ export default defineConfig(({ command, mode }) => ({
   // PUBLIC_URL for an absolute CDN base; otherwise './' (relative → works from any path, e.g. a
   // local `serve deploy/web`). Dev keeps '/'.
   base: command === 'build' ? (process.env.PUBLIC_URL ? `${process.env.PUBLIC_URL}/` : './') : '/',
+  // The editor host's signing script's own deps: it is outside the page's import graph, so they
+  // would be found when it first loads, and a late find reloads the page.
+  optimizeDeps: { include: ['@noble/curves/secp256k1.js', '@noble/hashes/sha3.js'] },
   plugins: [
     react(),
     bridgeScenePreview(),
@@ -152,9 +175,12 @@ export default defineConfig(({ command, mode }) => ({
     // that header the requests need a CORS preflight, which the peer catalysts reject — no
     // scenes, no avatars. (serveStatic handles a single file fine: rel resolves to the root.)
     serveStatic('/service_worker.js', '../deploy/web/service_worker.js'),
+    // importScripts'd by the service worker (the editor's preview realm), so it sits beside it.
+    serveStatic('/preview_realm.js', '../deploy/web/preview_realm.js'),
     // Our headless super-user bridge scene (exported deployable). Pointed at by
     // the engine's systemScene so it loads as the trusted --system-scene scene.
-    serveStatic('/bridge-scene/static/', './bridge-scene/static')
+    serveStatic('/bridge-scene/static/', './bridge-scene/static'),
+    ...editorPackage()
   ],
   build: {
     // The app IS the production page: build straight into the npm-published deploy/web tree,
@@ -166,21 +192,36 @@ export default defineConfig(({ command, mode }) => ({
     // approaches it.
     chunkSizeWarningLimit: 600,
     rollupOptions: {
+      // index.html is the web shell that embeds app.html; native (CEF) loads app.html directly.
+      input: {
+        app: fileURLToPath(new URL('./app.html', import.meta.url)),
+        ...(mode === 'native' ? {} : { index: fileURLToPath(new URL('./index.html', import.meta.url)) })
+      },
       output: {
         // Split the single ~880KB bundle so chunks download in parallel and cache
         // independently (vendor + design system rarely change). The heavy full-screen
         // menu pages are grouped together and kept out of the core HUD chunk.
-        manualChunks(id) {
-          if (id.includes('node_modules')) return 'vendor'
-          // The emoji dataset is ~716KB (78KB gz) — over half the JS. Pin it to its own chunk so
-          // it caches independently and never bloats/busts the core HUD chunk. (Deferring it fully
-          // behind the chat picker/autocomplete is a follow-up — see emojiData.ts.)
-          if (id.includes('emojis_complete.json') || id.includes('/chat/emojiData')) return 'emoji'
-          // Showcase is dev-only (?showcase=1) and lazy-loaded — leave it out of the design
-          // chunk so its lazy boundary survives and it never ships in the prod HUD path.
-          if (id.includes('/src/design/') && !id.includes('Showcase')) return 'design'
-          if (/\/src\/features\/(map|backpack|communities|gallery|places)\//.test(id)) return 'menus'
-          return undefined
+        codeSplitting: {
+          groups: [
+            // The shell (index.html): its own code, and what it shares with the HUD. Ahead of the
+            // HUD's groups, which would otherwise take these along with the modules that import them.
+            { name: 'crypto', test: /node_modules\/@noble\//, priority: 1 },
+            { name: 'shell', test: /\/src\/(lib\/(shell|prefs)|features\/auth\/(sso|guest|thirdweb))\.ts/, priority: 1 },
+            {
+              name(id) {
+                if (id.includes('node_modules')) return 'vendor'
+                // The emoji dataset is ~716KB (78KB gz) — over half the JS. Pin it to its own chunk so
+                // it caches independently and never bloats/busts the core HUD chunk. (Deferring it fully
+                // behind the chat picker/autocomplete is a follow-up — see emojiData.ts.)
+                if (id.includes('emojis_complete.json') || id.includes('/chat/emojiData')) return 'emoji'
+                // Showcase is dev-only (?showcase=1) and lazy-loaded — leave it out of the design
+                // chunk so its lazy boundary survives and it never ships in the prod HUD path.
+                if (id.includes('/src/design/') && !id.includes('Showcase')) return 'design'
+                if (/\/src\/features\/(map|backpack|communities|gallery|places)\//.test(id)) return 'menus'
+                return null
+              }
+            }
+          ]
         }
       }
     }

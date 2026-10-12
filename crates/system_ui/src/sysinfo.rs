@@ -433,8 +433,8 @@ fn setup_minimap(
                         let Ok(scene) = scenes.get(scene) else {
                             return;
                         };
-                        test_data.inspect_hash = Some(scene.hash.clone());
-                        reload.write(PreviewCommand::ReloadScene { hash: scene.hash.clone() });
+                        test_data.inspect_hash = Some(scene.hash.to_string());
+                        reload.write(PreviewCommand::ReloadScene { hash: scene.hash.to_string() });
                         toaster.add_toast("inspector", "Please open chrome and navigate to \"chrome://inspect\" to attach a debugger");
                     })
                 )

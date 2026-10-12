@@ -1,0 +1,91 @@
+.rail {
+  position: relative;
+  padding-bottom: 16px;
+}
+.viewport {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  scroll-snap-type: x mandatory;
+}
+.track {
+  display: flex;
+  width: max-content;
+}
+.track > * {
+  scroll-snap-align: start;
+  flex: none;
+}
+.arrows {
+  position: absolute;
+  inset: 0 -40px 16px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-outcubic);
+}
+.rail:hover .arrows,
+.rail:focus-within .arrows {
+  opacity: 1;
+}
+.arrow {
+  position: absolute;
+  top: 50%;
+  left: 20px;
+  width: 31px;
+  height: 40px;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--r-control);
+  background: var(--rail-arrow);
+  color: var(--white);
+  cursor: pointer;
+  pointer-events: auto;
+}
+.arrow[hidden] {
+  display: none;
+}
+.next {
+  left: auto;
+  right: 20px;
+}
+.arrow:hover {
+  background: var(--rail-arrow-hover);
+}
+.arrow:focus-visible,
+.dot:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.arrow:active {
+  background: var(--rail-arrow-pressed);
+}
+.arrowIcon {
+  width: 15px;
+  height: 24px;
+}
+.dots {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  height: 8px;
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--rail-dot);
+  cursor: pointer;
+  transition: width var(--dur-pop) var(--ease-outcubic);
+}
+.dotActive {
+  width: 24px;
+  background: var(--rail-dot-active);
+}

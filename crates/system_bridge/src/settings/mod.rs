@@ -22,13 +22,15 @@ use bevy::{
 };
 use cache_size::CacheSizeSetting;
 use cel_shading_setting::CelShadingSetting;
+use common::structs::DmPrivacy;
 #[cfg(not(target_arch = "wasm32"))]
 use common::structs::SsaoSetting;
 use common::{
     sets::SceneSets,
     structs::{
         AaSetting, AppConfig, BloomSetting, CameraSmoothing, DofSetting, FogSetting,
-        ParcelGrassSetting, PointAtMarkerVisibility, PreviewMode, ShadowSetting, WindowSetting,
+        ParcelGrassSetting, PointAtMarkerVisibility, PreviewMode, ShadowSetting,
+        SkyReflectionSetting, WindowSetting,
     },
 };
 use constrain_ui::ConstrainUiSetting;
@@ -40,15 +42,11 @@ use oob_setting::OobSetting;
 use player_settings::{JumpSetting, RunSpeedSetting, WalkSpeedSetting};
 use scene_threads::SceneThreadsSetting;
 use shadow_settings::{LightCountSetting, ShadowCasterCountSetting, ShadowDistanceSetting};
-#[cfg(target_arch = "wasm32")]
-use tokio::sync::watch;
 use video_threads::VideoThreadsSetting;
 use volume_settings::{
     AvatarVolumeSetting, MasterVolumeSetting, SceneVolumeSetting, SystemVolumeSetting,
     VoiceVolumeSetting,
 };
-#[cfg(target_arch = "wasm32")]
-use {js_sys::Function, wasm_bindgen::prelude::*, web_sys::Event};
 
 pub mod aa_settings;
 pub mod ambient_brightness_setting;
@@ -58,6 +56,7 @@ pub mod cache_size;
 pub mod camera_smoothing;
 pub mod cel_shading_setting;
 pub mod constrain_ui;
+pub mod dm_privacy;
 pub mod dof_setting;
 pub mod fog_settings;
 pub mod frame_rate;
@@ -72,6 +71,7 @@ pub mod point_at_marker_visibility;
 pub mod scene_threads;
 pub mod sensitivity;
 pub mod shadow_settings;
+pub mod sky_reflection_setting;
 pub mod ssao_setting;
 pub mod video_threads;
 pub mod volume_settings;
@@ -153,6 +153,7 @@ impl Plugin for SettingBridgePlugin {
         add_enum_setting::<DofSetting>(app, &mut settings, &mut schedule, &config);
         #[cfg(not(target_arch = "wasm32"))]
         add_enum_setting::<SsaoSetting>(app, &mut settings, &mut schedule, &config);
+        add_enum_setting::<SkyReflectionSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<OobSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<CelShadingSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<AvatarOutlineSetting>(app, &mut settings, &mut schedule, &config);
@@ -175,6 +176,8 @@ impl Plugin for SettingBridgePlugin {
         add_int_setting::<VoiceVolumeSetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<SystemVolumeSetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<AvatarVolumeSetting>(app, &mut settings, &mut schedule, &config);
+
+        add_enum_setting::<DmPrivacy>(app, &mut settings, &mut schedule, &config);
 
         add_enum_setting::<ConstrainUiSetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<WalkSpeedSetting>(app, &mut settings, &mut schedule, &config);
@@ -203,13 +206,10 @@ impl Plugin for SettingBridgePlugin {
             (
                 record_cameras,
                 apply_settings.run_if(resource_changed::<AppConfig>),
+                refresh_settings.run_if(resource_changed::<AppConfig>),
             )
                 .chain(),
         );
-        #[cfg(target_arch = "wasm32")]
-        app.add_systems(Startup, setup_fullscreen_listeners_and_callbacks);
-        #[cfg(target_arch = "wasm32")]
-        app.add_systems(Update, listen_to_fullscreen_updates);
     }
 }
 
@@ -217,6 +217,7 @@ pub enum SettingCategory {
     Gameplay,
     Graphics,
     Audio,
+    Chat,
     Performance,
     Controls,
 }
@@ -227,6 +228,7 @@ impl Display for SettingCategory {
             SettingCategory::Gameplay => "Gameplay",
             SettingCategory::Graphics => "Graphics",
             SettingCategory::Audio => "Audio",
+            SettingCategory::Chat => "Chat",
             SettingCategory::Performance => "Performance",
             SettingCategory::Controls => "Controls",
         })
@@ -262,6 +264,10 @@ pub trait AppSetting: Eq + 'static {
 pub trait EnumAppSetting: AppSetting + Sized + std::fmt::Debug {
     fn variants() -> Vec<Self>;
     fn name(&self) -> String;
+    /// True while the value is not yet known (reported as -1, which the panel shows disabled).
+    fn is_unset(_config: &AppConfig) -> bool {
+        false
+    }
 }
 
 pub trait IntAppSetting: AppSetting + Sized + std::fmt::Debug {
@@ -284,6 +290,8 @@ pub struct Setting {
     apply: Option<
         Box<dyn Fn(&mut AppConfig, f32) -> Result<f32, anyhow::Error> + Send + Sync + 'static>,
     >,
+    /// The displayed value for the current config, for settings changed outside `set_value`.
+    load: Box<dyn Fn(&AppConfig) -> f32 + Send + Sync + 'static>,
 }
 
 #[derive(Resource)]
@@ -322,6 +330,13 @@ impl Settings {
         Ok(())
     }
 
+    /// Re-reads every displayed value from `config`.
+    pub fn refresh(&mut self, config: &AppConfig) {
+        for setting in self.settings.iter_mut() {
+            setting.info.value = (setting.load)(config);
+        }
+    }
+
     pub fn add_int_setting<S: IntAppSetting>(&mut self, config: &AppConfig) {
         let value = S::load(config);
         self.settings.push(Setting {
@@ -343,24 +358,23 @@ impl Settings {
                     Ok(new_value.value() as f32 * S::scale())
                 },
             )),
+            load: Box::new(|config: &AppConfig| S::load(config).value() as f32 * S::scale()),
         });
     }
 
     pub fn add_enum_setting<S: EnumAppSetting>(&mut self, config: &AppConfig) {
+        fn index_of<S: EnumAppSetting>(value: &S) -> usize {
+            S::variants().iter().position(|s| s == value).unwrap_or(0)
+        }
+        fn displayed<S: EnumAppSetting>(config: &AppConfig) -> f32 {
+            if S::is_unset(config) {
+                -1.0
+            } else {
+                index_of(&S::load(config)) as f32
+            }
+        }
         let value = S::load(config);
-        let index = S::variants()
-            .iter()
-            .enumerate()
-            .find(|(_, s)| **s == value)
-            .map(|(ix, _)| ix)
-            .unwrap_or(0);
-        let default_value = S::load(&AppConfig::default());
-        let default_index = S::variants()
-            .iter()
-            .enumerate()
-            .find(|(_, s)| **s == default_value)
-            .map(|(ix, _)| ix)
-            .unwrap_or(0);
+        let default_index = index_of(&S::load(&AppConfig::default()));
         self.settings.push(Setting {
             info: SettingInfo {
                 name: S::title(),
@@ -375,7 +389,7 @@ impl Settings {
                         description: v.description(),
                     })
                     .collect(),
-                value: index as f32,
+                value: displayed::<S>(config),
                 default: default_index as f32,
                 step_size: 1.0,
             },
@@ -388,6 +402,7 @@ impl Settings {
                     Ok(value as usize as f32)
                 },
             )),
+            load: Box::new(|config: &AppConfig| displayed::<S>(config)),
         });
     }
 }
@@ -413,6 +428,10 @@ fn handle_settings(
             _ => (),
         }
     }
+}
+
+fn refresh_settings(mut settings: ResMut<Settings>, config: Res<AppConfig>) {
+    settings.refresh(&config);
 }
 
 #[derive(Resource)]
@@ -466,72 +485,9 @@ fn is_fullscreen_available() -> bool {
     true
 }
 
+// On the web the engine runs on a worker with no document; fullscreen is driven by the page.
 #[cfg(target_arch = "wasm32")]
 #[inline(always)]
 fn is_fullscreen_available() -> bool {
-    let window = web_sys::window().unwrap();
-    let document = window.document().unwrap();
-
-    document.fullscreen_enabled()
-}
-
-#[cfg(target_arch = "wasm32")]
-#[derive(Resource, Deref, DerefMut)]
-struct FullscreenListener(watch::Receiver<WindowSetting>);
-
-#[cfg(target_arch = "wasm32")]
-fn setup_fullscreen_listeners_and_callbacks(mut commands: Commands, app_config: Res<AppConfig>) {
-    let window = web_sys::window().unwrap();
-    let document = window.document().unwrap();
-    let canvas = document.get_element_by_id("mygame-canvas").unwrap();
-
-    let (sender, receiver) = tokio::sync::watch::channel(app_config.graphics.window);
-
-    let listener = Closure::wrap(Box::new(move |_event: Event| {
-        let window = web_sys::window().unwrap();
-        let document = window.document().unwrap();
-
-        let new = if document.fullscreen_element().is_some() {
-            debug!("Detected change to fullscreen.");
-            WindowSetting::Borderless
-        } else {
-            debug!("Detected exit from fullscreen.");
-            WindowSetting::Windowed
-        };
-        if let Err(err) = sender.send(new) {
-            error!("{err}");
-        }
-    }) as Box<dyn FnMut(Event)>);
-    let listener_ref: &Function = listener.as_ref().unchecked_ref();
-
-    canvas
-        .add_event_listener_with_callback("fullscreenchange", listener_ref)
-        .unwrap();
-    canvas
-        .add_event_listener_with_callback("fullscreenerror", listener_ref)
-        .unwrap();
-
-    listener.forget();
-
-    commands.insert_resource(FullscreenListener(receiver));
-    debug!("Fullscreen listeners setup.");
-}
-
-#[cfg(target_arch = "wasm32")]
-fn listen_to_fullscreen_updates(
-    mut fullscreen_listener: ResMut<FullscreenListener>,
-    mut app_config: ResMut<AppConfig>,
-) {
-    match fullscreen_listener.has_changed() {
-        Ok(changed) => {
-            if changed {
-                let new_value = fullscreen_listener.borrow_and_update();
-                if *new_value != app_config.graphics.window {
-                    debug!("Setting {new_value:?} to AppConfig.");
-                    app_config.graphics.window = *new_value;
-                }
-            }
-        }
-        Err(err) => error!("{err}"),
-    }
+    false
 }

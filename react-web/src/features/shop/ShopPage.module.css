@@ -1,0 +1,15 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+  gap: 14px;
+  transition: opacity 150ms var(--ease-out);
+}
+/* The previous query's results, kept until the new ones arrive. */
+.stale {
+  opacity: 0.45;
+}
+.more {
+  display: flex;
+  justify-content: center;
+  margin-top: 18px;
+}

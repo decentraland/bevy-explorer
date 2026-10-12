@@ -13,10 +13,10 @@ export function EngineViewport({
   region,
   report
 }: {
-  region: 'map' | 'avatarPreview'
+  region: 'map' | 'avatarPreview' | 'lobby'
   /** Stable callback (useCallback) — reports the rect (in CSS pixels) and the current
    *  `devicePixelRatio`, or null to clear. */
-  report: (region: 'map' | 'avatarPreview', rect: Rect | null, dpr?: number) => void
+  report: (region: 'map' | 'avatarPreview' | 'lobby', rect: Rect | null, dpr?: number) => void
 }): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
 

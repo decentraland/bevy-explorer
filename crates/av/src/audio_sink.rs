@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use bevy::{prelude::*, render::view::RenderLayers};
 use common::{
-    structs::{AudioDecoderError, AudioSettings, PrimaryUser},
+    structs::{AudioDecoderError, AudioSettings},
     util::VolumePanning,
 };
 use comms::global_crdt::ForeignAudioSource;
@@ -11,30 +11,26 @@ use kira::{
     sound::{streaming::StreamingSoundData, PlaybackState},
     tween::Tween,
 };
-use media::AVCommand;
-use scene_runner::{ContainingScene, SceneEntity};
+use media::AudioHandle;
 use tokio::sync::mpsc::error::TryRecvError;
 
 use crate::{AVPlayer, AVPlayerSinks, AVSinks, AudioStream, VideoPlayer};
 
+/// Attaches a stream's audio to kira: the sound is spawned here when its data arrives and handed
+/// to the av thread, which drives its volume and stops it.
 pub struct AudioSink {
-    pub volume: f32,
-    pub command_sender: tokio::sync::mpsc::UnboundedSender<AVCommand>,
     pub sound_data: tokio::sync::mpsc::Receiver<StreamingSoundData<AudioDecoderError>>,
-    pub handle: Option<<StreamingSoundData<AudioDecoderError> as kira::sound::SoundData>::Handle>,
+    pub handle_sender: Option<tokio::sync::oneshot::Sender<AudioHandle>>,
 }
 
 impl AudioSink {
     pub fn new(
-        volume: f32,
-        command_sender: tokio::sync::mpsc::UnboundedSender<AVCommand>,
         receiver: tokio::sync::mpsc::Receiver<StreamingSoundData<AudioDecoderError>>,
+        handle_sender: tokio::sync::oneshot::Sender<AudioHandle>,
     ) -> Self {
         Self {
-            volume,
-            command_sender,
             sound_data: receiver,
-            handle: None,
+            handle_sender: Some(handle_sender),
         }
     }
 }
@@ -45,22 +41,13 @@ impl Plugin for AudioSinkPlugin {
     fn build(&self, app: &mut App) {
         app.add_observer(av_sinks_inserted::<AudioStream>);
         app.add_observer(av_sinks_inserted::<VideoPlayer>);
-        app.add_observer(av_sinks_replaced::<AudioStream>);
-        app.add_observer(av_sinks_replaced::<VideoPlayer>);
 
         app.add_systems(
             PostUpdate,
             (
-                (
-                    update_audio_player_volume::<AudioStream>,
-                    update_audio_player_volume::<VideoPlayer>,
-                ),
-                (
-                    av_sink_waiting_sound_data::<AudioStream>,
-                    av_sink_waiting_sound_data::<VideoPlayer>,
-                ),
-            )
-                .chain(),
+                av_sink_waiting_sound_data::<AudioStream>,
+                av_sink_waiting_sound_data::<VideoPlayer>,
+            ),
         );
         app.add_systems(
             PostUpdate,
@@ -121,26 +108,16 @@ fn av_sinks_inserted<T: AVPlayer>(
 
     if let Some(audio_sink) = av_sinks.audio_sink_mut() {
         if let Ok(sound_data) = audio_sink.sound_data.try_recv() {
-            start_sound::<T>(entity, &mut commands, &mut audio_manager, sound_data);
+            start_sound(entity, audio_sink, &mut audio_manager, sound_data);
         } else {
             commands.entity(entity).try_insert(WaitingSoundData);
         }
     }
 }
 
-fn av_sinks_replaced<T: AVPlayer>(trigger: Trigger<OnReplace, AVSinks<T>>, mut commands: Commands) {
-    let entity = trigger.target();
-    debug!(
-        "AVSink<{}> replaced on {}",
-        disqualified::ShortName::of::<T>(),
-        entity
-    );
-    commands.entity(entity).try_remove::<AudioSpawned<T>>();
-}
-
-fn start_sound<T: AVPlayer>(
+fn start_sound(
     entity: Entity,
-    commands: &mut Commands,
+    audio_sink: &mut AudioSink,
     audio_manager: &mut bevy_kira_audio::audio_output::AudioOutput<DefaultBackend>,
     sound_data: StreamingSoundData<AudioDecoderError>,
 ) {
@@ -151,38 +128,13 @@ fn start_sound<T: AVPlayer>(
         .unwrap()
         .play(sound_data)
         .unwrap();
-    commands
-        .entity(entity)
-        .try_insert(AudioSpawned::<T>::new(handle));
-}
-
-#[expect(clippy::type_complexity)]
-fn update_audio_player_volume<T: AVPlayer>(
-    mut streams: Query<
-        (&SceneEntity, &mut AVSinks<T>, &mut AudioSpawned<T>),
-        Without<ForeignAudioSource>,
-    >,
-    containing_scene: ContainingScene,
-    player: Query<Entity, With<PrimaryUser>>,
-    settings: Res<AudioSettings>,
-) {
-    let containing_scenes = player
-        .single()
-        .ok()
-        .map(|player| containing_scene.get(player))
-        .unwrap_or_default();
-
-    for (scene, mut av_player_sinks, mut audio_spawned) in streams.iter_mut() {
-        if let Some(audio_sink) = av_player_sinks.audio_sink_mut() {
-            let volume = audio_sink.volume * settings.scene();
-            if containing_scenes.contains(&scene.root) {
-                audio_spawned
-                    .handle
-                    .set_volume(volume as f64, Tween::default());
-            } else {
-                audio_spawned.handle.set_volume(0.0, Tween::default());
-            }
-        }
+    let orphan = match audio_sink.handle_sender.take() {
+        Some(sender) => sender.send(handle).err(),
+        None => Some(handle),
+    };
+    if let Some(mut handle) = orphan {
+        // the av thread is gone (or already had a sound)
+        handle.stop(Tween::default());
     }
 }
 
@@ -266,9 +218,7 @@ fn av_sink_waiting_sound_data<T: AVPlayer>(
     for (entity, mut av_sink) in av_sinks.into_inner() {
         if let Some(audio_sink) = av_sink.audio_sink_mut() {
             match audio_sink.sound_data.try_recv() {
-                Ok(sound_data) => {
-                    start_sound::<T>(entity, &mut commands, &mut audio_manager, sound_data)
-                }
+                Ok(sound_data) => start_sound(entity, audio_sink, &mut audio_manager, sound_data),
                 Err(TryRecvError::Disconnected) => {
                     debug!("Sound data receiver is disconnected.");
                     commands.entity(entity).try_remove::<WaitingSoundData>();

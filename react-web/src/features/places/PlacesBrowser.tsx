@@ -8,7 +8,7 @@
 // PlacesPage and the post-jump-in PlacesPicker; the host supplies an `onPick(place)` action.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Dropdown, EmptyState, Heart, Pin, SearchField, Spinner, Tabs, type TabItem } from '../../design'
+import { BrowseControl, BrowseLoading, BrowsePanel, BrowseToolbar, DiscoverGrid, Dropdown, EmptyState, Heart, Pin, SearchField, Tabs, type TabItem } from '../../design'
 import { PlaceCard } from './PlaceCard'
 import { FeaturedCarousel } from './FeaturedCarousel'
 import { usePlaces, type PlacesSection, type PlacesSort } from './usePlaces'
@@ -93,12 +93,14 @@ export function PlacesBrowser({
     return list.filter((p) => !liveIds.has(p.id) && !featuredIds.has(p.id))
   }, [list, showHighlights, liveIds, featured])
 
-  const renderGrid = (items: DiscoverPlace[], className = ''): React.JSX.Element => (
-    <div className={`${styles.grid} ${className}`.trim()}>
+  // Live Now is a fixed 4-up row: auto-fill would take the column count from the viewport (3 at
+  // 1440px, 7 at 2560px).
+  const renderGrid = (items: DiscoverPlace[], columns?: number): React.JSX.Element => (
+    <DiscoverGrid columns={columns}>
       {items.map((place) => (
         <PlaceCard key={place.id} place={place} onClick={() => onPick(place)} />
       ))}
-    </div>
+    </DiscoverGrid>
   )
 
   return (
@@ -108,7 +110,7 @@ export function PlacesBrowser({
           <h2 className={styles.sectionTitle}>
             <span className={styles.liveDot} /> Live Now
           </h2>
-          {renderGrid(liveNow, styles.gridLive)}
+          {renderGrid(liveNow, 4)}
         </section>
       )}
 
@@ -119,31 +121,26 @@ export function PlacesBrowser({
         </section>
       )}
 
-      <div className={styles.toolbar}>
-        <Tabs items={SECTIONS} value={section} onChange={setSection} aria-label="Places sections" />
-        <div className={styles.controls}>
-          <div className={styles.search}>
-            <SearchField value={draft} onChange={setDraft} placeholder="Search places" />
-          </div>
-          <div className={styles.dd}>
-            <Dropdown options={CATEGORY_OPTIONS} value={categoryLabel(category)} onChange={(label) => setCategory(categoryId(label))} />
-          </div>
-          <div className={styles.dd}>
-            <Dropdown
-              options={SORT_OPTIONS.map((o) => o.label)}
-              value={SORT_OPTIONS.find((o) => o.value === sort)?.label ?? 'Most active'}
-              onChange={(label) => setSort(SORT_OPTIONS.find((o) => o.label === label)?.value ?? 'most_active')}
-            />
-          </div>
-          {headExtra}
-        </div>
-      </div>
+      <BrowseToolbar tabs={<Tabs items={SECTIONS} value={section} onChange={setSection} aria-label="Places sections" />}>
+        <BrowseControl size="search">
+          <SearchField value={draft} onChange={setDraft} placeholder="Search places" />
+        </BrowseControl>
+        <BrowseControl size="select">
+          <Dropdown options={CATEGORY_OPTIONS} value={categoryLabel(category)} onChange={(label) => setCategory(categoryId(label))} />
+        </BrowseControl>
+        <BrowseControl size="select">
+          <Dropdown
+            options={SORT_OPTIONS.map((o) => o.label)}
+            value={SORT_OPTIONS.find((o) => o.value === sort)?.label ?? 'Most active'}
+            onChange={(label) => setSort(SORT_OPTIONS.find((o) => o.label === label)?.value ?? 'most_active')}
+          />
+        </BrowseControl>
+        {headExtra}
+      </BrowseToolbar>
 
-      <div className={styles.panel}>
+      <BrowsePanel>
         {loading ? (
-          <div className={styles.center}>
-            <Spinner size={34} />
-          </div>
+          <BrowseLoading />
         ) : error ? (
           <EmptyState variant="inline" tone="error" title="Couldn't load places" subtitle={error} />
         ) : list.length === 0 ? (
@@ -162,7 +159,7 @@ export function PlacesBrowser({
         ) : (
           renderGrid(mainList)
         )}
-      </div>
+      </BrowsePanel>
     </>
   )
 }

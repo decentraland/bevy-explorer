@@ -1,4 +1,4 @@
-import { useRef, useSyncExternalStore, type ReactNode } from 'react'
+import { Component, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import { ModalShell } from './Modal'
 import { Button } from './Button'
 import { useFocusTrap } from '../lib/useFocusTrap'
@@ -16,6 +16,9 @@ export interface PopupOptions {
   /** The backdrop is the shared dimmed+blurred modal scrim (default). `false` → transparent
    *  click-catcher, for an anchored popover that must not dim the HUD behind it. */
   dim?: boolean
+  /** The dim scrim at device px, without the reference-canvas scale: for a dialog that must
+   *  match the scene editor's fixed-size UI. */
+  fixed?: boolean
   /** A predicate is evaluated at click time, so a popup can refuse while it holds unsaved
    *  state (the passport in edit mode) without reopening itself with new options. */
   backdropClickCloses?: boolean | (() => boolean)
@@ -35,6 +38,7 @@ type ResolvedOptions = Required<Omit<PopupOptions, 'onClose' | 'confirmClose'>> 
 const DEFAULTS: Required<Omit<PopupOptions, 'onClose' | 'confirmClose'>> = {
   backdrop: true,
   dim: true,
+  fixed: false,
   backdropClickCloses: true
 }
 const closesOnBackdrop = (o: ResolvedOptions): boolean =>
@@ -145,13 +149,33 @@ function PopupLayer({ node, isTop, locked }: { node: PopupNode; isTop: boolean; 
   // `.dim` is the shared dimmed+blurred modal scrim; without `dim` it's a transparent click-catcher
   // for an anchored popover (the profile card).
   if (!node.options.backdrop) return <>{content}</>
-  const className = node.options.dim ? `${styles.backdrop} ${styles.dim}` : styles.backdrop
+  let className = styles.backdrop
+  if (node.options.dim) className += ` ${styles.dim}`
+  if (node.options.dim && node.options.fixed) className += ` ${styles.fixed}`
   return (
     <div ref={ref} className={className} tabIndex={-1} onClick={() => { if (closesOnBackdrop(node.options)) close() }}>
       {/* dim popups scale in via the pop layer; an anchored popover (dim:false) just appears. */}
       {node.options.dim ? <div className={styles.pop}>{content}</div> : content}
     </div>
   )
+}
+
+// A popup that throws closes on its own instead of taking the HUD down with it.
+class PopupBoundary extends Component<{ id: number; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false }
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true }
+  }
+
+  componentDidCatch(error: Error): void {
+    console.error('[popup] crashed', error)
+    closeById(this.props.id)
+  }
+
+  render(): ReactNode {
+    return this.state.failed ? null : this.props.children
+  }
 }
 
 /** Mounted once at the HUD root (see App) — the single React subscriber that renders the popup stack.
@@ -167,7 +191,9 @@ export function PopupHost(): React.JSX.Element {
   return (
     <>
       {snap.map((n, i) => (
-        <PopupLayer key={n.id} node={n} isTop={i === snap.length - 1} locked={locked} />
+        <PopupBoundary key={n.id} id={n.id}>
+          <PopupLayer node={n} isTop={i === snap.length - 1} locked={locked} />
+        </PopupBoundary>
       ))}
     </>
   )
@@ -190,6 +216,13 @@ export interface DialogOptions {
   width?: number
   /** Equal-width buttons (see ModalShell). Defaults on for a 2-button dialog. */
   actionsEqual?: boolean
+  /** `false` → no × and a backdrop click does nothing, so a stray click can't make the choice; only
+   *  the actions and Escape (which resolves `null`) close it. Default true. */
+  dismissible?: boolean
+  /** See PopupOptions.fixed. */
+  fixed?: boolean
+  /** Closes the dialog (resolving `null`) when it aborts. */
+  signal?: AbortSignal
 }
 
 /**
@@ -202,13 +235,17 @@ export function showDialog(opts: DialogOptions): Promise<string | null> {
     const settle = (value: string | null): void => {
       if (settled) return
       settled = true
+      opts.signal?.removeEventListener('abort', abort)
       resolve(value)
     }
-    openPopup(
+    const abort = (): void => close()
+    if (opts.signal?.aborted) return resolve(null)
+    const close = openPopup(
       (close) => (
         <ModalShell
           title={opts.title}
           onClose={close}
+          closeButton={opts.dismissible ?? true}
           width={opts.width ?? 420}
           actionsEqual={opts.actionsEqual ?? opts.actions.length === 2}
           actions={opts.actions.map((a) => (
@@ -227,8 +264,9 @@ export function showDialog(opts: DialogOptions): Promise<string | null> {
           {opts.body}
         </ModalShell>
       ),
-      { onClose: () => settle(null) } // default dim scrim from PopupHost
+      { onClose: () => settle(null), backdropClickCloses: opts.dismissible ?? true, fixed: opts.fixed ?? false } // default dim scrim from PopupHost
     )
+    opts.signal?.addEventListener('abort', abort)
   })
 }
 

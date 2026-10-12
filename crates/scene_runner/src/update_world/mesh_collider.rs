@@ -305,6 +305,92 @@ impl SceneColliderData {
         debug!("set {id:?} collider");
     }
 
+    /// Ground heightfield over a regular grid centred on `centre`. `heights` is row-major with
+    /// rows along +z and columns along +x. Parry splits each cell from (x0, z1) to (x1, z0),
+    /// which is unity-explorer's terrain collider triangulation after the z flip. It is physical
+    /// ground, so scene `CL_PHYSICS` casts hit it as well as the avatar.
+    pub fn set_ground_heightfield(
+        &mut self,
+        id: &ColliderId,
+        rows: usize,
+        cols: usize,
+        heights: &[f32],
+        size: Vec2,
+        centre: Vec3,
+    ) {
+        let heights = rapier3d_f64::na::DMatrix::from_fn(rows, cols, |row, col| {
+            f64::from(heights[row * cols + col])
+        });
+        let collider = ColliderBuilder::heightfield(
+            heights,
+            Vector::new(f64::from(size.x), 1.0, f64::from(size.y)),
+        )
+        .translation(centre.as_dvec3().into())
+        .collision_groups(InteractionGroups::new(
+            Group::from_bits_truncate(ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK),
+            Group::from_bits_truncate(ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK),
+            InteractionTestMode::And,
+        ))
+        .build();
+        self.set_collider(id, collider, None);
+    }
+
+    /// Invisible box on the physics layer only (unity-explorer's border colliders): it blocks the
+    /// avatar like a scene wall, and isn't hit by raycasts unless the entity is included in them.
+    pub fn set_wall(&mut self, id: &ColliderId, centre: Vec3, half_extents: Vec3, rotation: Quat) {
+        let half_extents = half_extents.as_dvec3();
+        let collider = ColliderBuilder::cuboid(half_extents.x, half_extents.y, half_extents.z)
+            .position(Isometry::from_parts(
+                centre.as_dvec3().into(),
+                rotation.as_dquat().into(),
+            ))
+            .collision_groups(InteractionGroups::new(
+                Group::from_bits_truncate(ColliderLayer::ClPhysics as u32),
+                Group::from_bits_truncate(ColliderLayer::ClPhysics as u32),
+                InteractionTestMode::And,
+            ))
+            .build();
+        self.set_collider(id, collider, None);
+    }
+
+    /// Capsule outside any scene (landscape tree trunks) on the physics layer: it blocks the
+    /// avatar and physics raycasts.
+    pub fn set_physics_capsule(&mut self, id: &ColliderId, a: Vec3, b: Vec3, radius: f32) {
+        let collider = ColliderBuilder::capsule_from_endpoints(
+            DVec3::from(a).into(),
+            DVec3::from(b).into(),
+            f64::from(radius),
+        );
+        self.set_physics_collider(id, collider);
+    }
+
+    /// Shared shape outside any scene (landscape rocks), placed without scaling, like
+    /// `set_physics_capsule`.
+    pub fn set_physics_shape(
+        &mut self,
+        id: &ColliderId,
+        shape: SharedShape,
+        translation: Vec3,
+        rotation: Quat,
+    ) {
+        let collider = ColliderBuilder::new(shape).position(Isometry::from_parts(
+            Translation::from(Vector::from(DVec3::from(translation))),
+            rotation.as_dquat().into(),
+        ));
+        self.set_physics_collider(id, collider);
+    }
+
+    fn set_physics_collider(&mut self, id: &ColliderId, collider: ColliderBuilder) {
+        let collider = collider
+            .collision_groups(InteractionGroups::new(
+                Group::from_bits_truncate(ColliderLayer::ClPhysics as u32),
+                Group::from_bits_truncate(ColliderLayer::ClPhysics as u32),
+                InteractionTestMode::And,
+            ))
+            .build();
+        self.set_collider(id, collider, None);
+    }
+
     pub fn update_collider_transform(
         &mut self,
         id: &ColliderId,
@@ -934,6 +1020,13 @@ impl SceneColliderData {
 }
 
 pub const GROUND_COLLISION_MASK: u32 = 1 << 31;
+
+/// Collision shapes, e.g. from `mesh_to_parry_shape`, for `set_physics_shape`.
+pub use rapier3d_f64::prelude::SharedShape;
+
+/// Ground colliders outside any scene (the empty-parcel terrain). World raycasts include them.
+#[derive(Component)]
+pub struct GlobalGroundCollider;
 
 fn update_scene_collider_data(
     mut commands: Commands,

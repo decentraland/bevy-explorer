@@ -19,7 +19,7 @@ wallet = { workspace = true }
 bevy = { workspace = true }
 bevy_console = { workspace = true }
 clap = { workspace = true }
-ethers-core = { workspace = true }
+alloy-core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }

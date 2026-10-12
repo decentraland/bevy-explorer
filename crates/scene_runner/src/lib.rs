@@ -17,7 +17,7 @@ use bevy::{
 };
 
 use common::{
-    rpc::RpcCall,
+    rpc::{RpcCall, RpcCallEvent, RpcOrigin},
     sets::{SceneLoopSets, SceneSets},
     structs::{
         AppConfig, AppError, CurrentRealm, DebugInfo, EditorMode, NoRenderApp, PreviewMode,
@@ -28,7 +28,7 @@ use common::{
 use comms::{global_crdt::GlobalCrdtState, SceneRoomConnection, SetCurrentScene};
 use dcl::{
     interface::CrdtType,
-    js::{scene_response_channel, SceneResponseReceiver, SceneResponseSender},
+    js::{scene_response_channel, SceneResponseReceiver, TaggedSceneResponseSender},
     RendererResponse, SceneCensus, SceneId, SceneLogLevel, SceneLogMessage, SceneResponse,
 };
 use dcl_component::{
@@ -81,9 +81,8 @@ pub mod util;
 // bookkeeping struct for javascript execution of scenes
 #[derive(Resource)]
 pub struct SceneUpdates {
-    pub sender: SceneResponseSender,
+    pub sender: TaggedSceneResponseSender,
     receiver: SceneResponseReceiver,
-    pub scene_ids: HashMap<SceneId, Entity>,
     pub jobs_in_flight: HashSet<Entity>,
     pub update_deadline: SystemTime,
     pub eligible_jobs: usize,
@@ -250,6 +249,10 @@ pub struct InteractableArea(pub Option<Vec4>);
 #[derive(Default, Resource)]
 pub struct HudFullscreen(pub bool);
 
+/// A HUD surface (panel, popup, prompt) is active (`SystemApi::SetUiFocus.ui`).
+#[derive(Default, Resource)]
+pub struct HudFocus(pub bool);
+
 /// Frame-global inputs to `PBEngineInfo`. The world is hidden from the user while the engine's
 /// loading backdrop (player `OutOfWorld`) or a full-screen HUD surface covers it.
 #[derive(SystemParam)]
@@ -286,6 +289,7 @@ impl Plugin for SceneRunnerPlugin {
         app.init_resource::<TestingData>();
         app.init_resource::<InteractableArea>();
         app.init_resource::<HudFullscreen>();
+        app.init_resource::<HudFocus>();
         // shared by pointer results, trigger areas and the avatar crate — owned here so
         // trigger areas keep working when the pointer-result systems are skipped
         app.init_resource::<update_scene::pointer_results::AvatarColliders>();
@@ -298,7 +302,6 @@ impl Plugin for SceneRunnerPlugin {
         app.insert_resource(SceneUpdates {
             sender,
             receiver,
-            scene_ids: Default::default(),
             jobs_in_flight: Default::default(),
             update_deadline: web_time::SystemTime::now(),
             eligible_jobs: 0,
@@ -798,6 +801,25 @@ struct RealmInfoCache {
     server: HashMap<String, Vec<u8>>,
 }
 
+/// The realm's base url and name as scenes are told them (`PbRealmInfo`).
+pub fn realm_base_url_and_name(realm: &CurrentRealm) -> (String, String) {
+    let base_url = realm
+        .about_url
+        .strip_suffix("/about")
+        .unwrap_or(&realm.about_url);
+    let realm_name = realm.config.realm_name.clone().unwrap_or_default();
+    // an orchestrated engine has no realm name of its own, and stripping `/` off the end of
+    // the content url is not what this is for
+    let base_url = if realm_name.is_empty() {
+        base_url
+    } else {
+        base_url
+            .strip_suffix(&format!("/{realm_name}"))
+            .unwrap_or(base_url)
+    };
+    (base_url.to_owned(), realm_name)
+}
+
 fn send_scene_updates(
     mut scenes: Query<(
         Entity,
@@ -833,22 +855,9 @@ fn send_scene_updates(
         || scene_realms.is_changed()
         || preview_mode.is_changed()
     {
-        let base_url = realm
-            .about_url
-            .strip_suffix("/about")
-            .unwrap_or(&realm.about_url);
-        let realm_name = realm.config.realm_name.clone().unwrap_or_default();
-        // an orchestrated engine has no realm name of its own, and stripping `/` off the end of
-        // the content url is not what this is for
-        let base_url = if realm_name.is_empty() {
-            base_url
-        } else {
-            base_url
-                .strip_suffix(&format!("/{realm_name}"))
-                .unwrap_or(base_url)
-        };
+        let (base_url, realm_name) = realm_base_url_and_name(&realm);
         let mut realm_info = PbRealmInfo {
-            base_url: base_url.to_owned(),
+            base_url,
             realm_name,
             network_id: realm.config.network_id.unwrap_or_default() as i32,
             comms_adapter: realm
@@ -974,10 +983,10 @@ fn send_scene_updates(
 
     // add realm info
     let realm_bytes = match realm_info_cache.connected.as_ref() {
-        Some((hash, bytes)) if *hash == context.hash => bytes.as_slice(),
+        Some((hash, bytes)) if **hash == *context.hash => bytes.as_slice(),
         _ => realm_info_cache
             .server
-            .get(&context.hash)
+            .get(&*context.hash)
             .map(Vec::as_slice)
             .unwrap_or(realm_info_cache.disconnected.as_slice()),
     };
@@ -1059,7 +1068,6 @@ fn send_scene_updates(
     // the lifecycle pass drains for every scene before we'd get a chance to send.
     // Holds only engine-originated changes, so it never echoes the scene's census.
     let census = SceneCensus {
-        scene_id: SceneId(ent),
         born: std::mem::take(&mut context.outbound_born),
         died: std::mem::take(&mut context.outbound_died),
     };
@@ -1090,34 +1098,32 @@ fn receive_scene_updates(
     mut scenes: Query<&mut RendererSceneContext>,
     crdt_interfaces: Res<CrdtExtractors>,
     frame: Res<FrameCount>,
-    mut rpc_call_events: EventWriter<RpcCall>,
+    mut rpc_call_events: EventWriter<RpcCallEvent>,
     mut toaster: Toaster,
     mut snapshot_events: EventWriter<CrdtSnapshotEvent>,
     mut entity_allocated_events: EventWriter<EntityAllocatedEvent>,
 ) {
     loop {
         let maybe_completed_job = match updates.receiver().try_recv() {
-            Ok(response) => match response {
-                SceneResponse::CrdtSnapshot(scene_id, crdt) => {
-                    if let Some(&scene_entity) = updates.scene_ids.get(&scene_id) {
-                        snapshot_events.write(CrdtSnapshotEvent { scene_entity, crdt });
-                    }
+            Ok((scene_id, response)) => match response {
+                SceneResponse::CrdtSnapshot(crdt) => {
+                    // scene ids are the scene root entity
+                    snapshot_events.write(CrdtSnapshotEvent {
+                        scene_entity: scene_id.0,
+                        crdt,
+                    });
                     None
                 }
-                SceneResponse::EntityAllocated(scene_id, results) => {
-                    if let Some(&scene_entity) = updates.scene_ids.get(&scene_id) {
-                        entity_allocated_events.write(EntityAllocatedEvent {
-                            scene_entity,
-                            results,
-                        });
-                    }
+                SceneResponse::EntityAllocated(results) => {
+                    entity_allocated_events.write(EntityAllocatedEvent {
+                        scene_entity: scene_id.0,
+                        results,
+                    });
                     None
                 }
-                SceneResponse::Stats(scene_id, counters) => {
-                    if let Some(root) = updates.scene_ids.get(&scene_id) {
-                        if let Ok(mut context) = scenes.get_mut(*root) {
-                            context.resource_counters = Some(counters);
-                        }
+                SceneResponse::Stats(counters) => {
+                    if let Ok(mut context) = scenes.get_mut(scene_id.0) {
+                        context.resource_counters = Some(counters);
                     }
                     None
                 }
@@ -1126,39 +1132,43 @@ fn receive_scene_updates(
                     None
                 }
                 SceneResponse::CompareSnapshot(compare) => {
-                    let scene = compare.scene;
-                    debug!("[{scene:?}] requested snapshot");
-                    rpc_call_events.write(RpcCall::TestSnapshot(compare.clone()));
+                    debug!("[{scene_id:?}] requested snapshot");
+                    if let Ok(context) = scenes.get(scene_id.0) {
+                        rpc_call_events.write(RpcCallEvent {
+                            origin: RpcOrigin::Scene {
+                                entity: scene_id.0,
+                                hash: context.hash.clone(),
+                            },
+                            call: RpcCall::TestSnapshot(compare),
+                        });
+                    }
                     None
                 }
-                SceneResponse::Error(scene_id, message) => {
-                    if let Some(root) = updates.scene_ids.get(&scene_id) {
-                        if let Ok(mut context) = scenes.get_mut(*root) {
-                            context.state = SceneState::Broken;
-                            let timestamp = context.total_runtime + 1.0;
-                            error!("[{scene_id:?} @ {}] error: {message}", context.tick_number);
-                            context.log(SceneLogMessage {
-                                timestamp,
-                                level: SceneLogLevel::SystemError,
-                                message,
-                            });
-                        }
-                        Some(*root)
-                    } else {
-                        None
+                SceneResponse::Error(message) => {
+                    let root = scene_id.0;
+                    if let Ok(mut context) = scenes.get_mut(root) {
+                        context.state = SceneState::Broken;
+                        let timestamp = context.total_runtime + 1.0;
+                        error!("[{scene_id:?} @ {}] error: {message}", context.tick_number);
+                        context.log(SceneLogMessage {
+                            timestamp,
+                            level: SceneLogLevel::SystemError,
+                            message,
+                        });
                     }
+                    Some(root)
                 }
-                SceneResponse::Ok(scene_id, census, mut crdt, runtime, messages, rpc_calls) => {
-                    let root = updates.scene_ids.get(&scene_id).unwrap();
+                SceneResponse::Ok(census, mut crdt, runtime, messages, rpc_calls) => {
+                    // scene ids are the scene root entity
+                    let root = scene_id.0;
                     debug!(
-                        "scene {:?}/{:?} received updates! [+{}, -{}, {} rpc",
-                        census.scene_id,
+                        "scene {:?} received updates! [+{}, -{}, {} rpc",
                         root,
                         census.born.len(),
                         census.died.len(),
                         rpc_calls.len(),
                     );
-                    if let Ok(mut context) = scenes.get_mut(*root) {
+                    if let Ok(mut context) = scenes.get_mut(root) {
                         // this reply is the scene's in-flight tick coming back (a no-op for
                         // broken scenes, whose state holds no in-flight bit)
                         context.set_in_flight(false);
@@ -1197,7 +1207,7 @@ fn receive_scene_updates(
                             // Must happen before updates_to_entity drains `crdt`.
                             context.crdt_store.sync_lww_timestamps_from(&crdt);
 
-                            let mut commands = commands.entity(*root);
+                            let mut commands = commands.entity(root);
                             for (component_id, interface) in crdt_interfaces.0.iter() {
                                 interface.updates_to_entity(
                                     *component_id,
@@ -1209,8 +1219,14 @@ fn receive_scene_updates(
                             //     updates.jobs_in_flight.contains(root) || context.tick_number <= 2
                             // );
 
-                            for rpc_call in rpc_calls {
-                                rpc_call_events.write(rpc_call);
+                            for call in rpc_calls {
+                                rpc_call_events.write(RpcCallEvent {
+                                    origin: RpcOrigin::Scene {
+                                        entity: root,
+                                        hash: context.hash.clone(),
+                                    },
+                                    call,
+                                });
                             }
                         }
                     } else {
@@ -1218,11 +1234,19 @@ fn receive_scene_updates(
                             "no scene entity, probably got dropped before we processed the result"
                         );
                     }
-                    Some(*root)
+                    Some(root)
                 }
-                SceneResponse::ImmediateRpcCall(rpc_call) => {
-                    debug!("immediate rpc: {rpc_call:?}");
-                    rpc_call_events.write(rpc_call);
+                SceneResponse::ImmediateRpcCall(call) => {
+                    debug!("[{scene_id:?}] immediate rpc: {call:?}");
+                    if let Ok(context) = scenes.get(scene_id.0) {
+                        rpc_call_events.write(RpcCallEvent {
+                            origin: RpcOrigin::Scene {
+                                entity: scene_id.0,
+                                hash: context.hash.clone(),
+                            },
+                            call,
+                        });
+                    }
                     None
                 }
             },
@@ -1267,6 +1291,10 @@ fn process_scene_entity_lifecycle(
 
         // update deleted entities list, used by crdt processors to filter results
         deleted_entities.0 = std::mem::take(&mut context.death_row);
+
+        // drop dead entities from the renderer-side store, otherwise their timestamp /
+        // renderer-written entries are retained for the scene's lifetime
+        context.crdt_store.clean_up(&deleted_entities.0);
 
         for deleted_scene_entity in &deleted_entities.0 {
             if let Some(deleted_bevy_entity) = context.bevy_entity(*deleted_scene_entity) {
@@ -1329,14 +1357,14 @@ fn update_scene_room(
 
     if last
         .as_ref()
-        .is_some_and(|ev| &ev.realm_name == realm && ev.scene_id == scene.hash)
+        .is_some_and(|ev| &ev.realm_name == realm && *ev.scene_id == *scene.hash)
     {
         return;
     }
 
     let ev = SetCurrentScene {
         realm_name: realm.to_owned(),
-        scene_id: scene.hash.clone(),
+        scene_id: scene.hash.to_string(),
     };
 
     *last = Some(ev.clone());
@@ -1354,11 +1382,15 @@ fn set_ui_constraints(
     mut events: EventReader<SystemApi>,
     mut interactable_area: ResMut<InteractableArea>,
     mut hud_fullscreen: ResMut<HudFullscreen>,
+    mut hud_focus: ResMut<HudFocus>,
 ) {
     for ev in events.read() {
         match ev {
             SystemApi::SetInteractableArea(area) => interactable_area.0 = Some(*area),
-            SystemApi::SetUiFocus { covered, .. } => hud_fullscreen.0 = *covered,
+            SystemApi::SetUiFocus { ui, covered, .. } => {
+                hud_fullscreen.0 = *covered;
+                hud_focus.0 = *ui;
+            }
             _ => (),
         }
     }

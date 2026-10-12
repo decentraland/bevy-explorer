@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react'
 import { Avatar, Button, Tabs, openPopup, type TabItem } from '../../design'
 import { nameColor } from '../../lib/identity'
+import { knownUserColor } from '../session/profileStore'
 import { useSession } from '../session/SessionContext'
 import type {
   Community,
@@ -109,7 +110,7 @@ function Verified(): React.JSX.Element {
 function PostRow({ post }: { post: CommunityPost }): React.JSX.Element {
   return (
     <div className={styles.post}>
-      <Avatar src={post.authorPicture} name={post.author} color={nameColor(post.authorAddress)} size={36} />
+      <Avatar src={post.authorPicture} name={post.author} color={knownUserColor(post.authorAddress, post.author)} size={36} />
       <div className={styles.postBody}>
         <div className={styles.postHead}>
           <span className={styles.postAuthor}>{post.author}</span>
@@ -126,9 +127,9 @@ function MemberRow({ member, requested, onAdd }: { member: CommunityMember; requ
   const label = roleLabel(member.role)
   return (
     <div className={styles.member}>
-      <Avatar src={member.picture} name={member.name} color={nameColor(member.address)} size={40} status="online" />
+      <Avatar src={member.picture} name={member.name} color={knownUserColor(member.address, member.name)} size={40} status="online" />
       <div className={styles.memberInfo}>
-        <span className={styles.memberName} style={{ color: nameColor(member.address) }}>
+        <span className={styles.memberName} style={{ color: knownUserColor(member.address, member.name) }}>
           {member.name}
           {member.hasClaimedName && <Verified />}
         </span>
@@ -187,7 +188,10 @@ function EventRow({ event }: { event: CommunityEvent }): React.JSX.Element {
 export function CommunityModal({
   community,
   detail,
+  error = null,
   onJoin,
+  onRequestToJoin,
+  onCancelRequest,
   onLeave,
   onAddFriend,
   onOpenChat,
@@ -195,7 +199,11 @@ export function CommunityModal({
 }: {
   community: Community
   detail: CommunityDetailMessage | null
+  /** Why the last join/request/leave for this community failed. */
+  error?: string | null
   onJoin: (id: string) => void
+  onRequestToJoin: (id: string) => void
+  onCancelRequest: (id: string, requestId: string) => void
   onLeave: (id: string) => void
   onAddFriend: (address: string) => void
   onOpenChat: () => void
@@ -240,6 +248,7 @@ export function CommunityModal({
               <span><b>{compact(community.membersCount)}</b> Members</span>
             </div>
             {community.description && <p className={styles.desc}>{community.description}</p>}
+            {error && <p className={styles.error} role="alert">{error}</p>}
           </div>
           <div className={styles.headActions}>
             {member && (
@@ -247,8 +256,14 @@ export function CommunityModal({
             )}
             {member ? (
               <Button size="sm" variant="ghost" className={styles.joined} disabled>✓ Joined</Button>
+            ) : isPrivate && community.pendingRequestId != null ? (
+              <Button size="sm" variant="ghost" aria-label="Cancel join request" onClick={() => onCancelRequest(community.id, community.pendingRequestId!)}>
+                Requested
+              </Button>
+            ) : isPrivate ? (
+              <Button size="sm" onClick={() => onRequestToJoin(community.id)}>Request to Join</Button>
             ) : (
-              <Button size="sm" onClick={() => onJoin(community.id)}>{isPrivate ? 'Request to Join' : 'Join'}</Button>
+              <Button size="sm" onClick={() => onJoin(community.id)}>Join</Button>
             )}
             <div className={styles.kebabWrap}>
               <button type="button" className={styles.kebab} aria-label="More" onClick={() => setMenuOpen((o) => !o)}>⋮</button>
@@ -329,7 +344,10 @@ function CommunityModalContainer({ communityId, onClose }: { communityId: string
     <CommunityModal
       community={community}
       detail={detail}
+      error={communities.error?.id === communityId ? communities.error.message : null}
       onJoin={communities.join}
+      onRequestToJoin={communities.requestToJoin}
+      onCancelRequest={communities.cancelRequest}
       onLeave={communities.leave}
       onAddFriend={(address) => friends.act('request', address)}
       onOpenChat={() => {

@@ -13,7 +13,7 @@ use tokio::sync::{mpsc::UnboundedReceiver, Mutex};
 
 use crate::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtType},
-    RendererResponse, RpcCalls, SceneElapsedTime, SceneLogLevel, SceneLogMessage,
+    RendererResponse, RpcCalls, SceneElapsedTime, SceneId, SceneLogLevel, SceneLogMessage,
     SceneResourceCounters, SceneResponse,
 };
 
@@ -36,29 +36,58 @@ pub mod testing;
 
 #[cfg(target_arch = "wasm32")]
 mod response_channel {
-    // wasm randomly freezes if we use tokio channels here. no idea why.
-    pub type SceneResponseSender = std::sync::mpsc::SyncSender<super::SceneResponse>;
-    pub type SceneResponseReceiver = std::sync::mpsc::Receiver<super::SceneResponse>;
-    pub type TryRecvError = std::sync::mpsc::TryRecvError;
+    use crate::{SceneId, SceneResponse};
 
-    pub fn scene_response_channel() -> (super::SceneResponseSender, super::SceneResponseReceiver) {
+    // wasm randomly freezes if we use tokio channels here. no idea why.
+    pub type TaggedSceneResponseSender = std::sync::mpsc::SyncSender<(SceneId, SceneResponse)>;
+    pub type SceneResponseReceiver = std::sync::mpsc::Receiver<(SceneId, SceneResponse)>;
+    pub type TryRecvError = std::sync::mpsc::TryRecvError;
+    pub type TrySendError = std::sync::mpsc::TrySendError<(SceneId, SceneResponse)>;
+
+    pub fn scene_response_channel() -> (TaggedSceneResponseSender, SceneResponseReceiver) {
         std::sync::mpsc::sync_channel(1000)
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 mod response_channel {
-    // we can't use std channels here because the IPC layer wants to select on multiple tokio sources
-    pub type SceneResponseSender = tokio::sync::mpsc::Sender<super::SceneResponse>;
-    pub type SceneResponseReceiver = tokio::sync::mpsc::Receiver<super::SceneResponse>;
-    pub type TryRecvError = tokio::sync::mpsc::error::TryRecvError;
+    use crate::{SceneId, SceneResponse};
 
-    pub fn scene_response_channel() -> (super::SceneResponseSender, super::SceneResponseReceiver) {
+    // we can't use std channels here because the IPC layer wants to select on multiple tokio sources
+    pub type TaggedSceneResponseSender = tokio::sync::mpsc::Sender<(SceneId, SceneResponse)>;
+    pub type SceneResponseReceiver = tokio::sync::mpsc::Receiver<(SceneId, SceneResponse)>;
+    pub type TryRecvError = tokio::sync::mpsc::error::TryRecvError;
+    pub type TrySendError = tokio::sync::mpsc::error::TrySendError<(SceneId, SceneResponse)>;
+
+    pub fn scene_response_channel() -> (TaggedSceneResponseSender, SceneResponseReceiver) {
         tokio::sync::mpsc::channel(1000)
     }
 }
 
 pub use response_channel::*;
+
+/// A scene's end of the response channel. It tags each response with the id it was built
+/// with, so the receiver learns which scene sent it from the transport, not the payload.
+#[derive(Clone)]
+pub struct SceneResponseSender {
+    scene_id: SceneId,
+    channel: TaggedSceneResponseSender,
+}
+
+impl SceneResponseSender {
+    pub fn new(scene_id: SceneId, channel: TaggedSceneResponseSender) -> Self {
+        Self { scene_id, channel }
+    }
+
+    pub fn channel(&self) -> &TaggedSceneResponseSender {
+        &self.channel
+    }
+
+    #[allow(clippy::result_large_err)] // the channel's own error, as its try_send returns
+    pub fn try_send(&self, response: SceneResponse) -> Result<(), TrySendError> {
+        self.channel.try_send((self.scene_id, response))
+    }
+}
 
 // signal that the scene should exit. set cooperatively by the ops (renderer channel
 // closed, contract-breach policy kills) or externally by the scene host (watchdog
@@ -503,6 +532,7 @@ mod scene_log_budget_tests {
         s.put(ctx());
         s.put(crate::CrdtStore::default());
         s.put(FilteredCrdtStore::default());
+        s.put(RendererStore(crate::CrdtStore::default()));
         s.put(AllocatorContext(ctx()));
         s.put(crate::CrdtComponentInterfaces::default());
         s.put(crate::RpcCalls::default());
@@ -518,14 +548,14 @@ mod scene_log_budget_tests {
     fn oversized_crdt_batch_terminates_the_scene() {
         let (sx, mut rx) = scene_response_channel();
         let mut s = crdt_state();
-        s.put(sx);
+        s.put(SceneResponseSender::new(crate::SceneId::DUMMY, sx));
         let state = std::rc::Rc::new(std::cell::RefCell::new(s));
 
         let oversized = vec![0u8; super::engine::MAX_CRDT_BATCH_BYTES + 1];
         super::engine::crdt_send_to_renderer(state.clone(), &oversized);
 
         match rx.try_recv() {
-            Ok(crate::SceneResponse::Error(id, msg)) => {
+            Ok((id, crate::SceneResponse::Error(msg))) => {
                 assert_eq!(id, crate::SceneId::DUMMY);
                 assert!(msg.contains("CRDT batch"), "unexpected message: {msg}");
             }
@@ -571,7 +601,7 @@ mod scene_log_budget_tests {
 
         let (sx, _rx) = scene_response_channel();
         let mut s = crdt_state();
-        s.put(sx);
+        s.put(SceneResponseSender::new(crate::SceneId::DUMMY, sx));
 
         let entity = SceneEntityId {
             id: 600,
@@ -607,6 +637,53 @@ mod scene_log_budget_tests {
         );
     }
 
+    // Scene-initiated deletes reach the renderer mirror only via the scene's census (the
+    // engine->scene census that `update_from` reaps holds engine-initiated deaths only), so
+    // renderer-written values for them must be reaped there.
+    #[test]
+    fn scene_deletes_reap_the_renderer_store() {
+        use crate::interface::{crdt_context::CrdtContext, CrdtType};
+        use dcl_component::{DclReader, SceneComponentId, SceneCrdtTimestamp, SceneEntityId};
+
+        let (sx, _rx) = scene_response_channel();
+        let mut s = crdt_state();
+        s.put(SceneResponseSender::new(crate::SceneId::DUMMY, sx));
+
+        let dead = SceneEntityId {
+            id: 600,
+            generation: 0,
+        };
+        let live = SceneEntityId {
+            id: 601,
+            generation: 0,
+        };
+        for entity in [dead, live] {
+            s.borrow_mut::<RendererStore>().0.try_update(
+                SceneComponentId::POINTER_RESULT,
+                CrdtType::LWW_ENT,
+                entity,
+                SceneCrdtTimestamp(1),
+                Some(&mut DclReader::new(&[0u8; 16])),
+            );
+            let ctx = s.borrow_mut::<CrdtContext>();
+            ctx.init(entity);
+            ctx.take_census();
+        }
+        let state = std::rc::Rc::new(std::cell::RefCell::new(s));
+
+        super::engine::crdt_send_to_renderer(state.clone(), &crate::crdt::delete_entity(&dead));
+
+        assert_eq!(
+            state
+                .borrow()
+                .borrow::<RendererStore>()
+                .0
+                .retained_data_bytes(),
+            16,
+            "only the live entity's renderer-written value must be retained"
+        );
+    }
+
     // A scene may send at most MAX_CRDT_SENDS_PER_TICK CRDT batches per tick — the sdk6
     // adaption layer legitimately pumps that many paired round-trips inside onStart — but
     // one more with no intervening tick boundary is a contract breach that terminates the
@@ -616,18 +693,21 @@ mod scene_log_budget_tests {
     fn sends_over_the_per_tick_cap_terminate_the_scene() {
         let (sx, mut rx) = scene_response_channel();
         let mut s = crdt_state();
-        s.put(sx);
+        s.put(SceneResponseSender::new(crate::SceneId::DUMMY, sx));
         let state = std::rc::Rc::new(std::cell::RefCell::new(s));
 
         for _ in 0..super::engine::MAX_CRDT_SENDS_PER_TICK {
             super::engine::crdt_send_to_renderer(state.clone(), &[]);
-            assert!(matches!(rx.try_recv(), Ok(crate::SceneResponse::Ok(..))));
+            assert!(matches!(
+                rx.try_recv(),
+                Ok((_, crate::SceneResponse::Ok(..)))
+            ));
         }
         assert!(!state.borrow().borrow::<KillFlag>().killed());
 
         super::engine::crdt_send_to_renderer(state.clone(), &[]);
         match rx.try_recv() {
-            Ok(crate::SceneResponse::Error(id, msg)) => {
+            Ok((id, crate::SceneResponse::Error(msg))) => {
                 assert_eq!(id, crate::SceneId::DUMMY);
                 assert!(msg.contains("CRDT batches"), "unexpected message: {msg}");
             }
@@ -644,12 +724,15 @@ mod scene_log_budget_tests {
     fn one_send_per_tick_boundary_is_fine() {
         let (sx, mut rx) = scene_response_channel();
         let mut s = crdt_state();
-        s.put(sx);
+        s.put(SceneResponseSender::new(crate::SceneId::DUMMY, sx));
         let state = std::rc::Rc::new(std::cell::RefCell::new(s));
 
         for _ in 0..3 {
             super::engine::crdt_send_to_renderer(state.clone(), &[]);
-            assert!(matches!(rx.try_recv(), Ok(crate::SceneResponse::Ok(..))));
+            assert!(matches!(
+                rx.try_recv(),
+                Ok((_, crate::SceneResponse::Ok(..)))
+            ));
             // what the scene loop does at each tick boundary
             state.borrow_mut().try_take::<CrdtSendsThisTick>();
         }
@@ -662,13 +745,13 @@ mod scene_log_budget_tests {
     fn normal_crdt_batch_is_forwarded_and_scene_survives() {
         let (sx, mut rx) = scene_response_channel();
         let mut s = crdt_state();
-        s.put(sx);
+        s.put(SceneResponseSender::new(crate::SceneId::DUMMY, sx));
         let state = std::rc::Rc::new(std::cell::RefCell::new(s));
 
         super::engine::crdt_send_to_renderer(state.clone(), &[]);
 
         match rx.try_recv() {
-            Ok(crate::SceneResponse::Ok(id, ..)) => assert_eq!(id, crate::SceneId::DUMMY),
+            Ok((id, crate::SceneResponse::Ok(..))) => assert_eq!(id, crate::SceneId::DUMMY),
             other => panic!("expected Ok, got {other:?}"),
         }
         assert!(

@@ -5,7 +5,7 @@ use bevy::prelude::*;
 use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::{AvatarColor, AvatarEmote, SerializedProfile},
-    rpc::{RpcCall, RpcResultSender},
+    rpc::{RpcCall, RpcCallEvent, RpcResultSender},
     sets::SetupSets,
     structs::{
         ActiveDialog, AppConfig, CurrentRealm, PermissionTarget, SettingsTab, ShowSettingsEvent,
@@ -111,7 +111,7 @@ pub struct SettingsDialog {
 
 #[derive(Clone)]
 pub enum OnCloseEvent {
-    ChangeRealm(ChangeRealmEvent, RpcCall),
+    ChangeRealm(Box<ChangeRealmEvent>, RpcCall),
     SomethingElse,
 }
 
@@ -224,7 +224,7 @@ pub fn close_settings(
     mut q: Query<(Entity, &mut SettingsDialog)>,
     dui: Res<DuiRegistry>,
     mut cr: EventWriter<ChangeRealmEvent>,
-    mut rpc: EventWriter<RpcCall>,
+    mut rpc: EventWriter<RpcCallEvent>,
 ) {
     let Ok((settings_ent, mut settings)) = q.single_mut() else {
         warn!("no settings dialog");
@@ -233,15 +233,17 @@ pub fn close_settings(
 
     let ev = settings.on_close.take();
     if settings.modified {
-        let send_onclose =
-            move |mut cr: EventWriter<ChangeRealmEvent>, mut rpc: EventWriter<RpcCall>| match &ev {
+        let send_onclose = move |mut cr: EventWriter<ChangeRealmEvent>,
+                                 mut rpc: EventWriter<RpcCallEvent>| {
+            match &ev {
                 Some(OnCloseEvent::ChangeRealm(cr_ev, rpc_ev)) => {
-                    cr.write(cr_ev.clone());
-                    rpc.write(rpc_ev.clone());
+                    cr.write(cr_ev.as_ref().clone());
+                    rpc.write(RpcCallEvent::engine(rpc_ev.clone()));
                 }
                 Some(OnCloseEvent::SomethingElse) => (),
                 _ => (),
-            };
+            }
+        };
 
         commands
             .spawn(ZOrder::BackpackPopup.default())
@@ -281,8 +283,8 @@ pub fn close_settings(
         commands.entity(settings_ent).despawn();
         match &ev {
             Some(OnCloseEvent::ChangeRealm(cr_ev, rpc_ev)) => {
-                cr.write(cr_ev.clone());
-                rpc.write(rpc_ev.clone());
+                cr.write(cr_ev.as_ref().clone());
+                rpc.write(RpcCallEvent::engine(rpc_ev.clone()));
                 commands.send_event(SystemAudio(
                     "embedded://sounds/ui/toggle_enable.wav".to_owned(),
                 ));
@@ -451,12 +453,18 @@ fn process_profile(
     mut current_profile: ResMut<CurrentUserProfile>,
     mut processing: Local<Option<ProcessProfileState>>,
     mut deployed: EventReader<ProfileDeployedEvent>,
+    config: Res<AppConfig>,
 ) {
     if let Some(SystemApi::SetAvatar(set_avatar, sender)) = e
         .read()
         .filter(|ev| matches!(ev, SystemApi::SetAvatar(..)))
         .last()
     {
+        // the welcome page's save, after its accept: a held new profile deploys with it
+        if current_profile.deploy_held && config.terms_accepted() {
+            current_profile.deploy_held = false;
+        }
+
         let Some(profile) = current_profile.profile.as_mut() else {
             error!("can't amend missing profile");
             return;

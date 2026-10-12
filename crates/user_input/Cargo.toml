@@ -6,6 +6,7 @@ edition = "2021"
 [lib]
 
 [dependencies]
+avatar = { workspace = true }
 common = { workspace = true }
 input_manager = { workspace = true }
 ipfs = { workspace = true }

@@ -1,11 +1,13 @@
-use core::f32;
 use std::{
     ops::{Deref, DerefMut},
     time::Duration,
 };
 
 use bevy::{
-    animation::{graph::AnimationMask, RepeatAnimation},
+    animation::{
+        graph::{AnimationMask, AnimationNodeType},
+        RepeatAnimation,
+    },
     ecs::system::SystemParam,
     gltf::Gltf,
     math::Vec3Swizzles,
@@ -19,12 +21,12 @@ use collectibles::{
     Emote, EmoteExtraData, EmoteUrn,
 };
 use common::{
-    rpc::{RpcCall, RpcEventSender},
+    rpc::{RpcCall, RpcCallEvent, RpcEventSender, RpcOrigin},
     sets::SceneSets,
     structs::{
         AudioEmitter, AudioType, AvatarDynamicState, EmoteCommand, EmoteLifecycle,
-        EmoteLifecycleEvent, EmoteLifecycleSource, EmoteMask, MoveKind, PlayerModifiers,
-        PrimaryUser, SceneDrivenAnim, SceneDrivenAnimationFeedback,
+        EmoteLifecycleEvent, EmoteLifecycleSource, EmoteMask, MoveKind, OneShotAudio,
+        PlayerModifiers, PrimaryUser, SceneDrivenAnim, SceneDrivenAnimationFeedback,
         SceneDrivenAnimationFeedbackState,
     },
     util::TryPushChildrenEx,
@@ -102,8 +104,9 @@ fn masked_weight(share: f32) -> f32 {
 #[derive(Component, Default)]
 pub struct MaskedEmote {
     request: Option<MaskedRequest>,
-    /// Clip nodes by urn, added to the avatar graph with the lower body masked out.
-    clips: HashMap<String, AnimationNodeIndex>,
+    /// Clip nodes by urn, added to the avatar graph with the lower body masked out, and when each
+    /// was last played (see `clip_node`).
+    clips: HashMap<String, (AnimationNodeIndex, f32)>,
     /// The node being driven (playing, or fading out after the request ended) and its fade
     /// fraction, the share of the upper body it gets.
     playing: Option<(AnimationNodeIndex, f32)>,
@@ -161,7 +164,7 @@ pub struct LastEmoteCommand(EmoteCommand);
 #[allow(clippy::type_complexity)]
 fn handle_trigger_emotes(
     mut commands: Commands,
-    mut emote_cmds: EventReader<RpcCall>,
+    mut emote_cmds: EventReader<RpcCallEvent>,
     player: Query<(Entity, Option<&EmoteCommand>), With<PrimaryUser>>,
     mut perms: Permission<EmoteCommand>,
 ) {
@@ -174,13 +177,11 @@ fn handle_trigger_emotes(
 
     for ev in emote_cmds.read() {
         // a stop is an empty command; `animate` reports the interruption
-        let (scene, command) = match ev {
-            RpcCall::TriggerEmote {
-                scene,
-                urn,
-                r#loop,
-                mask,
-            } => (
+        let (scene, command) = match (&ev.origin, &ev.call) {
+            (
+                RpcOrigin::Scene { entity: scene, .. },
+                RpcCall::TriggerEmote { urn, r#loop, mask },
+            ) => (
                 scene,
                 EmoteCommand {
                     urn: urn.clone(),
@@ -189,7 +190,7 @@ fn handle_trigger_emotes(
                     mask: *mask,
                 },
             ),
-            RpcCall::StopEmote { scene } => (
+            (RpcOrigin::Scene { entity: scene, .. }, RpcCall::StopEmote) => (
                 scene,
                 EmoteCommand {
                     urn: String::new(),
@@ -231,10 +232,10 @@ fn broadcast_emote(
     mut count: Local<u32>,
     time: Res<Time>,
     mut senders: Local<Vec<RpcEventSender>>,
-    mut subscribe_events: EventReader<RpcCall>,
+    mut subscribe_events: EventReader<RpcCallEvent>,
 ) {
     // gather any event receivers
-    for sender in subscribe_events.read().filter_map(|ev| match ev {
+    for sender in subscribe_events.read().filter_map(|ev| match &ev.call {
         RpcCall::SubscribePlayerExpression { sender } => Some(sender),
         _ => None,
     }) {
@@ -449,6 +450,11 @@ fn playing<'a>(active: &'a ActiveEmote, masked: &'a MaskedEmote) -> Option<&'a E
         .as_ref()
         .filter(|request| request.active)
         .map(|request| &request.playback)
+}
+
+/// Whether the avatar is playing an emote in either slot (head gaze yields to it).
+pub fn is_emoting(active: &ActiveEmote, masked: &MaskedEmote) -> bool {
+    playing(active, masked).is_some()
 }
 
 /// What tells one played emote from another: a re-trigger of the same urn is a new emote.
@@ -1337,10 +1343,63 @@ enum Slot<'a> {
     /// clip still fading out.
     UpperBody {
         /// the overlay's graph nodes, by urn
-        clips: &'a mut HashMap<String, AnimationNodeIndex>,
+        clips: &'a mut HashMap<String, (AnimationNodeIndex, f32)>,
         /// the overlay clip running and its share
         playing: &'a mut Option<(AnimationNodeIndex, f32)>,
     },
+}
+
+/// Clip nodes an avatar's graph holds per slot kind before a new clip replaces one: the graph
+/// can't drop nodes, and each keeps its clip loaded.
+const MAX_CLIP_NODES: usize = 16;
+
+/// `urn`'s clip node in the avatar graph, stamped as played at `now`. A new urn gets `clip` under
+/// `mask` on a new node or, at `MAX_CLIP_NODES`, on the least recently played node that's off the
+/// player. `None` if the graph isn't loaded.
+#[allow(clippy::too_many_arguments)]
+fn clip_node(
+    nodes: &mut HashMap<String, (AnimationNodeIndex, f32)>,
+    urn: &str,
+    now: f32,
+    player: &AnimationPlayer,
+    graphs: &mut Assets<AnimationGraph>,
+    graph: &AnimationGraphHandle,
+    clip: Handle<AnimationClip>,
+    mask: AnimationMask,
+) -> Option<AnimationNodeIndex> {
+    // look up by &str first — the entry api would allocate a String per call
+    if let Some((ix, played)) = nodes.get_mut(urn) {
+        *played = now;
+        return Some(*ix);
+    }
+
+    // only mutate the graph when it changes: `get_mut` re-threads it
+    let graph = graphs.get_mut(graph)?;
+    let stale = if nodes.len() < MAX_CLIP_NODES {
+        None
+    } else {
+        nodes
+            .iter()
+            .filter(|(_, (ix, _))| player.animation(*ix).is_none())
+            .min_by(|(_, (_, a)), (_, (_, b))| a.total_cmp(b))
+            .map(|(urn, (ix, _))| (urn.clone(), *ix))
+    };
+    let ix = match stale {
+        Some((stale_urn, ix)) => {
+            debug!("replacing clip {stale_urn} with {urn}");
+            nodes.remove(&stale_urn);
+            let node = graph.get_mut(ix)?;
+            node.node_type = AnimationNodeType::Clip(clip);
+            node.mask = mask;
+            ix
+        }
+        None => {
+            debug!("adding clip {urn}");
+            graph.add_clip_with_mask(clip, mask, 1.0, graph.root)
+        }
+    };
+    nodes.insert(urn.to_owned(), (ix, now));
+    Some(ix)
 }
 
 /// Why a slot didn't play this frame.
@@ -1428,23 +1487,25 @@ fn play_slot(
     let Ok((mut player, transitions, clips, graph)) = players.get_mut(player_ent) else {
         return Err(Hold::NoPlayer);
     };
-    let graph = graph.and_then(|graph| params.graphs.get_mut(graph));
+    let now = params.time.elapsed_secs();
     let (clip_ix, restart) = match &mut slot {
         Slot::FullBody { .. } => {
             let mut clips = clips.unwrap();
-            // look up by &str first — the entry api would allocate a String per call
-            let clip_ix = match clips.named.get(playback.urn.as_str()) {
-                Some((ix, _)) => *ix,
-                None => {
-                    debug!("adding clip");
-                    let ix = match graph {
-                        Some(graph) => graph.add_clip(clip, 1.0, graph.root),
-                        None => AnimationNodeIndex::new(u32::MAX as usize),
-                    };
-                    clips.named.insert(playback.urn.to_string(), (ix, 0.0));
-                    ix
-                }
-            };
+            // the avatar's `Clips` durations (unused here) hold when each node was last played
+            let clip_ix = graph
+                .and_then(|graph| {
+                    clip_node(
+                        &mut clips.named,
+                        playback.urn.as_str(),
+                        now,
+                        &player,
+                        &mut params.graphs,
+                        graph,
+                        clip,
+                        0,
+                    )
+                })
+                .unwrap_or(AnimationNodeIndex::new(u32::MAX as usize));
             let running = match &transitions {
                 Some(transitions) => transitions.get_main_animation() == Some(clip_ix),
                 None => player.is_playing_animation(clip_ix),
@@ -1452,13 +1513,20 @@ fn play_slot(
             (clip_ix, playback.restart || !running)
         }
         Slot::UpperBody { clips, .. } => {
-            let Some(graph) = graph else {
+            let Some(clip_ix) = graph.and_then(|graph| {
+                clip_node(
+                    clips,
+                    playback.urn.as_str(),
+                    now,
+                    &player,
+                    &mut params.graphs,
+                    graph,
+                    clip,
+                    LOWER_BODY_MASK,
+                )
+            }) else {
                 return Err(Hold::NoPlayer);
             };
-            let clip_ix = *clips.entry(playback.urn.to_string()).or_insert_with(|| {
-                debug!("adding masked clip {}", playback.urn);
-                graph.add_clip_with_mask(clip, LOWER_BODY_MASK, 1.0, graph.root)
-            });
             (
                 clip_ix,
                 playback.restart || !player.is_playing_animation(clip_ix),
@@ -1763,6 +1831,21 @@ fn play_current_emote(
             }
         }
     }
+
+    // extras of avatars that weren't handled this frame (despawned, or no longer emoting) go
+    for extras in prev_spawned_extras.into_values() {
+        despawn_extras(&mut commands, &mut params.scene_spawner, extras);
+    }
+    retiring_extras.retain(|avatar, (wrapper, scene)| {
+        if q.contains(*avatar) {
+            return true;
+        }
+        params.scene_spawner.despawn_instance(*scene);
+        if let Ok(mut commands) = commands.get_entity(*wrapper) {
+            commands.despawn();
+        }
+        false
+    });
 }
 
 /// Play each avatar's upper-body emote request over whatever `play_current_emote` has going, as
@@ -1866,6 +1949,11 @@ fn play_masked_emote(
             }
         }
     }
+
+    // extras of avatars no longer in the query go
+    for extras in prev_spawned_extras.into_values() {
+        despawn_extras(&mut commands, &mut params.scene_spawner, extras);
+    }
 }
 
 /// emote
@@ -1925,7 +2013,8 @@ fn emote_console_command(
 // Dedups against the last observed sound list per avatar so that the scene holding
 // the same list across frames doesn't re-fire sounds — a new play is triggered
 // only when the list transitions to a different value (including the scene clearing
-// and re-asserting it on a later frame).
+// and re-asserting it on a later frame). Emitters are `OneShotAudio`, so the audio
+// backend despawns them once they finish.
 fn play_scene_driven_sounds(
     mut commands: Commands,
     avatars: Query<(Entity, &SceneDrivenAnim)>,
@@ -1957,6 +2046,7 @@ fn play_scene_driven_sounds(
                         ty: AudioType::Avatar,
                         ..Default::default()
                     },
+                    OneShotAudio,
                 ))
                 .id();
             if let Ok(mut entity_commands) = commands.get_entity(entity) {

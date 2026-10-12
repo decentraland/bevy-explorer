@@ -1,11 +1,95 @@
 // Engine logic - ES module
 // Handles WASM/WebGPU initialization and game execution
 
-import init, { engine_init, engine_run, engine_console_command, engine_home_scene, gpu_cache_hash } from "./pkg/webgpu_build.js";
-import { initGpuCache } from "./gpu_cache.js";
+import init, { engine_init, engine_start, engine_spawn_worker, engine_console_command, engine_home_scene, engine_terms_accepted, gpu_cache_hash, report_pointer_lock, media_host_main, audio_host_main, livekit_host_main, engine_prepare_render } from "./pkg/webgpu_build.js";
+import { createSandboxHost } from "./sandbox_host.js";
 
 // Re-export for main.js
-export { engine_home_scene, gpu_cache_hash, initGpuCache };
+export { engine_home_scene, engine_terms_accepted, gpu_cache_hash };
+
+// Spawns the render worker ahead of start(), so gpu_cache.js warms its device there (src/web.rs
+// engine_render_setup) while the user is still on the login screen; resolves once it has.
+// start() attaches the engine to that worker.
+export function prepareRender() {
+  return new Promise((resolve, reject) => {
+    window.__gpuCacheReady = resolve;
+    try {
+      engine_prepare_render(document.getElementById("mygame-canvas"), glueUrl);
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+// The compiled engine module and its shared memory: every worker (asset loader/processor, scene
+// sandboxes, and the engine + render workers started by start()) instantiates the same module on
+// the same memory.
+let compiledModule = null;
+let sharedMemory = null;
+
+/**
+ * Logs the app-level messages of a worker (bevy's own relay handles the workers' console
+ * mirroring and page calls).
+ * @param {string} name - worker name for logging
+ * @returns {(e: MessageEvent) => void}
+ */
+function workerMessageHandler(name) {
+  return (e) => {
+    const data = e.data;
+    if (!data) return;
+    if (data.__bevy_ready !== undefined) console.log(`[Main JS] ${name} worker ready`);
+    else if (data.type) console.log(`[Main JS] ${name} worker: ${data.type}`);
+  };
+}
+
+/**
+ * Starts a headless scene server for a local preview beside the client: a second instance of
+ * the engine in a hidden frame (headless.js). For the embedder that opened the preview, never
+ * the engine. `options` is an engine_run options object naming the preview realm. Resolves once
+ * the server's workers are started; rejects when the realm already has a server in this browser.
+ * @param {object} options
+ * @returns {Promise<object>}
+ */
+export function startServer(options) {
+  const frame = document.createElement("iframe");
+  frame.style.display = "none";
+  frame.src = new URL("./headless.html", import.meta.url).href;
+  const started = new Promise((resolve, reject) => {
+    frame.addEventListener("load", () => {
+      try {
+        frame.contentWindow.startHeadless(compiledModule, options).then(resolve, reject);
+      } catch (e) {
+        reject(e);
+      }
+    });
+  });
+  document.body.appendChild(frame);
+  // a server that did not start leaves no frame, and with it no claim on its realm (headless.js)
+  started.catch(() => frame.remove());
+  return started;
+}
+window.__bevyStartServer = startServer;
+
+/** The url of this module's wasm-bindgen glue, for bevy's workers to import. */
+const glueUrl = new URL("./pkg/webgpu_build.js", import.meta.url).href;
+
+/**
+ * Resolves once a worker bevy spawned has run its entry (it posts `__bevy_ready`), or rejects if
+ * it failed to (`__bevy_ready` with an `error`).
+ * @param {Worker} worker
+ * @returns {Promise<void>}
+ */
+function workerReady(worker) {
+  return new Promise((resolve, reject) => {
+    const onReady = (e) => {
+      if (e.data?.__bevy_ready === undefined) return;
+      worker.removeEventListener("message", onReady);
+      if (e.data.error !== undefined) reject(new Error(e.data.error));
+      else resolve();
+    };
+    worker.addEventListener("message", onReady);
+  });
+}
 
 /**
  * Records an uncaught worker error as context for the crash watchdog. A worker
@@ -159,7 +243,7 @@ export async function initEngine() {
   // so the 'compile' step only covers the tail left after the last byte arrives.
   setLoadingStepActive('download');
   console.time("compileTime")
-  const compiledModule = await compileWasmWithProgress(
+  compiledModule = await compileWasmWithProgress(
     wasmUrl,
     expectedWasmSize,
     (percent) => setLoadingStepProgress('download', percent),
@@ -173,12 +257,21 @@ export async function initEngine() {
 
   const initialMemoryPages = 1280; // setting initial memory high causes malloc failures
   const maximumMemoryPages = 65536;
-  const sharedMemory = new WebAssembly.Memory({
+  sharedMemory = new WebAssembly.Memory({
     initial: initialMemoryPages,
     maximum: maximumMemoryPages,
     shared: true,
   });
   window.wasm_memory = sharedMemory;
+
+  // Browser-only actions the engine relays here (copypwasmta via src/web.rs, crates/restricted_actions):
+  // the engine worker has no clipboard and no window.open. The click or key press that triggered
+  // them gives the page the transient activation they need.
+  window.__copyToClipboard = (text) => navigator.clipboard.writeText(text);
+  window.__readClipboard = () => navigator.clipboard.readText();
+  window.__openExternalUrl = (url) => {
+    if (!window.open(url, "_blank")) console.warn("[Main JS] window.open blocked:", url);
+  };
 
   // Setup HLS video source callback
   window.setVideoSource = (video, src) => {
@@ -224,207 +317,20 @@ export async function initEngine() {
     }
   };
 
-  // Live sandbox workers by scene id (BigInt), for kill escalation — see terminate_sandbox.
-  // Entries are added on SCENE_READY (a worker reports which scene it popped from the shared
-  // queue) and removed on SHUTDOWN_COMPLETE (the worker's dying ack, posted on every exit
-  // path just before it closes itself).
-  const sandboxWorkers = new Map();
-  // Scenes killed before their worker reported in; the escalation arms on SCENE_READY.
-  const pendingKills = new Set();
-  // Scenes whose worker exited on its own (scene error / graceful end) before the engine's
-  // kill request arrived. The eventual terminate_sandbox call consumes the entry and
-  // resolves immediately, instead of parking in pendingKills waiting on a SCENE_READY that
-  // will never come.
-  const completedScenes = new Set();
-  const KILL_GRACE_MS = 5000;
-
-  // killFlags layout (Int32Array over a per-worker SharedArrayBuffer, shared with the worker
-  // script — NOT with scene code, which can't see the worker's module scope):
-  //   [0] KILL: engine has decided to terminate; the worker's op wrapper parks instead of
-  //       entering the engine wasm
-  //   [1] IN_RUST: the worker is inside a wasm call (op wrapper), or anywhere in its
-  //       teardown — held across the whole teardown because the drain's timer gaps let the
-  //       executor poll draining op futures, and those polls enter the engine wasm unflagged
-  //   [2] park target for Atomics.wait — never written
-  const KILL = 0, IN_RUST = 1;
-
-  // Tier-2 forceful kill: a worker that ignored SHUTDOWN is stuck in a sync spin. A naive
-  // Worker.terminate() could land mid-op while the worker holds a lock inside the shared
-  // engine wasm memory (allocator, channel mutex) and corrupt the engine, so handshake
-  // first: set KILL, then wait for IN_RUST to clear. Once KILL is visible the op wrapper
-  // parks before entering rust, so IN_RUST == 0 means the worker can never re-enter — the
-  // spin is pure JS and terminate is safe. The worker's few unwrapped wasm calls all sit in
-  // its bounded init path (pre-scene-code), where a 20s-unresponsive scene cannot be.
-  //
-  // The dead thread's state in the shared wasm memory is deliberately leaked: a parked
-  // async op future may still reference it, and its waker can fire after the terminate
-  // (channel close, comms), so freeing the stack/TLS here would corrupt the engine.
-  const forceTerminate = (sceneId) => {
-    const entry = sandboxWorkers.get(sceneId);
-    if (!entry) return;
-    Atomics.store(entry.killFlags, KILL, 1);
-    const startedAt = performance.now();
-    const tryTerminate = () => {
-      // acked in the meantime — the worker got out on its own
-      if (!sandboxWorkers.get(sceneId)) return;
-      if (Atomics.load(entry.killFlags, IN_RUST) === 1) {
-        if (performance.now() - startedAt > 10000) {
-          console.error(`[Main JS] scene ${sceneId} is blocked inside engine wasm; leaving worker running`);
-          return;
-        }
-        setTimeout(tryTerminate, 100);
-        return;
-      }
-      entry.worker.terminate();
-      sandboxWorkers.delete(sceneId);
-      console.warn(`[Main JS] scene ${sceneId} forcibly terminated; thread state leaked`);
-    };
-    // defer so a SHUTDOWN_COMPLETE already queued by the worker gets processed first
-    setTimeout(tryTerminate, 100);
-  };
-
-  // Called from the engine when it drops a scene's handle (despawn, or the watchdog marking
-  // it broken). The kill flag is already set in shared wasm memory, so a healthy scene needs
-  // nothing from us: it exits at its next tick boundary and acks with SHUTDOWN_COMPLETE. No
-  // ack within the grace period means the scene is wedged in an await — post SHUTDOWN so the
-  // worker tears itself down from its event loop. A worker that ignores that too is stuck in
-  // a sync spin: forcefully terminate it (forceTerminate above).
-  window.terminate_sandbox = (sceneId) => {
-    const entry = sandboxWorkers.get(sceneId);
-    if (!entry) {
-      if (completedScenes.delete(sceneId)) {
-        console.debug(`[Main JS] kill requested for scene ${sceneId}; worker already exited`);
-        return;
-      }
-      console.debug(`[Main JS] kill requested for scene ${sceneId} before its worker reported in; deferred to SCENE_READY`);
-      pendingKills.add(sceneId);
-      return;
-    }
-    console.debug(`[Main JS] kill requested for scene ${sceneId}; awaiting graceful exit`);
-    entry.timer = setTimeout(() => {
-      console.warn(`[Main JS] scene ${sceneId} still running after kill; posting SHUTDOWN`);
-      entry.worker.postMessage({ type: "SHUTDOWN", shutdownToken: entry.shutdownToken });
-      entry.timer = setTimeout(() => {
-        console.error(`[Main JS] scene ${sceneId} did not respond to SHUTDOWN (sync spin?); force-terminating`);
-        forceTerminate(sceneId);
-      }, KILL_GRACE_MS);
-    }, KILL_GRACE_MS);
-  };
-
-  // Setup sandbox worker spawn callback
-  window.spawn_and_init_sandbox = async () => {
-    var timeoutId;
-    return new Promise((resolve, _reject) => {
-      // The BUNDLE, not sandbox_worker.js. Scene code shares this worker's realm, and any
-      // module in that realm can be re-imported by URL — which for "./pkg/webgpu_build.js"
-      // hands back OUR initialised instance (wasm-bindgen's init returns the cached exports),
-      // shared engine heap and all. Inlining makes the glue's exports ordinary module-scope
-      // bindings of the bundle instead. A scene can still import the bundle's URL, but a
-      // namespace object exposes only that module's *exports*, and this entry has none — so
-      // it gets an empty object. Keep sandbox_worker.js export-free or that stops being true.
-      // Built alongside the wasm (see react-web/README.md); lives in pkg/ so the glue's
-      // relative paths still resolve. sandbox_worker.js is unchanged, just no longer the entry.
-      const sandboxWorkerPath = new URL("./pkg/sandbox_worker.bundle.js", import.meta.url);
-
-      var timeoutCount = 0;
-      let logTimeout = () => {
-        console.log(
-          "[Main JS] Still waiting for worker to init",
-          timeoutCount
-        );
-        timeoutCount += 1;
-        timeoutId = setTimeout(logTimeout, 5000);
-      };
-      timeoutId = setTimeout(logTimeout, 5000);
-
-      // Payload goes out unprompted — a worker queues messages posted before it has a listener,
-      // so nothing needs to ask for it. Scene code shares this worker's realm and reaches the
-      // real worker global (bare `postMessage` is the platform's, not ours), so any request we
-      // honoured would be forgeable, and sharedMemory is the engine heap. This side keeps
-      // listening while scene code runs (for the SCENE_READY / SHUTDOWN_COMPLETE kill-tracking
-      // messages), so every message the worker script posts carries killToken — a per-worker
-      // secret held in the worker's module scope, where scene code can't see it — and anything
-      // without it is dropped as a forgery.
-      const spawn = () => {
-        const sandboxWorker = new Worker(sandboxWorkerPath, { type: "module" });
-        sandboxWorker.onerror = workerCrashHandler("sandbox");
-        const killToken = crypto.randomUUID();
-        // Separate secret authenticating the inbound SHUTDOWN (scene code can synthesize
-        // message events inside the worker via dispatchEvent). Deliberately NOT killToken:
-        // a scene listening for messages observes a genuine SHUTDOWN and learns this token,
-        // and must not thereby gain the ability to forge the worker→engine ack.
-        const shutdownToken = crypto.randomUUID();
-        const killFlags = new Int32Array(new SharedArrayBuffer(16));
-        sandboxWorker.postMessage({
-          type: "INIT_WORKER",
-          payload: {
-            compiledModule,
-            sharedMemory,
-            killFlags: killFlags.buffer,
-            // Set by host pages that want the super-user scene's BroadcastChannel names scoped
-            // to this tab (react-web seeds it before booting — issue #1089). Left unset, channel
-            // names stay bare — embedders like creator-hub's inspector share the bus with the
-            // scene from a DIFFERENT document (parent of the engine iframe), which can't see
-            // this window's session id.
-            bridgeSession: window.__bridgeSession,
-            killToken,
-            shutdownToken,
-          },
-        });
-        let warnedForgery = false;
-        sandboxWorker.onmessage = (workerEvent) => {
-          if (workerEvent.data.killToken !== killToken) {
-            // scene code can reach the bare postMessage; drop (and note) anything the
-            // worker script didn't token
-            if (!warnedForgery) {
-              warnedForgery = true;
-              console.warn("[Main JS] dropped untokened message from a sandbox worker (scene code posting to the engine?)", workerEvent.data && workerEvent.data.type);
-            }
-            return;
-          }
-          if (workerEvent.data.type === "INIT_COMPLETE") {
-            resolve();
-          }
-          if (workerEvent.data.type === "INIT_FAILED") {
-            // The failed worker closes itself; this replaces it, wired the same way.
-            sandboxWorker.onmessage = null;
-            console.log("[Main JS] Sandbox init failed; retrying");
-            spawn();
-          }
-          if (workerEvent.data.type === "SCENE_READY") {
-            console.debug(`[Main JS] sandbox worker running scene ${workerEvent.data.sceneId}`);
-            sandboxWorkers.set(workerEvent.data.sceneId, {
-              worker: sandboxWorker,
-              timer: undefined,
-              killFlags,
-              shutdownToken,
-            });
-            if (pendingKills.delete(workerEvent.data.sceneId)) {
-              window.terminate_sandbox(workerEvent.data.sceneId);
-            }
-          }
-          if (workerEvent.data.type === "SHUTDOWN_COMPLETE") {
-            const sid = workerEvent.data.sceneId;
-            const entry = sandboxWorkers.get(sid);
-            if (entry && entry.worker === sandboxWorker) {
-              console.debug(`[Main JS] scene ${sid} worker exited cleanly`);
-              clearTimeout(entry.timer);
-              sandboxWorkers.delete(sid);
-            } else if (sid !== undefined && !pendingKills.delete(sid)) {
-              // no entry: the worker exited before the engine asked (scene error / graceful
-              // end). Remember it so the eventual kill request resolves immediately.
-              // (sid is undefined when init_scene failed before the worker knew its scene —
-              // nothing to correlate.)
-              completedScenes.add(sid);
-            }
-          }
-        };
-      };
-      spawn();
-    }).finally(() => {
-      clearTimeout(timeoutId);
-    });
-  };
+  // The scene sandbox workers (sandbox_host.js), behind the page functions the engine calls.
+  const sandboxes = createSandboxHost({
+    compiledModule,
+    sharedMemory,
+    // Set by host pages that want the super-user scene's BroadcastChannel names scoped
+    // to this tab (react-web seeds it before booting — issue #1089). Left unset, channel
+    // names stay bare — embedders like creator-hub's inspector share the bus with the
+    // scene from a DIFFERENT document (parent of the engine iframe), which can't see
+    // this window's session id.
+    bridgeSession: window.__bridgeSession,
+    onWorkerCrash: workerCrashHandler("sandbox"),
+  });
+  window.terminate_sandbox = sandboxes.terminate;
+  window.spawn_and_init_sandbox = sandboxes.spawn;
 
   // Step 3: Initialize engine
   setLoadingStepActive('init');
@@ -442,49 +348,16 @@ export async function initEngine() {
   setLoadingStepActive('workers');
   setLoadingStepProgress('workers', 0);
 
-  // start asset loader thread
-  await new Promise((resolve, _reject) => {
-    const assetLoaderPath = new URL("./asset_loader.js", import.meta.url);
-
-    const assetLoader = new Worker(assetLoaderPath, { type: "module" });
-    assetLoader.onerror = workerCrashHandler("asset loader");
-    // Unprompted, as for the sandbox above.
-    assetLoader.postMessage({
-      type: "INIT_ASSET_LOADER",
-      payload: {
-        compiledModule,
-        sharedMemory,
-      },
-    });
-    assetLoader.onmessage = (workerEvent) => {
-      if (workerEvent.data.type === "INITIALIZED") {
-        assetLoader.onmessage = null;
-        resolve();
-      }
-    };
-  });
+  // The asset loader and processor threads: workers of ours, spawned on bevy's terms
+  // (src/web.rs init_asset_load_thread / image_processor_main).
+  const assetLoader = engine_spawn_worker(glueUrl, "init_asset_load_thread", "asset loader");
+  assetLoader.onerror = workerCrashHandler("asset loader");
+  await workerReady(assetLoader);
   setLoadingStepProgress('workers', 50);
 
-  // start asset processor thread
-  await new Promise((resolve, _reject) => {
-    const assetProcessorPath = new URL("./asset_processor.js", import.meta.url);
-
-    const assetProcessor = new Worker(assetProcessorPath, { type: "module" });
-    assetProcessor.onerror = workerCrashHandler("asset processor");
-    assetProcessor.postMessage({
-      type: "INIT_ASSET_PROCESSOR",
-      payload: {
-        compiledModule,
-        sharedMemory,
-      },
-    });
-    assetProcessor.onmessage = (workerEvent) => {
-      if (workerEvent.data.type === "INITIALIZED") {
-        assetProcessor.onmessage = null;
-        resolve();
-      }
-    };
-  });
+  const assetProcessor = engine_spawn_worker(glueUrl, "image_processor_main", "asset processor");
+  assetProcessor.onerror = workerCrashHandler("asset processor");
+  await workerReady(assetProcessor);
   setLoadingStepCompleted('workers');
 }
 
@@ -569,9 +442,47 @@ export function start(options = {}) {
     delete window._buildEngineApi;
   };
 
+  // The engine runs off the page: winit's DOM side stays here on the canvas, the app world runs
+  // on an engine worker, the render world on a render worker that owns the canvas as an
+  // OffscreenCanvas, and the ComputeTaskPool's systems on compute workers (bevy::web_worker,
+  // src/web.rs engine_start), as many as the `computeThreads` launch option says, else sized
+  // from the core count there.
+  const canvas = document.getElementById("mygame-canvas");
   // Everything the host handed us goes through as-is (the engine rejects unknown keys).
-  engine_run(options);
-  window.engine_console_command = engine_console_command;
+  const { engine: engineWorker, render: renderWorker, compute: computeWorkers } = engine_start(
+    canvas,
+    options,
+    glueUrl
+  );
+  console.log(`[Main JS] compute workers: ${computeWorkers.length}`);
+  renderWorker.onerror = workerCrashHandler("render");
+  renderWorker.addEventListener("message", workerMessageHandler("render"));
+  computeWorkers.forEach((worker, i) => {
+    worker.onerror = workerCrashHandler(`compute ${i}`);
+    worker.addEventListener("message", workerMessageHandler(`compute ${i}`));
+  });
+  engineWorker.onerror = workerCrashHandler("engine");
+  engineWorker.addEventListener("message", workerMessageHandler("engine"));
+  // The console RPC is the host's "engine is up" signal (engineRpc.ts ready()); the engine
+  // worker is ready once engine_run has returned, having wired the command channel.
+  workerReady(engineWorker).then(() => {
+    window.engine_console_command = engine_console_command;
+  });
+
+  // The engine worker cannot see the document's pointer-lock state (Escape, a refused request):
+  // report it through the shared wasm memory (src/web.rs report_pointer_lock).
+  document.addEventListener("pointerlockchange", () => report_pointer_lock(document.pointerLockElement === canvas));
+  document.addEventListener("pointerlockerror", () => report_pointer_lock(false));
+
+  // Html media (scene video/audio) lives here on the page, the only thread with a DOM; the
+  // engine drives it over channels and the page transfers decoded frames to the render worker
+  // (crates/media/src/html).
+  media_host_main(renderWorker);
+  // Scene audio sources: the WebAudio graphs live here too (crates/av/src/audio_host_wasm.rs).
+  audio_host_main();
+  // Livekit rooms: the livekit-client objects (WebRTC) live here (crates/comms/src/livekit/web/host.rs).
+  livekit_host_main();
+
   window.loadSceneUtils = () => {
     return new Promise((resolve, reject) => {
       const s = document.createElement('script');

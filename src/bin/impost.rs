@@ -25,7 +25,7 @@ use bevy::{
 use common::{
     inputs::InputMap,
     profile::SerializedProfile,
-    rpc::RpcCall,
+    rpc::RpcCallEvent,
     sets::SetupSets,
     structs::{
         AppConfig, AppError, AvatarDynamicState, CurrentRealm, CursorLocks, EngineMovementControl,
@@ -296,7 +296,7 @@ fn main() -> AppExit {
         .init_resource::<CumulativeAxisData>()
         .init_resource::<ToolTips>()
         .init_resource::<SceneGlobalLight>()
-        .add_event::<RpcCall>()
+        .add_event::<RpcCallEvent>()
         .add_event::<ScrollTargetEvent>()
         .add_event::<PermissionUsed>()
         .init_resource::<PreviewMode>()

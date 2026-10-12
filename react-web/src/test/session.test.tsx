@@ -3,6 +3,7 @@ import { act, waitFor } from '@testing-library/react'
 import { renderSession, enterAsGuest, FakeDriver } from './harness'
 import { openProfileCard } from '../features/profileCard/ProfileCard'
 import { resetPopups } from '../design'
+import { DEFAULT_REALM } from '../lib/baseDomain'
 
 // The avatarClick handler opens the world profile card as a popup; stub it so we can assert the call.
 vi.mock('../features/profileCard/ProfileCard', () => ({ openProfileCard: vi.fn() }))
@@ -11,8 +12,10 @@ afterEach(resetPopups)
 // Records launch() so tests can assert the realm/position the engine was booted with.
 class LaunchRecordingDriver extends FakeDriver {
   launches: Array<[string?, string?]> = []
-  launch(realm?: string, position?: string): void {
+  hosts: Array<{ holdWorld?: boolean } | undefined> = []
+  launch(realm?: string, position?: string, host?: { holdWorld?: boolean }): void {
     this.launches.push([realm, position])
+    this.hosts.push(host)
   }
 }
 
@@ -54,13 +57,39 @@ describe('session domain', () => {
     expect(h.driver.sentOf('getNotifications')).toHaveLength(1)
   })
 
+  it('the lobby launches holding the world, and a failed trip from it comes back to the lobby', async () => {
+    const driver = new LaunchRecordingDriver()
+    const h = renderSession({ userId: null }, driver)
+    await waitFor(() => expect(h.session().login.status).toBe('sign-in-or-guest'))
+    act(() => h.session().login.exploreAsGuest())
+    await waitFor(() => expect(h.session().phase).toBe('lobby'))
+    await waitFor(() => expect(driver.hosts).toEqual([{ holdWorld: true }]))
+    await waitFor(() => expect(h.session().login.busy).toBe(false))
+
+    act(() => h.session().pickDestination({ kind: 'parcel', x: 10, y: 20 }))
+    const first = driver.sentOf('teleport')[0] as { realm?: string; x: number; y: number; travelId: number }
+    expect(first).toMatchObject({ x: 10, y: 20 })
+    expect(first.realm).toBeTruthy()
+    expect(h.session().phase).toBe('entering')
+    act(() => driver.emit({ kind: 'travelResult', travelId: first.travelId, ok: false, realm: first.realm ?? '', message: 'unreachable' }))
+    await waitFor(() => expect(h.session().phase).toBe('lobby'))
+    expect(h.session().travelError).not.toBeNull()
+
+    act(() => h.session().pickDestination(null))
+    const second = driver.sentOf('teleport')[1] as { realm?: string; travelId: number }
+    act(() => driver.emit({ kind: 'travelResult', travelId: second.travelId, ok: true, realm: second.realm ?? '' }))
+    act(() => driver.emit({ kind: 'event', name: 'playerReady' }))
+    act(() => driver.emit({ kind: 'sceneLoading', state: { visible: false, realmConnected: true, title: '', pendingAssets: null } }))
+    await waitFor(() => expect(h.session().phase).toBe('world'))
+    expect(driver.launches).toHaveLength(1)
+  })
+
   it('jump-in reuses the stored login', async () => {
     const h = renderSession({ userId: '0xabc' })
     await waitFor(() => expect(h.session().login.status).toBe('reuse-login-or-new'))
     act(() => h.session().login.jumpIn())
-    // Jump in shows the picker; the login is deferred until a destination is chosen.
-    await waitFor(() => expect(h.session().phase).toBe('picking'))
-    act(() => h.session().pickDestination(null))
+    // Jump in signs in and shows the lobby.
+    await waitFor(() => expect(h.session().phase).toBe('lobby'))
     await waitFor(() => expect(h.driver.calls).toContain('jumpIn'))
   })
 
@@ -86,6 +115,32 @@ describe('session domain', () => {
       expect(fetchSpy).toHaveBeenCalledWith('http://127.0.0.1:8000/about')
     } finally {
       fetchSpy.mockRestore()
+      history.replaceState(null, '', url.pathname + url.search)
+    }
+  })
+
+  it('a ?position login that fails retries to the same destination, not the lobby', async () => {
+    const url = new URL(location.href)
+    class FailOnceDriver extends LaunchRecordingDriver {
+      failed = false
+      async loginGuest(): Promise<void> {
+        await super.loginGuest()
+        if (!this.failed) {
+          this.failed = true
+          throw 'profile fetch failed'
+        }
+      }
+    }
+    try {
+      const driver = new FailOnceDriver()
+      const h = await launchFromUrl('/?position=10,20', driver)
+      await waitFor(() => expect(h.session().phase).toBe('login'))
+      expect(driver.hosts[0]?.holdWorld).not.toBe(true)
+      act(() => h.session().login.exploreAsGuest())
+      await waitFor(() => expect(driver.calls.filter((c) => c === 'loginGuest')).toHaveLength(2))
+      expect(h.session().phase).toBe('entering')
+      expect(driver.hosts.every((host) => host?.holdWorld !== true)).toBe(true)
+    } finally {
       history.replaceState(null, '', url.pathname + url.search)
     }
   })
@@ -144,6 +199,13 @@ describe('session domain', () => {
     expect(h.driver.last('engineViewport')).toEqual({ kind: 'engineViewport', region: 'map', rect })
   })
 
+  it('setInteractableArea posts the HUD inset', async () => {
+    const h = renderSession({ userId: null })
+    await enterAsGuest(h)
+    act(() => h.session().setInteractableArea({ left: 398, top: 0, right: 0, bottom: 0 }))
+    expect(h.driver.last('interactableArea')).toEqual({ kind: 'interactableArea', left: 398, top: 0, right: 0, bottom: 0 })
+  })
+
   it('scene-loading / menu / chat-visibility streams update state', async () => {
     const h = renderSession({ userId: null })
     await enterAsGuest(h)
@@ -164,6 +226,57 @@ describe('session domain', () => {
     act(() => h.session().logout())
     await waitFor(() => expect(h.session().phase).toBe('login'))
     expect(h.driver.calls).toContain('logout')
+  })
+
+  it('the next account after a logout fetches its own data again', async () => {
+    const h = renderSession({ userId: null })
+    await enterAsGuest(h)
+    act(() => h.session().backpack.toggle())
+    act(() => h.session().backpack.toggle())
+    act(() => h.session().logout())
+    await waitFor(() => expect(h.session().phase).toBe('login'))
+    h.driver.sent.length = 0
+    await enterAsGuest(h, { keepSent: true })
+    expect(h.driver.sentOf('getProfile')).toHaveLength(1)
+    expect(h.driver.sentOf('getNotifications')).toHaveLength(1)
+    act(() => h.session().backpack.toggle())
+    expect(h.driver.sentOf('getWearables')).toHaveLength(1)
+  })
+
+  it('a chat message leaves the minimap and map slices untouched', async () => {
+    const h = renderSession({ userId: null })
+    await enterAsGuest(h)
+    const { minimap, map } = h.session()
+    act(() => h.driver.emit({ kind: 'chat', chat: { sender: '0xabc', message: 'hi', channel: 'Nearby', messageId: '' } }))
+    await waitFor(() => expect(h.session().chat.messages).toHaveLength(2))
+    expect(h.session().minimap).toBe(minimap)
+    expect(h.session().map).toBe(map)
+  })
+
+  it('a fetch the bridge failed is asked again on the next open', async () => {
+    const h = renderSession({ userId: null })
+    await enterAsGuest(h)
+    act(() => h.session().backpack.toggle())
+    act(() => h.session().backpack.toggle())
+    expect(h.driver.sentOf('getWearables')).toHaveLength(1)
+    act(() => h.driver.emit({ kind: 'requestFailed', request: 'getWearables', error: 'catalyst down' }))
+    act(() => h.session().backpack.toggle())
+    expect(h.driver.sentOf('getWearables')).toHaveLength(2)
+  })
+
+  it('after a logout, a place picked for the next account names its realm, so it lands without waiting to spawn', async () => {
+    const h = renderSession({ userId: null })
+    await enterAsGuest(h)
+    act(() => h.session().logout())
+    await waitFor(() => expect(h.session().login.status).not.toBe('loading'))
+    act(() => h.session().login.exploreAsGuest())
+    await waitFor(() => expect(h.session().phase).toBe('lobby'))
+    await waitFor(() => expect(h.driver.calls.filter((c) => c === 'loginGuest')).toHaveLength(2))
+    await waitFor(() => expect(h.session().login.busy).toBe(false))
+    h.driver.sent.length = 0
+    act(() => h.session().pickDestination({ kind: 'parcel', x: 10, y: 20 }))
+    // the engine keeps the parcel as the realm's landing target, so it isn't held for playerReady
+    expect(h.driver.sentOf('teleport')).toEqual([{ kind: 'teleport', realm: DEFAULT_REALM, x: 10, y: 20, travelId: 2 }])
   })
 
   it('a runtime crash from the watchdog sets a dismissable fatal; dismiss re-arms the watchdog', async () => {
@@ -189,8 +302,8 @@ describe('session domain', () => {
     const h = renderSession({ userId: null }, driver)
     await waitFor(() => expect(h.session().login.status).toBe('sign-in-or-guest'))
     act(() => h.session().login.exploreAsGuest())
-    await waitFor(() => expect(h.session().phase).toBe('picking'))
-    act(() => h.session().pickDestination(null))
+    // Jump In launches the engine (holding the world back) behind the lobby.
+    await waitFor(() => expect(h.session().phase).toBe('lobby'))
     // launch() threw → the sync catch reads the stashed panic and raises it as fatal 'launch'.
     await waitFor(() =>
       expect(h.session().fatalError).toEqual({
@@ -206,8 +319,7 @@ describe('session domain', () => {
     const h = renderSession({ userId: null }, driver)
     await waitFor(() => expect(h.session().login.status).toBe('sign-in-or-guest'))
     act(() => h.session().login.exploreAsGuest())
-    await waitFor(() => expect(h.session().phase).toBe('picking'))
-    act(() => h.session().pickDestination(null))
+    await waitFor(() => expect(h.session().phase).toBe('lobby'))
     // launch() returned normally, so the boot-panic poll (250ms) must catch the stashed panic and raise
     // it as fatal 'launch' — not the dismissable 'runtime' crash the heartbeat watchdog would mislabel.
     await waitFor(
@@ -255,8 +367,8 @@ describe('embedded auto-boot (?guest=1 / ?systemScene=)', () => {
     window.history.replaceState(null, '', '/?guest=1')
     const h = renderSession({ userId: null })
     // No exploreAsGuest() call in the test — the flag alone drives it. With no
-    // URL destination it lands on the picker (a positioned embed skips that too).
-    await waitFor(() => expect(h.session().phase).toBe('picking'))
+    // URL destination it lands in the lobby (a positioned embed skips that too).
+    await waitFor(() => expect(h.session().phase).toBe('lobby'))
   })
 
   it('with a ?position, drives a guest straight into the world', async () => {

@@ -1,5 +1,7 @@
 use std::str::FromStr;
 
+use alloy_core::primitives::{Address, B256};
+use alloy_signer_local::PrivateKeySigner;
 use analytics::segment_system::SegmentConfig;
 use bevy::{
     app::AppExit,
@@ -13,24 +15,24 @@ use common::{
     rpc::{RpcResultReceiver, RpcResultSender},
     sets::SceneSets,
     structs::{
-        ActiveDialog, AppConfig, ChainLink, CurrentRealm, DialogPermit, PreviousLogin, SystemAudio,
-        ZOrder,
+        ActiveDialog, AppConfig, ChainLink, CurrentRealm, DialogPermit, PreviewMode, PreviousLogin,
+        SystemAudio, WorldHold, ZOrder, TERMS_VERSION,
     },
     util::{TaskCompat, TaskExt},
 };
-use comms::profile::{get_remote_profile, CurrentUserProfile, UserProfile};
-use ethers_core::types::Address;
-use ethers_signers::LocalWallet;
+use comms::profile::{
+    get_default_look, get_remote_profile, CurrentUserProfile, UserProfile, DEFAULT_LOOKS,
+};
 use ipfs::{IpfsAssetServer, IpfsIo};
 use scene_runner::Toaster;
-use system_bridge::{NativeUi, SystemApi, PROFILE_FETCH_FAILED};
+use system_bridge::{NativeUi, SystemApi, WelcomeState, PROFILE_FETCH_FAILED};
 use tokio::sync::oneshot::error::TryRecvError;
 use ui_core::{
     button::DuiButton,
     ui_actions::{close_ui_happy, Click, EventCloneExt, On},
 };
 use wallet::{
-    browser_auth::{finish_remote_ephemeral_request, init_remote_ephemeral_request},
+    browser_auth::{finish_remote_ephemeral_request, init_remote_ephemeral_request, EphemeralKey},
     Wallet,
 };
 
@@ -177,32 +179,8 @@ fn login(
     // handle task results
     if let Some(mut t) = req_code.take() {
         match t.try_recv() {
-            Ok(Ok(code)) => {
-                if let Some(mut commands) = dialog.and_then(|d| commands.get_entity(d).ok()) {
-                    commands.despawn();
-                    *dialog = None;
-                }
-
-                let components = commands
-                    .spawn(ZOrder::Login.default())
-                    .apply_template(
-                        &dui,
-                        "cancel-login",
-                        DuiProps::new()
-                            .with_prop(
-                                "buttons",
-                                vec![DuiButton::new_enabled(
-                                    "Cancel",
-                                    |mut e: EventWriter<LoginType>| {
-                                        e.write(LoginType::Cancel);
-                                    },
-                                )],
-                            )
-                            .with_prop("code", format!("{}", code.unwrap_or(-1))),
-                    )
-                    .unwrap();
-
-                *dialog = Some(components.root);
+            Ok(Ok(_)) => {
+                // no code to show: the waiting dialog spawned on click stays up
             }
             Ok(Err(e)) => {
                 toaster.add_toast("login profile", format!("Login failed: {e}"));
@@ -276,17 +254,15 @@ fn login(
                     .apply_template(
                         &dui,
                         "cancel-login",
-                        DuiProps::new()
-                            .with_prop(
-                                "buttons",
-                                vec![DuiButton::new_enabled(
-                                    "Cancel",
-                                    |mut e: EventWriter<LoginType>| {
-                                        e.write(LoginType::Cancel);
-                                    },
-                                )],
-                            )
-                            .with_prop("code", "...".to_string()),
+                        DuiProps::new().with_prop(
+                            "buttons",
+                            vec![DuiButton::new_enabled(
+                                "Cancel",
+                                |mut e: EventWriter<LoginType>| {
+                                    e.write(LoginType::Cancel);
+                                },
+                            )],
+                        ),
                     )
                     .unwrap();
 
@@ -339,6 +315,7 @@ fn update_profile_for_realm(
             Some(Ok(Some(profile))) => {
                 current_profile.profile = Some(profile);
                 current_profile.is_deployed = true;
+                current_profile.deploy_held = false;
             }
             Some(Ok(None)) | Some(Err(_)) => {
                 // keep existing profile
@@ -386,64 +363,22 @@ fn get_previous_login(config: &AppConfig) -> Option<PreviousLogin> {
 }
 
 /// Decode a base64(JSON) AuthIdentity into the pieces the wallet needs: the root (signer)
-/// address, the ephemeral LocalWallet, and the delegate auth chain (the ECDSA_EPHEMERAL
-/// link(s), i.e. the chain WITHOUT the SIGNER entry — matching what
-/// `finish_remote_ephemeral_request` / `get_previous_login` use).
+/// address, the ephemeral key (just its address when the page holds the key), and the delegate
+/// auth chain (the ECDSA_EPHEMERAL link(s), i.e. the chain WITHOUT the SIGNER entry — matching
+/// what `finish_remote_ephemeral_request` / `get_previous_login` use).
 ///
 /// This is the standard Decentraland AuthIdentity, so it is identical regardless of how the
 /// user signed in (wallet/MetaMask, social, OTP, magic). The web page just reads it from
 /// localStorage and forwards it — there is nothing login-method-specific here.
-fn parse_auth_identity(payload: &str) -> Result<(Address, LocalWallet, Vec<ChainLink>), String> {
-    use base64::Engine as _;
-
-    #[derive(serde::Deserialize)]
-    struct Ephemeral {
-        #[serde(rename = "privateKey")]
-        private_key: String,
+fn parse_auth_identity(payload: &str) -> Result<(Address, EphemeralKey, Vec<ChainLink>), String> {
+    let parts = wallet::browser_auth::parse_auth_identity(payload)
+        .and_then(wallet::browser_auth::auth_identity_key_parts)
+        .map_err(|e| e.to_string())?;
+    if matches!(parts.1, EphemeralKey::Remote(_)) && !wallet::remote_signer::remote_sign_available()
+    {
+        return Err("identity has no ephemeral private key".to_owned());
     }
-    #[derive(serde::Deserialize)]
-    struct AuthIdentity {
-        #[serde(rename = "ephemeralIdentity")]
-        ephemeral_identity: Ephemeral,
-        #[serde(rename = "authChain")]
-        auth_chain: Vec<ChainLink>,
-    }
-
-    let json = base64::engine::general_purpose::STANDARD
-        .decode(payload.trim())
-        .map_err(|e| format!("bad identity base64: {e}"))?;
-    let identity: AuthIdentity =
-        serde_json::from_slice(&json).map_err(|e| format!("bad identity json: {e}"))?;
-
-    // Root wallet address = the SIGNER link's payload.
-    let signer = identity
-        .auth_chain
-        .iter()
-        .find(|l| l.ty == "SIGNER")
-        .ok_or_else(|| "identity missing SIGNER link".to_string())?;
-    let root_address =
-        Address::from_str(signer.payload.trim()).map_err(|e| format!("bad root address: {e}"))?;
-
-    // Ephemeral signer from the 0x-prefixed private key.
-    let key_hex = identity
-        .ephemeral_identity
-        .private_key
-        .trim()
-        .trim_start_matches("0x");
-    let local_wallet =
-        LocalWallet::from_str(key_hex).map_err(|e| format!("bad ephemeral key: {e}"))?;
-
-    // Delegate chain = everything except the SIGNER (the ECDSA_EPHEMERAL link the engine stores).
-    let auth: Vec<ChainLink> = identity
-        .auth_chain
-        .into_iter()
-        .filter(|l| l.ty != "SIGNER")
-        .collect();
-    if auth.is_empty() {
-        return Err("identity missing ephemeral delegate link".to_string());
-    }
-
-    Ok((root_address, local_wallet, auth))
+    Ok(parts)
 }
 
 /// Fetch the profile, retrying on failure. Ok(None) means the user has no profile (or
@@ -476,6 +411,124 @@ async fn get_profile_with_retry(
     Err(format!("{PROFILE_FETCH_FAILED}: {last_error}"))
 }
 
+/// The profile a login lands with.
+enum LoginProfile {
+    /// On the server.
+    Deployed(UserProfile),
+    /// Built here for an account with none; deployed on entry, or by the welcome page.
+    New(UserProfile),
+}
+
+async fn login_profile(
+    root_address: Address,
+    ipfs: std::sync::Arc<IpfsIo>,
+    default_on_error: bool,
+) -> Result<LoginProfile, String> {
+    match get_profile_with_retry(root_address, ipfs.clone(), default_on_error).await? {
+        Some(profile) => Ok(LoginProfile::Deployed(profile)),
+        None => Ok(LoginProfile::New(
+            new_account_profile(root_address, ipfs).await,
+        )),
+    }
+}
+
+fn new_profile(address: Address, ipfs: &IpfsIo) -> UserProfile {
+    UserProfile {
+        version: 0,
+        content: SerializedProfile {
+            has_connected_web3: Some(true),
+            eth_address: format!("{address:#x}"),
+            user_id: Some(format!("{address:#x}")),
+            ..Default::default()
+        },
+        base_url: ipfs.contents_endpoint().unwrap_or_default(),
+    }
+}
+
+/// Name parts for a new account. Every first + last pair must be alphanumeric and at most 15
+/// characters, the unclaimed-name rule shared by the HUD, the account site and the other
+/// clients (and their `@mention` patterns); see the test below.
+const GUEST_FIRST_NAMES: &[&str] = &[
+    "Astra", "Bolt", "Cinder", "Dusk", "Ember", "Flint", "Gale", "Haze", "Indigo", "Jade", "Kite",
+    "Lumen", "Mica", "Nimbus", "Onyx", "Pixel", "Quill", "Rune", "Sable", "Talon", "Umber",
+    "Vesper", "Wren", "Xenon", "Yarrow", "Zephyr", "Comet", "Delta", "Echo", "Nova",
+];
+const GUEST_LAST_NAMES: &[&str] = &[
+    "Ashgrove",
+    "Deepwater",
+    "Fernbrook",
+    "Frostvale",
+    "Glassmoor",
+    "Greywood",
+    "Highmoor",
+    "Ironwood",
+    "Mistgrove",
+    "Moonvale",
+    "Northwind",
+    "Oakhollow",
+    "Rainfield",
+    "Riverbend",
+    "Starfall",
+    "Stonehill",
+    "Sunridge",
+    "Thornwood",
+    "Wildmarsh",
+    "Windward",
+];
+
+/// The name and look are derived from the address so a new account comes back the same if the
+/// first deploy didn't land; an EOA address is a keccak digest, so the bytes are uniform.
+fn guest_name(address: &Address) -> String {
+    let bytes = address.as_slice();
+    format!(
+        "{}{}",
+        GUEST_FIRST_NAMES[bytes[4] as usize % GUEST_FIRST_NAMES.len()],
+        GUEST_LAST_NAMES[bytes[5] as usize % GUEST_LAST_NAMES.len()]
+    )
+}
+
+fn guest_look_index(address: &Address) -> u32 {
+    let bytes = address.as_slice();
+    u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) % DEFAULT_LOOKS + 1
+}
+
+/// An account without a profile gets a name and one of the curated default looks, so it
+/// doesn't start as every other new account. Falls back to the engine's default look if the
+/// catalyst can't provide one.
+async fn new_account_profile(address: Address, ipfs: std::sync::Arc<IpfsIo>) -> UserProfile {
+    let index = guest_look_index(&address);
+    let look = match get_default_look(ipfs.clone(), index).await {
+        Ok(Some(look)) => Some(look.content.avatar),
+        Ok(None) => {
+            warn!("default look {index} not found");
+            None
+        }
+        Err(e) => {
+            warn!("default look {index}: {e}");
+            None
+        }
+    };
+    let mut profile = new_profile(address, &ipfs);
+    profile.content.name = guest_name(&address);
+    if let Some(look) = look {
+        let own = &mut profile.content.avatar;
+        own.body_shape = look.body_shape;
+        own.wearables = look.wearables;
+        own.force_render = look.force_render;
+        own.eyes = look.eyes;
+        own.hair = look.hair;
+        own.skin = look.skin;
+        // snapshots are the look's own; ours are empty until something renders them
+    }
+    profile
+}
+
+const ACCOUNT_LOCKED: &str = "the account cannot change after entering a realm";
+
+fn account_locked(wallet: &Wallet, world_hold: &Option<Res<WorldHold>>) -> bool {
+    world_hold.is_none() && wallet.address().is_some()
+}
+
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn process_login_bridge(
     mut e: EventReader<SystemApi>,
@@ -486,9 +539,10 @@ fn process_login_bridge(
                 Result<
                     (
                         Address,
-                        LocalWallet,
+                        EphemeralKey,
                         Vec<ChainLink>,
-                        Option<UserProfile>,
+                        bool,
+                        LoginProfile,
                         RpcResultSender<Result<(), String>>,
                     ),
                     (),
@@ -501,6 +555,8 @@ fn process_login_bridge(
     mut current_profile: ResMut<CurrentUserProfile>,
     mut window: Query<&mut Window, With<PrimaryWindow>>,
     mut config: ResMut<AppConfig>,
+    world_hold: Option<Res<WorldHold>>,
+    preview: Res<PreviewMode>,
 ) {
     for ev in e.read().cloned() {
         match ev {
@@ -516,6 +572,34 @@ fn process_login_bridge(
                 rpc_result_sender
                     .send(get_previous_login(&config).map(|pl| format!("{:#x}", pl.root_address)));
             }
+            SystemApi::GetWelcome(sender) => sender.send(WelcomeState {
+                terms: !config.terms_accepted() && !preview.is_preview,
+                new_profile: current_profile.deploy_held,
+            }),
+            // the welcome page awaits this before its save, which releases a held new profile
+            SystemApi::AcceptTerms(sender) => {
+                if !config.terms_accepted() {
+                    config.accepted_terms = Some(TERMS_VERSION);
+                    platform::write_config_file(&*config);
+                }
+                sender.send(());
+            }
+            // the account can only change while the world is held (the lobby): once in
+            // world, comms and scenes are bound to the wallet that entered
+            SystemApi::LoginPrevious(_, sender) | SystemApi::LoginWithIdentity(_, _, _, sender)
+                if account_locked(&wallet, &world_hold) =>
+            {
+                sender.send(Err(ACCOUNT_LOCKED.to_owned()));
+            }
+            SystemApi::LoginNew(_, code_sender, result_sender)
+                if account_locked(&wallet, &world_hold) =>
+            {
+                code_sender.send(Err(ACCOUNT_LOCKED.to_owned()));
+                result_sender.send(Err(ACCOUNT_LOCKED.to_owned()));
+            }
+            SystemApi::LoginGuest | SystemApi::Logout if account_locked(&wallet, &world_hold) => {
+                warn!("{ACCOUNT_LOCKED}");
+            }
             SystemApi::LoginPrevious(default_on_error, rpc_result_sender) => {
                 let ipfs = ipfas.ipfs().clone();
                 let maybe_previous_login = get_previous_login(&config);
@@ -529,23 +613,25 @@ fn process_login_bridge(
                         root_address,
                         ephemeral_key,
                         auth,
+                        guest_account,
                     } = previous_login;
 
-                    let profile =
-                        match get_profile_with_retry(root_address, ipfs, default_on_error).await {
-                            Ok(maybe_profile) => maybe_profile,
-                            Err(e) => {
-                                rpc_result_sender.send(Err(e));
-                                return Err(());
-                            }
-                        };
+                    let profile = match login_profile(root_address, ipfs, default_on_error).await {
+                        Ok(profile) => profile,
+                        Err(e) => {
+                            rpc_result_sender.send(Err(e));
+                            return Err(());
+                        }
+                    };
 
-                    let local_wallet = LocalWallet::from_bytes(&ephemeral_key).unwrap();
+                    let local_wallet =
+                        PrivateKeySigner::from_bytes(&B256::from_slice(&ephemeral_key)).unwrap();
 
                     Ok((
                         previous_login.root_address,
-                        local_wallet,
+                        EphemeralKey::Local(local_wallet),
                         auth,
+                        guest_account,
                         profile,
                         rpc_result_sender,
                     ))
@@ -564,7 +650,8 @@ fn process_login_bridge(
                         Ok(res) => res,
                     };
 
-                    code_sender.send(Ok(req.code));
+                    // the deep-link flow has no verification code
+                    code_sender.send(Ok(None));
 
                     let (root_address, local_wallet, auth, _) =
                         match finish_remote_ephemeral_request(req).await {
@@ -576,25 +663,36 @@ fn process_login_bridge(
                             }
                         };
 
-                    let profile =
-                        match get_profile_with_retry(root_address, ipfs, default_on_error).await {
-                            Ok(maybe_profile) => maybe_profile,
-                            Err(e) => {
-                                result_sender.send(Err(e));
-                                return Err(());
-                            }
-                        };
+                    let profile = match login_profile(root_address, ipfs, default_on_error).await {
+                        Ok(profile) => profile,
+                        Err(e) => {
+                            result_sender.send(Err(e));
+                            return Err(());
+                        }
+                    };
 
-                    Ok((root_address, local_wallet, auth, profile, result_sender))
+                    Ok((
+                        root_address,
+                        EphemeralKey::Local(local_wallet),
+                        auth,
+                        false,
+                        profile,
+                        result_sender,
+                    ))
                 }));
             }
-            SystemApi::LoginWithIdentity(payload, default_on_error, rpc_result_sender) => {
+            SystemApi::LoginWithIdentity(
+                payload,
+                default_on_error,
+                guest_account,
+                rpc_result_sender,
+            ) => {
                 // The web page already holds a signed AuthIdentity (read from localStorage,
                 // produced by whatever sign-in method the user used) — finalize the wallet
                 // from it directly, no auth-server request/poll. Mirrors LoginPrevious.
                 let ipfs = ipfas.ipfs().clone();
                 *login_task = Some(IoTaskPool::get().spawn_compat(async move {
-                    let (root_address, local_wallet, auth) = match parse_auth_identity(&payload) {
+                    let (root_address, ephemeral_key, auth) = match parse_auth_identity(&payload) {
                         Ok(parts) => parts,
                         Err(e) => {
                             rpc_result_sender.send(Err(e));
@@ -602,16 +700,22 @@ fn process_login_bridge(
                         }
                     };
 
-                    let profile =
-                        match get_profile_with_retry(root_address, ipfs, default_on_error).await {
-                            Ok(maybe_profile) => maybe_profile,
-                            Err(e) => {
-                                rpc_result_sender.send(Err(e));
-                                return Err(());
-                            }
-                        };
+                    let profile = match login_profile(root_address, ipfs, default_on_error).await {
+                        Ok(profile) => profile,
+                        Err(e) => {
+                            rpc_result_sender.send(Err(e));
+                            return Err(());
+                        }
+                    };
 
-                    Ok((root_address, local_wallet, auth, profile, rpc_result_sender))
+                    Ok((
+                        root_address,
+                        ephemeral_key,
+                        auth,
+                        guest_account,
+                        profile,
+                        rpc_result_sender,
+                    ))
                 }));
             }
             SystemApi::LoginGuest => {
@@ -628,6 +732,7 @@ fn process_login_bridge(
                     base_url: ipfas.ipfs().contents_endpoint().unwrap_or_default(),
                 });
                 current_profile.is_deployed = true;
+                current_profile.deploy_held = false;
             }
             SystemApi::LoginCancel => {
                 *login_task = None;
@@ -636,6 +741,7 @@ fn process_login_bridge(
                 *login_task = None;
                 wallet.disconnect();
                 current_profile.profile = None;
+                current_profile.deploy_held = false;
             }
             _ => (),
         }
@@ -643,44 +749,89 @@ fn process_login_bridge(
 
     if let Some(mut task) = login_task.take() {
         match task.complete() {
-            Some(Ok((root_address, local_wallet, auth, profile, sender))) => {
+            // started in the lobby over another account, finished after the world was entered
+            Some(Ok((.., sender))) if account_locked(&wallet, &world_hold) => {
+                sender.send(Err(ACCOUNT_LOCKED.to_owned()));
+            }
+            Some(Ok((root_address, ephemeral_key, auth, guest_account, profile, sender))) => {
                 if let Ok(mut window) = window.single_mut() {
                     window.focused = true;
                 }
 
-                let ephemeral_key = local_wallet.signer().to_bytes().to_vec();
+                match ephemeral_key {
+                    EphemeralKey::Local(local_wallet) => {
+                        let ephemeral_key = local_wallet.to_bytes().to_vec();
 
-                // store to app config
-                config.previous_login = Some(PreviousLogin {
-                    root_address,
-                    ephemeral_key,
-                    auth: auth.clone(),
-                });
-                platform::write_config_file(&*config);
+                        // store to app config
+                        config.previous_login = Some(PreviousLogin {
+                            root_address,
+                            ephemeral_key,
+                            auth: auth.clone(),
+                            guest_account,
+                        });
+                        platform::write_config_file(&*config);
 
-                wallet.finalize(root_address, local_wallet, auth);
-                segment_config.update_identity(format!("{:#x}", wallet.address().unwrap()), false);
-                if let Some(profile) = profile {
-                    current_profile.profile = Some(profile);
-                    current_profile.is_deployed = true;
-                } else {
-                    current_profile.profile = Some(UserProfile {
-                        version: 0,
-                        content: SerializedProfile {
-                            has_connected_web3: Some(true),
-                            eth_address: format!("{:#x}", wallet.address().unwrap()),
-                            user_id: Some(format!("{:#x}", wallet.address().unwrap())),
-                            ..Default::default()
-                        },
-                        base_url: ipfas.ipfs().contents_endpoint().unwrap_or_default(),
-                    });
-                    current_profile.is_deployed = false;
+                        wallet.finalize(root_address, local_wallet, auth, guest_account);
+                    }
+                    // the page holds the key, so there is none to store, and none from an
+                    // earlier login should stay behind
+                    EphemeralKey::Remote(ephemeral_address) => {
+                        if config.previous_login.take().is_some() {
+                            platform::write_config_file(&*config);
+                        }
+                        wallet.finalize_remote(
+                            root_address,
+                            ephemeral_address,
+                            auth,
+                            guest_account,
+                        );
+                    }
                 }
+                segment_config
+                    .update_identity(format!("{:#x}", wallet.address().unwrap()), guest_account);
+                let (profile, deployed) = match profile {
+                    LoginProfile::Deployed(profile) => (profile, true),
+                    LoginProfile::New(profile) => (profile, false),
+                };
+                current_profile.profile = Some(profile);
+                current_profile.is_deployed = deployed;
+                // held, the host shows its welcome page, which deploys the new profile
+                current_profile.deploy_held = !deployed && world_hold.is_some();
 
                 sender.send(Ok(()));
             }
             Some(Err(())) => (),
             None => *login_task = Some(task),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn guest_names_are_valid_unclaimed_names() {
+        for first in GUEST_FIRST_NAMES {
+            for last in GUEST_LAST_NAMES {
+                let name = format!("{first}{last}");
+                assert!(
+                    name.len() <= 15 && name.chars().all(|c| c.is_ascii_alphanumeric()),
+                    "{name}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn guest_look_is_a_default_profile_pointer() {
+        for address in [
+            Address::ZERO,
+            Address::repeat_byte(0xff),
+            Address::repeat_byte(0x7a),
+        ] {
+            let index = guest_look_index(&address);
+            assert!((1..=DEFAULT_LOOKS).contains(&index), "{index}");
         }
     }
 }

@@ -714,9 +714,15 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
     ) -> ImposterState {
         let parcel_count = (1 << req.level) * (1 << req.level);
 
-        let origin = self.focus.origin.as_ivec2() * IVec2::new(1, -1);
-        let closest_point = origin.clamp(req.parcel * 16, (req.parcel + (1 << req.level)) * 16);
-        let distance = (closest_point - origin).as_vec2().length() * self.focus.distance_scale
+        // subtract in float space: the ground-intersect focus origin can sit kilometres away or at
+        // infinity (camera far from the player, looking at the horizon), and the i32 conversion
+        // saturates and overflows the subtraction (panics in debug builds)
+        let origin = self.focus.origin * Vec2::new(1.0, -1.0);
+        let closest_point = origin.clamp(
+            (req.parcel * 16).as_vec2(),
+            ((req.parcel + (1 << req.level)) * 16).as_vec2(),
+        );
+        let distance = (closest_point - origin).length() * self.focus.distance_scale
             + self.focus.min_distance
             + 1.0;
         let parcel_benefit = current_error.unwrap_or(0);

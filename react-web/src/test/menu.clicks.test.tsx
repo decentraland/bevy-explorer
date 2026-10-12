@@ -18,8 +18,8 @@ describe('main menu shell nav', () => {
 
   it('clicking a non-active page navigates to it', async () => {
     const { onNavigate } = shell()
-    await userEvent.click(screen.getByRole('button', { name: /Communities/ }))
-    expect(onNavigate).toHaveBeenCalledWith('communities')
+    await userEvent.click(screen.getByRole('button', { name: /Places/ }))
+    expect(onNavigate).toHaveBeenCalledWith('places')
     await userEvent.click(screen.getByRole('button', { name: /Map/ }))
     expect(onNavigate).toHaveBeenCalledWith('map')
     await userEvent.click(screen.getByRole('button', { name: /Backpack/ }))
@@ -60,6 +60,12 @@ describe('profile chip dropdown', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /EXIT/i }))
     expect(onExit).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers no Sign Out without a handler', async () => {
+    render(<ProfileChip name="Tester" address="0xabcdef123456" onViewProfile={vi.fn()} onExit={vi.fn()} />)
+    await userEvent.click(screen.getByRole('button'))
+    expect(screen.queryByRole('button', { name: /SIGN OUT/i })).toBeNull()
   })
 
   it('copies the wallet address', async () => {

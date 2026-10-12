@@ -21,7 +21,7 @@ export function registerCoiServiceWorker(): void {
   // trailing slash (…/bevy-web) — OUTSIDE that scope, so this page load is never controlled and
   // keeps the host's require-corp COEP. Canonicalize the URL to the directory form (keeps
   // query/hash); the one-shot reload below then navigates in scope and gets the rewrite.
-  if (!location.pathname.endsWith('/')) {
+  if (!location.pathname.endsWith('/') && !location.pathname.endsWith('.html')) {
     history.replaceState(history.state, '', `${location.pathname}/${location.search}${location.hash}`)
   }
 

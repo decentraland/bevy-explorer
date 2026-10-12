@@ -10,7 +10,8 @@
 //                            realm/position, forwarded verbatim by __bevyLaunch
 //   provided by this module:
 //     __bevyLoadProgress / __bevyLoadStep  — weighted boot progress for the login bar
-//     __bevyReadyToLaunch / __bevyLaunch(realm?, position?) — deferred engine_run
+//     __bevyReadyToLaunch / __bevyLaunch(realm?, position?, host?) — deferred engine_run; `host`
+//                            carries the host's own options (e.g. holdWorld) for this launch
 //     __bevyPanic — readable Rust panic text (the JS throw is a generic "unreachable" trap)
 //     __engineHeartbeat / reportEngineError / __rearmCrashWatchdog — crash watchdog plumbing
 //     __engineTextFocus — true while an engine-rendered text field holds keyboard focus (the
@@ -18,6 +19,10 @@
 //     __onEngineCrash(message, source) — OPTIONAL host callback; the watchdog calls it instead of
 //       rendering any overlay (React owns the error UI)
 //     window.engine / engine_console_command — the console RPC (built by engine.js post-launch)
+//     __bevyStartServer(options) — starts a headless scene server for a local preview beside the
+//       client (engine.js startServer): for the host that opened the preview. `options` are
+//       engine_run launch options naming the preview realm; resolves once it is started, rejects
+//       when the realm already has a server in this browser
 //     __defaultRealm() / __serviceUrl(name) / __defaultBaseDomain() — HOST-PROVIDED
 //       (react-web/src/lib/baseDomain.ts, defined before this module is injected), for the url
 //       sync only: the host's default realm, a service's resolved base url (its ?<name>= override,
@@ -25,7 +30,9 @@
 //       here. The engine itself takes the domain and the overrides as engine_run options.
 //     __bevyHomeScene() — the persisted home scene { realm, parcel: "x,y" } (realm null = none
 //       pinned), for the host's "Skip to Home"; set alongside __bevyReadyToLaunch
-import { initEngine, start, applyOptionsToUrlParams, engine_home_scene, gpu_cache_hash, initGpuCache } from './engine.js'
+//     __bevyTermsAccepted() — whether the persisted config has accepted the terms (null =
+//       unknown), so the host can hold a link's world for its welcome page; set alongside too
+import { initEngine, start, prepareRender, applyOptionsToUrlParams, engine_home_scene, engine_terms_accepted } from './engine.js'
 
 // ---- boot progress (replaces ui.js's DOM loading steps) -----------------------------------------
 // Weight of each step in the overall bar (sums to 100). Step ids are read by the React login bar
@@ -83,9 +90,10 @@ publish()
   // Only these engine messages can trip the flood. A healthy session floods the console with benign
   // ERROR lines at exactly this rate — a 404 asset retried per frame by bevy_asset, comms "channel
   // closed" during startup — so an allowlist, not a denylist, is what keeps the modal off a working
-  // world. `captured wgpu error` is src/lib.rs's on_uncaptured_error handler: the device-level GPU
-  // fault that blanks the screen while the render loop keeps beating.
-  const FATAL_SIGNALS = ['captured wgpu error']
+  // world. `uncaptured wgpu error` is the render worker's on_uncaptured_error handler (bevy's
+  // web_worker module), mirrored to this console: the device-level GPU fault that blanks the screen
+  // while the render loop keeps beating.
+  const FATAL_SIGNALS = ['uncaptured wgpu error']
   // signature -> { count, since }. Per-signature counters (not a single last-seen key) so an identical
   // per-frame error still floods even when the loop interleaves it with a second error each frame.
   const floodCounts = new Map()
@@ -160,7 +168,11 @@ publish()
 
   // Capture Rust panic text: the wasm panic hook prints "panicked at …" via console.error (the only
   // engine path that uses that channel — wasm-bindgen's __wbg_error), while the throw that surfaces
-  // is a generic trap — stash the readable message for the host.
+  // is a generic trap — stash the readable message for the host. The render worker's gpu_cache.js
+  // (its console is mirrored to the page) reports a lost WebGPU device here as fatal at once: a lost
+  // device no-ops every call while the loop keeps beating, so nothing else would ever show the
+  // modal. Keep the prefix in sync.
+  const GPU_FATAL_PREFIX = '[gpu fatal]'
   const origConsoleError = console.error.bind(console)
   console.error = function () {
     try {
@@ -168,6 +180,8 @@ publish()
       if (typeof first === 'string' && first.indexOf('panicked at') !== -1) {
         window.__bevyPanic = { message: String(first), at: nowMs() }
         recordError(first, 'panic')
+      } else if (typeof first === 'string' && first.startsWith(GPU_FATAL_PREFIX)) {
+        crash(first, 'gpu', true)
       }
     } catch (_) {}
     return origConsoleError.apply(console, arguments)
@@ -241,6 +255,13 @@ window.__setEngineTextFocus = (focused) => {
   window.__engineTextFocus = !!focused
 }
 
+// gpu_cache.js (on the render worker) shows the page's #shader-compiling indicator while it
+// compiles pipelines asynchronously; the HUD's renderBusy probe reads it.
+window.__setShaderCompiling = (on) => {
+  const el = document.getElementById('shader-compiling')
+  if (el) el.style.display = on ? 'flex' : 'none'
+}
+
 // ---- keyboard forwarding to the engine -----------------------------------------------------------
 // winit attaches its keyboard listeners to the CANVAS element, so the engine only hears keys while
 // the canvas holds DOM focus — click any HUD control and movement + every engine binding (which
@@ -250,12 +271,23 @@ window.__setEngineTextFocus = (focused) => {
 // engine; text inputs are skipped so typing never moves the avatar. Tab is left alone off-canvas —
 // there it is focus navigation, not a game key. The re-dispatched clone bubbles back here with the
 // canvas as target, which the target check drops (no loop).
+const ACTIVATION_KEYS = new Set(['Space', 'Enter', 'NumpadEnter'])
+const CONTROLS = 'button, a[href], select, summary, [role="button"]'
+// codes whose keydown pressed a control: their keyup stays off the engine too, so Jump is never half-sent
+const pressedControl = new Set()
 const forwardKeyToEngine = (e) => {
   const canvas = document.getElementById('mygame-canvas')
   if (!canvas || e.target === canvas) return
-  const t = e.target
+  // the composed path: a field inside a shadow root (the scene editor's UI) is retargeted to its host
+  const t = e.composedPath()[0] ?? e.target
   if (t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
   if (e.code === 'Tab') return
+  // Space/Enter press a focused control (the HUD's or the scene editor's), not Jump
+  if (e.type === 'keydown' && ACTIVATION_KEYS.has(e.code) && t instanceof Element && t.closest(CONTROLS)) {
+    pressedControl.add(e.code)
+    return
+  }
+  if (e.type === 'keyup' && pressedControl.delete(e.code)) return
   canvas.dispatchEvent(new KeyboardEvent(e.type, e))
 }
 window.addEventListener('keydown', forwardKeyToEngine)
@@ -312,6 +344,10 @@ window.set_url_params = (optionsJson) => {
     const options = Object.fromEntries(Object.entries(JSON.parse(optionsJson)).map(([name, raw]) => [name, urlValue(name, raw)]))
     applyOptionsToUrlParams(urlParams, options)
     history.replaceState(null, '', window.location.pathname + '?' + urlParams.toString())
+    // inside the web shell (react-web/index.html) this page is an iframe; the shell owns the address bar
+    if (window.parent !== window && !window.credentialless) {
+      window.parent.postMessage({ type: 'bevy-shell:url', search: '?' + urlParams.toString() }, window.location.origin)
+    }
   } catch (e) {
     console.log(`set url params failed: ${e}`)
   }
@@ -333,17 +369,21 @@ window.addEventListener('keydown', (event) => {
 initEngine()
   .then(() => {
     window.setLoadingStepActive('gpu')
-    return initGpuCache(gpu_cache_hash())
+    // spawns the render worker; gpu_cache.js warms its device there before the launch
+    return prepareRender()
   })
   .then(() => {
     window.setLoadingStepCompleted('gpu')
     // Deferred launch: the host calls this once the user picks a destination — avoiding a wasted
     // default-realm load. One engine per page (see start()'s __bevyStarted guard).
-    window.__bevyLaunch = (realm, position) => start({ ...config, realm, position })
+    window.__bevyLaunch = (realm, position, host) => start({ ...config, holdWorld: host?.holdWorld === true, realm, position })
     // The persisted home scene ({ realm (null = none pinned), parcel: "x,y" }), valid once
     // engine_init has loaded the config — the host's places picker targets it from "Skip to
     // Home" before launching.
     window.__bevyHomeScene = () => { try { return JSON.parse(engine_home_scene()) } catch { return null } }
+    // Whether this install has accepted the terms (null = unknown), so a link can launch holding
+    // the world for the welcome page.
+    window.__bevyTermsAccepted = () => { try { return engine_terms_accepted() } catch { return null } }
     window.__bevyReadyToLaunch = true
   })
   .catch((e) => {

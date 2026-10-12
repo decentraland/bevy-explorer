@@ -4,9 +4,14 @@ use common::{
     sets::SceneSets,
     structs::{AvatarDynamicState, MoveKind, PointAtSync, PointerTargetType, PrimaryUser},
 };
-use dcl_component::transform_and_parent::DclTranslation;
+use dcl_component::{
+    proto_components::sdk::components::ColliderLayer, transform_and_parent::DclTranslation,
+};
 use input_manager::{InputManager, InputPriority};
-use scene_runner::update_scene::pointer_results::{PointerRay, WorldPointerTarget};
+use scene_runner::{
+    update_scene::pointer_results::{PointerRay, WorldPointerTarget},
+    update_world::mesh_collider::{GlobalGroundCollider, SceneColliderData, GROUND_COLLISION_MASK},
+};
 
 /// Once latched, pointing persists for this many seconds (matches unity's
 /// `CharacterControllerSettings.PointAtDuration`). Cancelled early by leaving
@@ -37,6 +42,7 @@ impl Plugin for PointAtPlugin {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn capture_point_at(
     input_manager: InputManager,
     world_target: Res<WorldPointerTarget>,
@@ -45,6 +51,7 @@ fn capture_point_at(
     mut player: Query<(&mut PointAtSync, &AvatarDynamicState, &GlobalTransform), With<PrimaryUser>>,
     mut latch_until: Local<f64>,
     mut press_origin_dir: Local<Option<Vec3>>,
+    mut ground: Query<&mut SceneColliderData, With<GlobalGroundCollider>>,
 ) {
     let Ok((mut sync, dynamics, player_global)) = player.single_mut() else {
         return;
@@ -108,26 +115,52 @@ fn capture_point_at(
             }
         }
 
-        // Prefer a real hit (scene/avatar collider). If the cursor is over
-        // empty space, project the ray to the fallback distance — but if the
-        // ray would dip below the ground plane before then, clamp to y=0 so
-        // we point at a sensible piece of ground rather than under the world.
-        let target_bevy = world_target
-            .0
-            .as_ref()
-            .and_then(|t| t.position)
-            .or_else(|| {
-                pointer_ray.0.map(|r| {
-                    let mut t = NO_HIT_DISTANCE;
-                    if r.direction.y < 0.0 {
-                        let to_ground = -r.origin.y / r.direction.y;
-                        if to_ground > 0.0 && to_ground < t {
-                            t = to_ground;
-                        }
-                    }
-                    r.origin + *r.direction * t
+        // Prefer a real hit (scene/avatar collider, or the terrain outside
+        // scenes when it is nearer). If the cursor is over empty space, project
+        // the ray to the fallback distance — but if the ray would dip below the
+        // ground plane before then, clamp to y=0 so we point at a sensible
+        // piece of ground rather than under the world.
+        let terrain_hit = pointer_ray.0.and_then(|r| {
+            ground
+                .iter_mut()
+                .filter_map(|mut ground| {
+                    ground.cast_ray_nearest(
+                        r.origin,
+                        *r.direction,
+                        NO_HIT_DISTANCE,
+                        ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK,
+                        false,
+                        false,
+                        None,
+                    )
                 })
-            });
+                .map(|hit| r.origin + *r.direction * hit.toi)
+                .min_by(|a, b| {
+                    a.distance_squared(r.origin)
+                        .total_cmp(&b.distance_squared(r.origin))
+                })
+        });
+        let scene_hit = world_target.0.as_ref().and_then(|t| t.position);
+        let hit = match (scene_hit, terrain_hit, pointer_ray.0) {
+            (Some(scene), Some(terrain), Some(r))
+                if terrain.distance_squared(r.origin) < scene.distance_squared(r.origin) =>
+            {
+                Some(terrain)
+            }
+            (scene, terrain, _) => scene.or(terrain),
+        };
+        let target_bevy = hit.or_else(|| {
+            pointer_ray.0.map(|r| {
+                let mut t = NO_HIT_DISTANCE;
+                if r.direction.y < 0.0 {
+                    let to_ground = -r.origin.y / r.direction.y;
+                    if to_ground > 0.0 && to_ground < t {
+                        t = to_ground;
+                    }
+                }
+                r.origin + *r.direction * t
+            })
+        });
         if let Some(target_bevy) = target_bevy {
             let dcl = DclTranslation::from_bevy_translation(target_bevy);
             sync.target_world = Vec3::new(dcl.0[0], dcl.0[1], dcl.0[2]);

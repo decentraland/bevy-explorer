@@ -1,10 +1,13 @@
 pub mod archipelago;
 pub mod broadcast_position;
+pub mod chat_reaction;
 pub mod global_crdt;
 #[cfg(feature = "livekit")]
 pub mod livekit;
 pub mod movement_compressed;
 pub mod preview;
+#[cfg(feature = "livekit")]
+pub mod private_chat;
 pub mod profile;
 pub mod pulse;
 pub mod signed_login;
@@ -16,16 +19,16 @@ pub mod websocket_room;
 
 use std::marker::PhantomData;
 
+use alloy_core::primitives::Address;
 use bevy::{
     ecs::system::SystemParam,
     prelude::*,
     tasks::{IoTaskPool, Task},
 };
 use common::{
-    structs::{CurrentRealm, EmoteMask, MicState},
+    structs::{CurrentRealm, EmoteMask, MicState, WorldHold},
     util::{TaskCompat, TaskExt},
 };
-use ethers_core::types::H160;
 use http::{StatusCode, Uri};
 use preview::PreviewPlugin;
 use serde::{Deserialize, Serialize};
@@ -99,19 +102,26 @@ impl Plugin for CommsPlugin {
             ArchipelagoPlugin,
             BroadcastPositionPlugin,
             GlobalCrdtPlugin,
+            chat_reaction::ChatReactionPlugin,
             UserProfilePlugin,
             PreviewPlugin,
         ));
 
         #[cfg(feature = "livekit")]
-        app.add_plugins(LivekitPlugin);
+        app.add_plugins((LivekitPlugin, private_chat::PrivateChatPlugin));
         app.init_resource::<MicState>();
 
         // Pulse movement transport. Inert until a `pulse::plugin::PulseConfig` resource is
         // inserted; the driver (native ENet thread / wasm no-op) is selected at compile time.
         app.add_plugins(pulse::plugin::PulsePlugin);
 
-        app.add_systems(Update, (process_realm_change, connect_scene_room));
+        app.add_systems(
+            Update,
+            (
+                process_realm_change.run_if(not(resource_exists::<WorldHold>)),
+                connect_scene_room,
+            ),
+        );
 
         #[cfg(feature = "transport_debug")]
         app.add_plugins(transport_debug::TransportDebugPlugin);
@@ -169,7 +179,7 @@ impl BroadcastTarget {
 #[derive(Clone, Copy, Debug)]
 pub enum NetworkMessageRecipient {
     All,
-    Peer(H160),
+    Peer(Address),
     AuthServer,
 }
 
@@ -182,6 +192,8 @@ pub struct NetworkMessage {
     pub(crate) message: Box<dyn Broadcast>,
     pub unreliable: bool,
     pub recipient: NetworkMessageRecipient,
+    /// LiveKit data-packet topic. Only LiveKit transports carry it; the rest ignore it.
+    pub topic: Option<String>,
 }
 
 impl NetworkMessage {
@@ -193,6 +205,7 @@ impl NetworkMessage {
             message: Box::new(data),
             unreliable: true,
             recipient: NetworkMessageRecipient::All,
+            topic: None,
         }
     }
 
@@ -408,6 +421,7 @@ pub fn broadcast_to<'a, D: ToDclWriter>(
             message: Box::new(data.clone()),
             unreliable,
             recipient: NetworkMessageRecipient::All,
+            topic: None,
         });
     }
 }
@@ -438,6 +452,7 @@ pub fn broadcast<'a, B: Broadcast + Clone + 'static>(
                 message: Box::new(message.clone()),
                 unreliable,
                 recipient: NetworkMessageRecipient::All,
+                topic: None,
             });
         } else if auth_server_fanout && BroadcastTarget::LIVEKIT.includes(&transport.transport_type)
         {
@@ -445,6 +460,7 @@ pub fn broadcast<'a, B: Broadcast + Clone + 'static>(
                 message: Box::new(message.clone()),
                 unreliable,
                 recipient: NetworkMessageRecipient::AuthServer,
+                topic: None,
             });
         }
     }
@@ -510,6 +526,33 @@ pub struct SetCurrentScene {
 #[derive(Serialize, Deserialize)]
 pub struct GatekeeperResponse {
     adapter: String,
+}
+
+/// Signed request to a comms-gatekeeper endpoint, returning the adapter string it mints. `meta`
+/// travels in the signed identity headers, not the body.
+pub(crate) async fn mint_gatekeeper_adapter(
+    method: &str,
+    client: reqwest::Client,
+    uri: Uri,
+    wallet: &Wallet,
+    meta: String,
+) -> Result<String, anyhow::Error> {
+    let headers = sign_request(method, &uri, wallet, meta).await?;
+
+    let mut request = client
+        .request(method.parse()?, uri.to_string())
+        .timeout(std::time::Duration::from_secs(10))
+        .header("Content-Type", "application/json");
+    for (k, v) in headers {
+        request = request.header(k, v);
+    }
+    let response = request.send().await?;
+
+    if response.status() != StatusCode::OK {
+        return Err(anyhow::anyhow!("status: {}", response.status()));
+    }
+
+    Ok(response.json::<GatekeeperResponse>().await?.adapter)
 }
 
 #[derive(Component)]
@@ -633,22 +676,10 @@ fn connect_scene_room(
                 serde_json::to_string(&ev).unwrap()
             };
             *gatekeeper_task = Some(IoTaskPool::get().spawn_compat(async move {
-                let headers = sign_request("POST", &uri, &wallet, meta).await?;
-
-                let mut request = client
-                    .post(uri.to_string())
-                    .timeout(std::time::Duration::from_secs(10))
-                    .header("Content-Type", "application/json");
-                for (k, v) in headers {
-                    request = request.header(k, v);
-                }
-                let response = request.send().await?;
-
-                if response.status() != StatusCode::OK {
-                    return Err(anyhow::anyhow!("status: {}", response.status()));
-                }
-
-                Ok((response.json::<GatekeeperResponse>().await?.adapter, ev))
+                Ok((
+                    mint_gatekeeper_adapter("POST", client, uri, &wallet, meta).await?,
+                    ev,
+                ))
             }));
         }
     }

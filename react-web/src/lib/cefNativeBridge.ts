@@ -12,9 +12,15 @@ interface CefApi {
   listen: (id: string, cb: (payload: unknown) => void) => void
 }
 
-export function installCefNativeBridge(): void {
+function cefApi(): CefApi | null {
   const cef = (window as Window & { cef?: CefApi }).cef
-  if (!cef?.emit || !cef?.listen) return
+  if (!cef?.emit || !cef?.listen) return null
+  return cef
+}
+
+export function installCefNativeBridge(): void {
+  const cef = cefApi()
+  if (cef == null) return
 
   const ch = new BroadcastChannel(bridgeChannelName())
   // page -> engine: only scene-bound Envelopes cross the boundary
@@ -31,7 +37,8 @@ export function installCefNativeBridge(): void {
     }
   })
   // (HUD focus — including text focus — now flows through the bridge scene as a 'uiFocus'
-  // message on every platform; see useEngineSession. No engine-addressed messages remain.)
+  // message on every platform; see useEngineSession. The only engine-addressed messages are the
+  // console command below and the stored values further down.)
   // Engine fps for the perf overlay (see useFps). HUD geometry does NOT come through here:
   // --ui-scale and the engine cutout rects are keyed off the scene's canvas report on every
   // platform (see lib/uiCanvasStore.ts).
@@ -44,4 +51,48 @@ export function installCefNativeBridge(): void {
   cef.listen('engineTextFocus', (v) => {
     ;(window as Window & { __engineTextFocus?: boolean }).__engineTextFocus = v === 'true'
   })
+
+  // `window.engine_console_command(line)`: the promise-returning console RPC web.rs exports on web,
+  // relayed by src/react_hud_cef.rs (resolves with the command output, rejects with its error).
+  const pending = new Map<number, { resolve: (output: string) => void; reject: (e: Error) => void }>()
+  let nextId = 1
+  cef.listen('consoleReply', (payload) => {
+    try {
+      const r = JSON.parse(String(payload)) as { id: number; ok: boolean; output: string }
+      const call = pending.get(r.id)
+      if (call == null) return
+      pending.delete(r.id)
+      if (r.ok) call.resolve(r.output)
+      else call.reject(new Error(r.output))
+    } catch {
+      /* malformed reply; drop */
+    }
+  })
+  ;(window as Window & { engine_console_command?: (line: string) => Promise<string> }).engine_console_command = (line) =>
+    new Promise((resolve, reject) => {
+      const id = nextId++
+      pending.set(id, { resolve, reject })
+      cef.emit({ to: 'engine', kind: 'consoleCommand', id, line })
+    })
+}
+
+// The HUD's stored values (lib/prefs). Natively the engine keeps them: CEF's profile is per client
+// and deleted when it exits. Null when window.cef is absent.
+export function cefPrefs(): { load: () => Promise<Record<string, string>>; set: (key: string, value: string) => void } | null {
+  const cef = cefApi()
+  if (cef == null) return null
+  return {
+    load: () =>
+      new Promise((resolve) => {
+        cef.listen('prefs', (payload) => {
+          try {
+            resolve(JSON.parse(String(payload)) as Record<string, string>)
+          } catch {
+            resolve({})
+          }
+        })
+        cef.emit({ to: 'engine', kind: 'prefsLoad' })
+      }),
+    set: (key, value) => cef.emit({ to: 'engine', kind: 'prefSet', key, value })
+  }
 }

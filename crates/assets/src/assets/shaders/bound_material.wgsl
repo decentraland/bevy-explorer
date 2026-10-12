@@ -15,67 +15,33 @@
 #import "embedded://shaders/simplex.wgsl"::simplex_noise_3d
 #import "embedded://shaders/bound_material_effect.wgsl"::{apply_outline, discard_dither}
 #import "embedded://shaders/toon.wgsl"::toon_lighting
-
-// SHADOW_OPACITY: how dark the sun's cast shadows are on the world.
-// 1.0 = full black shadows (bevy default), 0.0 = no shadow at all.
-// overriding the shadow fetch lifts the shadow value toward "lit" inside the
-// single pbr lighting pass, so shadows become partial instead of fully
-// occluding the sun — no second lighting evaluation needed.
-const SHADOW_OPACITY: f32 = 0.5;
-
-// Beyond the furthest shadow cascade bevy returns "fully lit" (shadow = 1.0),
-// which pops hard at the shadow-distance edge. Instead, fade toward a partial-
-// shadow floor. CASCADE_FAR_SHADOW is how far that floor sits from lit toward
-// the in-cascade shadowed value: 0.5 = halfway between a fully-shadowed face
-// and fully lit (scales with SHADOW_OPACITY so it tracks the near-field
-// shadows). CASCADE_FAR_FADE is the fraction of the shadow distance to blend
-// over.
-const CASCADE_FAR_SHADOW: f32 = 0.5;
-const CASCADE_FAR_FADE: f32 = 0.3;
+#import "embedded://shaders/shadow_softening.wgsl"::soften_directional_shadow
+#import "embedded://shaders/scene_bounds.wgsl"::{scene_bounds, scene_outside_amount}
 
 override fn shadows::fetch_directional_shadow(light_id: u32, frag_position: vec4<f32>, surface_normal: vec3<f32>, view_z: f32) -> f32 {
     let base = shadows::fetch_directional_shadow(light_id, frag_position, surface_normal, view_z);
-    let softened = mix(1.0, base, SHADOW_OPACITY);
-
     // far bound of the last cascade = the shadow distance for this light
     let light = &lights.directional_lights[light_id];
     let far = (*light).cascades[max((*light).num_cascades, 1u) - 1u].far_bound;
-    if far <= 0.0 {
-        return softened;
-    }
-    // floor halfway between the in-cascade shadowed value (1 - SHADOW_OPACITY)
-    // and fully lit (1.0): 1 - CASCADE_FAR_SHADOW * SHADOW_OPACITY
-    let far_shadow = 1.0 - CASCADE_FAR_SHADOW * SHADOW_OPACITY;
-    // blend the (softened) shadow toward that floor over the last
-    // CASCADE_FAR_FADE of the distance, holding the floor past the edge
-    let fade = smoothstep(far * (1.0 - CASCADE_FAR_FADE), far, -view_z);
-    return mix(softened, far_shadow, fade);
+    return soften_directional_shadow(base, far, view_z);
 }
 
-struct Bounds {
-    min: u32,
-    max: u32,
-    height: f32,
-    _padding0: u32,
+#ifdef ENVIRONMENT_MAP
+#import bevy_pbr::{ambient, clustered_forward::ClusterableObjectIndexRanges, environment_map, lighting}
+#import "embedded://shaders/sky_envmap_lookup.wgsl"::{sky_envmap_input, sky_envmap_level}
+
+// the sky envmap, levelled towards the flat ambient light, is the only ambient light
+// (see sky_envmap_lookup.wgsl)
+override fn environment_map::compute_radiances(input: lighting::LayerLightingInput, clusterable_object_index_ranges: ptr<function, ClusterableObjectIndexRanges>, world_position: vec3<f32>, found_diffuse_indirect: bool) -> environment_map::EnvironmentMapRadiances {
+    let upper = sky_envmap_input(input);
+    let radiances = environment_map::compute_radiances(upper, clusterable_object_index_ranges, world_position, found_diffuse_indirect);
+    return sky_envmap_level(radiances, input, upper, lights.ambient_color);
 }
 
-struct SceneBounds {
-    bounds: array<Bounds,8>,
-    distance: f32,
-    num_bounds: u32,
+override fn ambient::ambient_light(world_position: vec4<f32>, world_normal: vec3<f32>, V: vec3<f32>, NdotV: f32, diffuse_color: vec3<f32>, specular_color: vec3<f32>, perceptual_roughness: f32, occlusion: vec3<f32>) -> vec3<f32> {
+    return vec3(0.0);
 }
-
-fn unpack_bounds(packed: u32) -> vec2<f32> {
-    let x = i32((packed >> 16) & 0xFFFF);
-    let x_signed = select(x, x - 0x10000, (x & 0x8000) != 0);
-    let y = i32(packed & 0xFFFF);
-    let y_signed = select(y, y - 0x10000, (y & 0x8000) != 0);
-    return vec2<f32>(f32((x_signed) * 16), f32((y_signed) * 16));
-}
-
-@group(2) @binding(100)
-var<uniform> bounds: SceneBounds;
-
+#endif
 @fragment
 fn fragment(
     in: VertexOutput,
@@ -150,32 +116,12 @@ fn fragment(
 
     let world_position = pbr_input.world_position.xyz;
     // check bounds
-    var outside_amt: f32 = 9999.0;
-    var nearest_region_distance: f32 = 9999.0;
-    var nearest_region_height: f32 = 9999.0;
-    if bounds.num_bounds > 0 {
-        for (var ix = 0u; ix < bounds.num_bounds; ix += 1u) {
-            let min_wp = unpack_bounds(bounds.bounds[ix].min);
-            let max_wp = unpack_bounds(bounds.bounds[ix].max);
-
-            let outside_xy = abs(clamp(world_position.xz, min_wp, max_wp) - world_position.xz);
-            let distance = max(outside_xy.x, outside_xy.y);
-            if distance < nearest_region_distance {
-                nearest_region_distance = distance;
-                nearest_region_height = bounds.bounds[ix].height;
-            }
-            outside_amt = min(outside_amt, distance);
-        }
-        let outside_height = max(world_position.y - nearest_region_height, 0.0);
-        outside_amt = max(outside_amt, outside_height);
-    } else {
-        outside_amt = 0.0;
-    }
+    let outside_amt = scene_outside_amount(world_position);
 
     var noise = 0.05;
     var should_discard = false;
     if outside_amt > 0.00 {
-        if outside_amt < bounds.distance {
+        if outside_amt < scene_bounds.distance {
             noise = simplex_noise_3d(world_position * 2.0 + globals.time * vec3(0.2, 0.16, 0.24)) * 0.5 + 0.55;
             if noise < (outside_amt - 0.125) / 2.0 {
                 should_discard = true;

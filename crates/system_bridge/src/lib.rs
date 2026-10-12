@@ -14,7 +14,7 @@ use bevy_console::{ConsoleCommandEntered, ConsoleConfiguration, ConsoleResponder
 use common::{
     inputs::{BindingsData, HudPanel, InputIdentifier, SystemActionEvent},
     rpc::{RpcResultSender, RpcStreamSender},
-    structs::{AppConfig, MicState, PermissionUsed},
+    structs::{AppConfig, CurrentRealm, MicState, PermissionUsed},
 };
 use serde::{Deserialize, Serialize};
 use settings::SettingBridgePlugin;
@@ -31,7 +31,15 @@ impl Plugin for SystemBridgePlugin {
         app.add_event::<SystemApi>();
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         app.insert_resource(SystemBridge { sender, receiver });
-        app.add_systems(Update, (post_events, handle_home_scene, handle_exit));
+        app.add_systems(
+            Update,
+            (
+                post_events,
+                handle_home_scene,
+                handle_satellite_view,
+                handle_exit,
+            ),
+        );
 
         if self.bare {
             return;
@@ -65,13 +73,22 @@ pub enum SystemApi {
     /// Log in with an AuthIdentity the web page already holds (base64-encoded AuthIdentity
     /// JSON read from localStorage) — no auth-server round-trip. The identity is the same
     /// regardless of how the user signed in (wallet, social, OTP, magic).
-    /// bool: as for LoginPrevious.
-    LoginWithIdentity(String, bool, RpcResultSender<Result<(), String>>),
+    /// bools: as for LoginPrevious; the identity is a guest account (see
+    /// `Wallet::is_guest_account`).
+    LoginWithIdentity(String, bool, bool, RpcResultSender<Result<(), String>>),
     LoginGuest,
     LoginCancel,
     Logout,
     GetSettings(RpcResultSender<Vec<SettingInfo>>),
     SetSetting(String, f32),
+    /// Sign a request with the engine wallet, with caller-supplied metadata. Scene-originated
+    /// signing goes through `RpcCall::SignRequest`, whose metadata the engine builds.
+    SignRequest {
+        method: String,
+        uri: String,
+        meta: Option<String>,
+        response: RpcResultSender<Result<Vec<(String, String)>, String>>,
+    },
     SetAvatar(SetAvatarData, RpcResultSender<Result<u32, String>>),
     GetNativeInput(RpcResultSender<InputIdentifier>),
     GetBindings(RpcResultSender<BindingsData>),
@@ -98,6 +115,9 @@ pub enum SystemApi {
     LiveSceneInfo(RpcResultSender<Vec<LiveSceneInfo>>),
     GetHomeScene(RpcResultSender<HomeScene>),
     SetHomeScene(HomeScene),
+    GetWelcome(RpcResultSender<WelcomeState>),
+    AcceptTerms(RpcResultSender<()>),
+    GetSatelliteView(RpcResultSender<Option<SatelliteView>>),
     GetSystemActionStream(RpcStreamSender<SystemActionEvent>),
     GetChatStream(RpcStreamSender<ChatMessage>),
     GetVoiceStream(RpcStreamSender<VoiceMessage>),
@@ -111,6 +131,14 @@ pub enum SystemApi {
     BridgeToPage(String),
     GetBridgeStream(RpcStreamSender<String>),
     SendChat(String, String),
+    /// Adds or removes the local user's reaction to a chat message in a channel.
+    SendChatReaction {
+        channel: String,
+        message_id: String,
+        emoji: String,
+        remove: bool,
+    },
+    GetChatReactionStream(RpcStreamSender<ChatReactionData>),
     Quit,
     GetPermissionRequestStream(RpcStreamSender<PermissionRequestEvent>),
     SetSinglePermission(SetSinglePermission),
@@ -144,6 +172,13 @@ pub enum SystemApi {
     GetBlockedUsers(RpcResultSender<Vec<BlockedUserData>>),
     GetBlockingStatus(RpcResultSender<Result<BlockingStatusData, String>>),
     GetBlockUpdateStream(RpcStreamSender<BlockUpdateData>),
+    // Social / DMs
+    /// Emits the given recipient's DM state now and whenever it changes, until dropped.
+    GetDmUserStateStream(String, RpcStreamSender<DmUserStateData>),
+    /// The stored DMs with a partner, oldest first.
+    GetDmHistory(String, RpcResultSender<Vec<DmHistoryEntryData>>),
+    /// Deletes the stored DMs with a partner.
+    DeleteDmHistory(String),
     // Connection
     #[cfg(feature = "livekit")]
     LivekitStatusStream(RpcStreamSender<LivekitUpdate>),
@@ -197,6 +232,20 @@ pub fn post_events(
                 "Command not recognized: `{cmd}`. Recognized commands: {:?}",
                 console_config.commands.keys().collect::<Vec<_>>()
             )));
+        }
+    }
+}
+
+fn handle_satellite_view(mut ev: EventReader<SystemApi>, realm: Res<CurrentRealm>) {
+    for ev in ev.read() {
+        if let SystemApi::GetSatelliteView(rpc_result_sender) = ev {
+            rpc_result_sender.send(
+                realm
+                    .config
+                    .map
+                    .as_ref()
+                    .and_then(|map| map.satellite_view.clone()),
+            );
         }
     }
 }

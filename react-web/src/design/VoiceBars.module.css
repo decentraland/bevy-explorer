@@ -1,0 +1,33 @@
+/* 13×12 badge, 3px bars: sides 6px and middle 12px, swapping (Unity's --alt toggle). */
+.bars {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 13px;
+  height: 12px;
+  flex: none;
+}
+.bar {
+  width: 3px;
+  height: 6px;
+  border-radius: 1.5px;
+  background: var(--green);
+  animation: bounce 0.6s ease-in-out infinite alternate;
+}
+.middle {
+  height: 12px;
+  animation-direction: alternate-reverse;
+}
+@keyframes bounce {
+  from {
+    height: 6px;
+  }
+  to {
+    height: 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bar {
+    animation: none;
+  }
+}

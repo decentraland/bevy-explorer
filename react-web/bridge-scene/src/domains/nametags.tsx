@@ -28,21 +28,9 @@ import { Color4, Vector3 } from '@dcl/sdk/math'
 import { getPlayer, onEnterScene, onLeaveScene } from '@dcl/sdk/players'
 import { ReactEcsRenderer } from '@dcl/sdk/react-ecs'
 import type { Entity } from '@dcl/ecs'
+import { isSpeaking } from './voice'
 import { fetchProfile } from './profile'
-
-// UserNameColors.json — the 23-colour palette, indexed by FNV-1a(address) % 23. Kept in lockstep
-// with the engine's name_color.rs so the in-world colour matches the point-at marker tint.
-const PALETTE: ReadonlyArray<readonly [number, number, number]> = [
-  [0.67138505, 0.38714847, 0.9433962], [0.8324557, 0.6273585, 1], [0.8716914, 0.3820755, 1],
-  [1, 0.2028302, 0.9783837], [1, 0.3537736, 0.92354745], [1, 0.5235849, 0.79682314],
-  [1, 0.7019608, 0.9433204], [1, 0.28773582, 0.30953965], [1, 0.4292453, 0.46791336],
-  [1, 0.6367924, 0.66624165], [1, 0.5053185, 0.08018869], [1, 0.65705246, 0],
-  [1, 0.8548728, 0], [1, 0.9431928, 0.6084906], [0.51564926, 0.8679245, 0],
-  [0.6194137, 0.9607843, 0.121568605], [0.858401, 1, 0.5613208], [0, 1, 0.7287984],
-  [0.5330188, 1, 0.9353978], [0.60784316, 0.8391339, 1], [0.60784316, 0.6527446, 1],
-  [0.48584908, 0.7057166, 1], [0.2783019, 0.7820757, 1]
-]
-const NAME_COLORS: readonly Color4[] = PALETTE.map(([r, g, b]) => Color4.create(r, g, b, 1))
+import { userNameColor } from '../../../src/engine/nameColor'
 
 // unity-explorer colours (CommonStyles.uss): solid pill + border, white-40% wallet id.
 const PILL_BG = Color4.create(22 / 255, 21 / 255, 24 / 255, 1) // --dcl-color-shadow #161518
@@ -56,6 +44,43 @@ const PAD = { top: 4, bottom: 4, right: 6, left: 13 }
 const RADIUS = 22
 const BADGE = 22
 const GAP = 6
+// Unity's speaking badge (NametagStyle.uss __badge-voice-chat): three 3px green bars in a 13×12 box,
+// sides 6px and middle 12px, swapping every beat. Drawn at the nametag canvas scale (font 30 vs 16).
+const VOICE_SCALE = FONT / 16
+const VOICE_BAR_W = 3 * VOICE_SCALE
+const VOICE_LOW = 6 * VOICE_SCALE
+const VOICE_HIGH = 12 * VOICE_SCALE
+const VOICE_BEAT_S = 0.3
+const VOICE_GREEN = Color4.fromHexString('#30CD00FF') // --green
+// The sandbox has no wall clock, so the beat advances on frame dt (see initNametags).
+let voiceAlt = false
+let voiceBeat = 0
+
+function VoiceBadge(): ReactEcs.JSX.Element {
+  const alt = voiceAlt
+  const bar = (tall: boolean): ReactEcs.JSX.Element => (
+    <UiEntity
+      uiTransform={{ width: VOICE_BAR_W, height: tall ? VOICE_HIGH : VOICE_LOW, borderRadius: VOICE_BAR_W / 2 }}
+      uiBackground={{ color: VOICE_GREEN }}
+    />
+  )
+  return (
+    <UiEntity
+      uiTransform={{
+        width: 13 * VOICE_SCALE,
+        height: VOICE_HIGH,
+        margin: { left: GAP },
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between'
+      }}
+    >
+      {bar(alt)}
+      {bar(!alt)}
+      {bar(alt)}
+    </UiEntity>
+  )
+}
 const BORDER = 2
 
 // FIXED world size for the pill — the previous SDK scene used a constant (2,1,1) scale and never
@@ -87,15 +112,25 @@ const EMOJI_FONT = 62
 const MSG_GAP = 2
 const MSG_TRUNCATE = 100
 const MENTION_BORDER = Color4.create(1, 45 / 255, 85 / 255, 1) // brand #ff2d55
+const TRANSLATED_ICON = 26 // beside a message the HUD translated
 
-type Bubble = { message: string; mention: boolean; ttl: number }
+type Bubble = { message: string; mention: boolean; ttl: number; messageId: string; translated: boolean }
 const bubbles = new Map<string, Bubble>() // lowercased address → its live bubble
 
 /** Show (or refresh) a player's chat bubble. Called by the chat domain for each incoming message. */
-export function setChatBubble(address: string, message: string, mention: boolean): void {
+export function setChatBubble(address: string, message: string, mention: boolean, messageId: string): void {
   const text = message.trim()
   if (address === '' || text === '') return
-  bubbles.set(address.toLowerCase(), { message: text, mention, ttl: BUBBLE_TTL })
+  bubbles.set(address.toLowerCase(), { message: text, mention, ttl: BUBBLE_TTL, messageId, translated: false })
+}
+
+/** Show a bubble's message in other words (its translation) and start its time again, if it is still
+ *  up and still that message: a later message, or one gone, is left alone. */
+export function retextChatBubble(address: string, messageId: string, message: string): void {
+  const text = message.trim()
+  const bubble = bubbles.get(address.toLowerCase())
+  if (bubble == null || messageId === '' || bubble.messageId !== messageId || text === '') return
+  bubbles.set(address.toLowerCase(), { ...bubble, message: text, ttl: BUBBLE_TTL, translated: true })
 }
 
 // Single-emoji detection (renders bigger, like the reference). Codepoint-range based so it works in
@@ -121,29 +156,17 @@ function truncateMessage(s: string, max: number): string {
   return (sp > max * 0.6 ? cut.slice(0, sp) : cut).replace(/\s+$/, '') + '…'
 }
 
-// 64-bit FNV-1a over the lowercase hex address — matches the engine + scene `simpleHash` exactly.
-function fnv1a64(str: string): bigint {
-  let hash = 2166136261n
-  for (let i = 0; i < str.length; i++) {
-    hash ^= BigInt(str.charCodeAt(i))
-    hash = (hash * 16777619n) & 0xffffffffffffffffn
-  }
-  return hash
-}
-// Name colour, matching the engine's UserProfile::name_color() resolution so the pill agrees with the
-// in-world point-at marker: a profile-set CUSTOM colour wins (claimed names only), else the address-
-// hashed palette. (We keep colouring unclaimed names by hash rather than greying them, per the
-// reference mobile nametags.) Custom colours come from the engine's profile (resolveClaimed) and the
-// hash is memoised — tagElement re-evaluates per texture render.
+// A claimed name's chosen colour (from the engine's profile, matching the point-at marker) wins; else
+// the name-derived hue shared with the HUD. Memoised: the tag re-evaluates every texture render.
 const customColorCache = new Map<string, Color4>()
 const colorCache = new Map<string, Color4>()
-function nameColor(userId: string): Color4 {
+function nameColor(userId: string, name: string, claimed: boolean): Color4 {
   const custom = customColorCache.get(userId)
-  if (custom != null) return custom
-  const key = userId.toLowerCase()
+  if (claimed && custom != null) return custom
+  const key = `${userId}|${name}|${String(claimed)}`
   const hit = colorCache.get(key)
   if (hit != null) return hit
-  const c = NAME_COLORS[Number(fnv1a64(key) % BigInt(NAME_COLORS.length))]
+  const c = Color4.fromHexString(`${userNameColor(name, userId, claimed)}ff`)
   colorCache.set(key, c)
   return c
 }
@@ -161,7 +184,6 @@ function resolveClaimed(userId: string, name: string): void {
     .then((av) => {
       const claimed = av?.hasClaimedName ?? !name.includes('#')
       claimedCache.set(userId, { name, claimed })
-      // The profile can set a custom name colour — engine logic applies it for claimed names only.
       const nc = av?.nameColor
       if (claimed && nc != null) customColorCache.set(userId, Color4.create(nc.r, nc.g, nc.b, 1))
       else customColorCache.delete(userId)
@@ -212,25 +234,35 @@ function tagElement(userId: string): () => ReactEcs.JSX.Element | null {
           uiBackground={{ color: PILL_BG }}
         >
           <UiEntity uiTransform={{ flexDirection: 'row', alignItems: 'center' }}>
-            <UiEntity uiText={{ value, fontSize: FONT, color: nameColor(userId), textAlign: 'middle-center' }} />
+            <UiEntity uiText={{ value, fontSize: FONT, color: nameColor(userId, name, isClaimed), textAlign: 'middle-center' }} />
             {isClaimed && (
               <UiEntity
                 uiTransform={{ width: BADGE, height: BADGE, margin: { left: GAP } }}
                 uiBackground={{ textureMode: 'stretch', texture: { src: 'images/icon-verified.png' } }}
               />
             )}
+            {isSpeaking(userId) && <VoiceBadge />}
           </UiEntity>
           {bubble != null && (
-            <UiEntity
-              uiTransform={{ maxWidth: BUBBLE_MAX_W, margin: { top: MSG_GAP } }}
-              uiText={{
-                value: truncateMessage(bubble.message, MSG_TRUNCATE),
-                fontSize: isSingleEmoji(bubble.message) ? EMOJI_FONT : MSG_FONT,
-                color: Color4.White(),
-                textAlign: 'top-center',
-                textWrap: 'wrap'
-              }}
-            />
+            <UiEntity uiTransform={{ flexDirection: 'row', alignItems: 'center', margin: { top: MSG_GAP } }}>
+              <UiEntity
+                // a translated message gives up the icon's width, so a wrapped one keeps the pill's width
+                uiTransform={{ maxWidth: bubble.translated ? BUBBLE_MAX_W - TRANSLATED_ICON - GAP : BUBBLE_MAX_W }}
+                uiText={{
+                  value: truncateMessage(bubble.message, MSG_TRUNCATE),
+                  fontSize: isSingleEmoji(bubble.message) ? EMOJI_FONT : MSG_FONT,
+                  color: Color4.White(),
+                  textAlign: 'top-center',
+                  textWrap: 'wrap'
+                }}
+              />
+              {bubble.translated && (
+                <UiEntity
+                  uiTransform={{ width: TRANSLATED_ICON, height: TRANSLATED_ICON, flexShrink: 0, margin: { left: GAP } }}
+                  uiBackground={{ textureMode: 'stretch', texture: { src: 'images/icon-translate.png' } }}
+                />
+              )}
+            </UiEntity>
           )}
         </UiEntity>
       </UiEntity>
@@ -394,6 +426,13 @@ export function initNametags(): void {
       b.ttl -= dt
       if (b.ttl <= 0) bubbles.delete(addr)
     }
+  })
+
+  engine.addSystem((dt: number) => {
+    voiceBeat += dt
+    if (voiceBeat < VOICE_BEAT_S) return
+    voiceBeat = 0
+    voiceAlt = !voiceAlt
   })
 
   // PRESENCE + REBIND (~1s), driven by the engine's PlayerIdentityData (its source of truth), NOT the

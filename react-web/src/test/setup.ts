@@ -31,3 +31,10 @@ if (!window.matchMedia) {
       }
     }) as unknown as MediaQueryList
 }
+
+// Keep unit tests off the network: the sidebar polls the live events count on mount.
+const realFetch = globalThis.fetch
+globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) =>
+  String(input instanceof Request ? input.url : input).includes('/api/events')
+    ? Promise.resolve(new Response(JSON.stringify({ ok: true, data: [] })))
+    : realFetch(input, init)) as typeof fetch

@@ -7,6 +7,7 @@
 // (ring, stroke, open, network, …), all typed. Token vars (--gold, --font-sans)
 // come from tokens.css.
 
+import { useId } from 'react'
 import styles from './Glyphs.module.css'
 
 interface GlyphProps {
@@ -273,6 +274,14 @@ export function Gear({ size = 18, className }: GlyphProps): React.JSX.Element {
   )
 }
 
+export function Translate({ size = 18, className }: GlyphProps): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor" aria-hidden="true" className={className}>
+      <path d="m12.87 15.07-2.54-2.51.03-.03A17.52 17.52 0 0 0 14.07 6H17V4h-7V2H8v2H1v1.99h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7 1.62-4.33L19.12 17h-3.24z" />
+    </svg>
+  )
+}
+
 export function Copy({ size = 16, className, strokeWidth = 1.6 }: StrokeGlyphProps): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" aria-hidden="true" className={className}>
@@ -324,12 +333,32 @@ export function Kebab({
   size = 18,
   className,
   r = 2,
-}: GlyphProps & { r?: number }): React.JSX.Element {
+  vertical = false,
+}: GlyphProps & { r?: number; vertical?: boolean }): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor" aria-hidden="true" className={className}>
-      <circle cx="5" cy="12" r={r} />
-      <circle cx="12" cy="12" r={r} />
-      <circle cx="19" cy="12" r={r} />
+      {[5, 12, 19].map((c) => (vertical ? <circle key={c} cx="12" cy={c} r={r} /> : <circle key={c} cx={c} cy="12" r={r} />))}
+    </svg>
+  )
+}
+
+export function BlockedUser({ size = 72, className }: GlyphProps): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 72 72" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true" className={className}>
+      <rect x="6" y="6" width="60" height="60" rx="14" />
+      <circle cx="31" cy="28" r="8" />
+      <path d="M17 52c1.5-8 7.5-12 14-12 3 0 5.6.8 7.8 2.3" strokeLinecap="round" />
+      <circle cx="48" cy="48" r="9" />
+      <path d="M41.6 54.4l12.8-12.8" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+export function Envelope({ size = 16, className }: GlyphProps): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 16 16" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true" className={className}>
+      <rect x="2" y="3.5" width="12" height="9" rx="1.5" />
+      <path d="M2.5 4.5L8 8.5l5.5-4" strokeLinejoin="round" />
     </svg>
   )
 }
@@ -458,6 +487,26 @@ export function ManaMark({
       aria-hidden="true"
     >
       <path d={g.d} fillRule={g.rule} clipRule={g.rule} />
+    </svg>
+  )
+}
+
+/** Claimed-name check: a ruby→purple rosette with a white tick. */
+export function VerifiedBadge({ size = 14, className }: GlyphProps): React.JSX.Element {
+  const id = useId()
+  return (
+    <svg className={className} width={size} height={size} viewBox="0 0 16 16" aria-label="verified" style={{ flex: 'none' }}>
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#ff2d55" />
+          <stop offset="1" stopColor="#c640cd" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M8 1l1.7 1.2 2.1-.2 1 1.8 1.9.9-.5 2 .9 1.9-1.6 1.4.1 2.1-2 .6-1.1 1.8-2-.7-2 .7-1.1-1.8-2-.6.1-2.1L1.6 8.6l.9-1.9-.5-2 1.9-.9 1-1.8 2.1.2z"
+        fill={`url(#${id})`}
+      />
+      <path d="M5.5 8l1.7 1.7L10.8 6" stroke="#fff" strokeWidth="1.4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }

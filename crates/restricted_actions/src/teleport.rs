@@ -1,14 +1,15 @@
 use bevy::{math::Vec3Swizzles, prelude::*};
 use common::{
-    rpc::{RpcCall, RpcResultSender},
-    structs::{AvatarDynamicState, CurrentRealm, PermissionType, PrimaryUser},
+    rpc::{RpcCall, RpcCallEvent, RpcResultSender},
+    structs::{AvatarDynamicState, PermissionType, PrimaryUser},
 };
 use comms::global_crdt::ForeignPlayer;
-use ethers_core::rand::{seq::SliceRandom, thread_rng, Rng};
 use ipfs::{ChangeRealmEvent, RealmInitialLocation};
+use rand::{seq::SliceRandom, Rng};
 use scene_runner::{
     initialize_scene::{
-        LiveScenes, PointerResult, SceneHash, SceneLoading, ScenePointers, PARCEL_SIZE,
+        LiveScenes, PointerResult, SceneHash, SceneLoading, ScenePointers, SuperUserScene,
+        PARCEL_SIZE,
     },
     permissions::Permission,
     renderer_context::{RendererSceneContext, FROZEN_BLOCK},
@@ -17,28 +18,30 @@ use scene_runner::{
 };
 use wallet::Wallet;
 
+// (parcel, realm, response, report a realm change's outcome)
 type TeleportAction = (
     Option<IVec2>,
     Option<String>,
     RpcResultSender<Result<(), String>>,
+    bool,
 );
 
 pub fn teleport_player(
     mut commands: Commands,
-    mut events: EventReader<RpcCall>,
+    mut events: EventReader<RpcCallEvent>,
     mut player: Query<(Entity, &mut Transform, &mut AvatarDynamicState), With<PrimaryUser>>,
     mut perms: Permission<TeleportAction>,
     mut realm_target: ResMut<RealmInitialLocation>,
+    super_user: Query<(), With<SuperUserScene>>,
 ) {
     let mut actions: Vec<TeleportAction> = Vec::new();
 
-    for (scene, to, realm, response) in events.read().filter_map(|ev| match ev {
+    for (scene, to, realm, response) in events.read().filter_map(|ev| match &ev.call {
         RpcCall::TeleportPlayer {
-            scene,
             to,
             realm,
             response,
-        } => Some((*scene, *to, realm.clone(), response.clone())),
+        } => Some((ev.origin.scene(), *to, realm.clone(), response.clone())),
         _ => None,
     }) {
         let parcel = to.map(|to| format!("({},{})", to.x, to.y));
@@ -53,17 +56,26 @@ pub fn teleport_player(
                 continue;
             }
         };
+        // system requests reply to their requester; a scene is gone once its realm change lands,
+        // so its player is told in the console, unless it is the HUD's own bridge scene
         let Some(scene) = scene else {
-            actions.push((to, realm, response));
+            actions.push((to, realm, response, false));
             continue;
         };
-        perms.check(ty, scene, (to, realm, response), Some(detail), false);
+        let report = !super_user.contains(scene);
+        perms.check(
+            ty,
+            scene,
+            (to, realm, response, report),
+            Some(detail),
+            false,
+        );
     }
 
     actions.extend(perms.drain_success(PermissionType::Teleport));
     actions.extend(perms.drain_success(PermissionType::ChangeRealm));
 
-    for (to, realm, response) in actions {
+    for (to, realm, response, report) in actions {
         if let Some(realm) = realm {
             // A realm change (a full reconnect, even to the realm we are in — same as changeRealm),
             // landing on the parcel once it is live, or on the realm's default spawn without one.
@@ -74,11 +86,13 @@ pub fn teleport_player(
                 Some(to) => RealmInitialLocation::Parcel(to),
                 None => RealmInitialLocation::Base,
             };
+            // answered once the realm is actually set (or failed, keeping the player where they are)
             commands.send_event(ChangeRealmEvent {
                 new_realm: realm,
                 content_server_override: None,
+                response,
+                report,
             });
-            response.send(Ok(()));
             continue;
         }
 
@@ -108,10 +122,10 @@ pub fn teleport_player(
         info!("teleported to {to}");
     }
 
-    for (_, _, response) in perms.drain_fail(PermissionType::Teleport) {
+    for (_, _, response, _) in perms.drain_fail(PermissionType::Teleport) {
         response.send(Err("User declined".to_owned()))
     }
-    for (_, _, response) in perms.drain_fail(PermissionType::ChangeRealm) {
+    for (_, _, response, _) in perms.drain_fail(PermissionType::ChangeRealm) {
         response.send(Err("User declined".to_owned()))
     }
 }
@@ -132,7 +146,6 @@ pub fn handle_out_of_world(
     live_scenes: Res<LiveScenes>,
     foreign_players: Query<&GlobalTransform, With<ForeignPlayer>>,
     wallet: Res<Wallet>,
-    current_realm: Res<CurrentRealm>,
 ) {
     let Ok((player, mut t)) = player.single_mut() else {
         return;
@@ -150,24 +163,7 @@ pub fn handle_out_of_world(
         .as_ivec2();
 
     let hash = match pointers.get(parcel) {
-        // Only trust a pointer tagged with the realm we are actually in. A pointer from the realm
-        // we just left survives a realm change (`process_realm_change` reconciles pointers against
-        // the new realm's scene list, which an ActiveEntities realm like Genesis doesn't have, so
-        // nothing is purged there) and `load_active_entities` treats such a pointer as "must
-        // re-request" rather than as an answer — see its `realm != current_realm.pointer_realm()`
-        // filter. Trusting it here let a teleport into a fresh realm resolve to the PREVIOUS
-        // realm's scene, which is already ticking and "ready", so the player was dropped straight
-        // into it: no loading screen, no asset count, and the real scene streamed in afterwards.
-        // Treat it like an unresolved parcel and wait for the sweep to answer for this realm.
-        Some(PointerResult::Exists { realm, hash, .. })
-            if realm == current_realm.pointer_realm() =>
-        {
-            hash
-        }
-        Some(PointerResult::Exists { .. }) => {
-            debug!("scene {parcel} is from another realm, waiting for this realm to resolve it");
-            return;
-        }
+        Some(PointerResult::Exists { hash, .. }) => hash,
         Some(PointerResult::Nothing) => {
             debug!("scene {parcel} doesn't exist, returning to world");
             debug!("everything: {:?}", pointers);
@@ -222,7 +218,7 @@ pub fn handle_out_of_world(
             let base_position =
                 Vec3::new(context.base.x as f32, 0.0, -context.base.y as f32) * PARCEL_SIZE;
 
-            let rng = &mut thread_rng();
+            let rng = &mut rand::thread_rng();
             let mut best_distance = 0.0;
             let mut best_position = Vec3::new(
                 rng.gen_range(0.0..PARCEL_SIZE),

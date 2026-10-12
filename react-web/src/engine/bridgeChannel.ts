@@ -14,6 +14,7 @@
 // arrives long after the scene — still gets an answer, and domains holding one-shot state can
 // re-send it to the newcomer.
 
+import { PAGE_DIR } from '../lib/publicUrl'
 import type { Envelope, PageToScene, SceneToPage } from './protocol'
 
 const HELLO_INTERVAL_MS = 250
@@ -95,12 +96,14 @@ export class BridgeChannel {
     this.stopHello()
     if (this.timeoutTimer != null) clearTimeout(this.timeoutTimer)
     this.timeoutTimer = null
+    // earlier hellos may have gone out before the scene listened; now it does, and no editor scene exists yet
+    this.hello()
     for (const msg of this.queue.splice(0)) this.post(msg)
   }
 
   /** The handshake itself bypasses the queue — it is what opens the queue. */
   private hello(): void {
-    this.post({ kind: 'hello' })
+    this.post({ kind: 'hello', pageDir: PAGE_DIR })
   }
 
   private post(msg: PageToScene): void {

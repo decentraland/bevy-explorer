@@ -13,20 +13,7 @@ use ffmpeg_next::{
 };
 use thiserror::Error;
 
-use crate::ffmpeg::stream_processor::FfmpegContext;
-
-pub struct VideoInfo {
-    pub width: u32,
-    pub height: u32,
-    pub rate: f64,
-    pub length: f64,
-}
-
-pub enum VideoData {
-    Info(VideoInfo),
-    Frame(frame::Video, f64),
-    State(VideoState),
-}
+use crate::{VideoData, VideoFrame, VideoInfo, ffmpeg::stream_processor::FfmpegContext};
 
 pub struct VideoContext {
     stream_index: usize,
@@ -172,10 +159,10 @@ impl FfmpegContext for VideoContext {
             self.buffer.len()
         );
         if let Some((index, frame)) = self.buffer.pop_front() {
-            if let Err(e) = self
-                .sink
-                .blocking_send(VideoData::Frame(frame, index as f64 / self.rate))
-            {
+            if let Err(e) = self.sink.blocking_send(VideoData::Frame(
+                VideoFrame { frame },
+                index as f64 / self.rate,
+            )) {
                 error!("failed to send video frame: {e}");
             }
 

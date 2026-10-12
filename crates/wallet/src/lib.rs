@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
+use alloy_core::primitives::Address;
+use alloy_signer::{Error as WalletError, Signature, Signer};
+use alloy_signer_local::PrivateKeySigner;
 use anyhow::anyhow;
 use async_trait::async_trait;
 use bevy::prelude::*;
 use common::structs::ChainLink;
-// use ethers_core::types::transaction::eip2718::TypedTransaction;
-use ethers_core::types::{Address, Signature};
-use ethers_signers::{LocalWallet, Signer, WalletError};
 use http::Uri;
 use platform::AsyncRwLock;
 use rand::SeedableRng;
@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod browser_auth;
 pub mod delegation;
+pub mod remote_signer;
 pub mod signed_login;
 
 pub struct WalletPlugin;
@@ -29,9 +30,10 @@ pub struct Wallet(Arc<AsyncRwLock<WalletInner>>);
 
 #[derive(Default)]
 struct WalletInner {
-    pub(crate) inner: Option<Box<dyn ObjSafeWalletSigner + 'static + Send + Sync>>,
+    pub(crate) inner: Option<Arc<dyn ObjSafeWalletSigner + 'static + Send + Sync>>,
     pub(crate) root_address: Option<Address>,
     pub(crate) delegates: Vec<ChainLink>,
+    pub(crate) guest_account: bool,
 }
 
 impl Wallet {
@@ -52,50 +54,75 @@ impl Wallet {
         write.inner = None;
         write.root_address = None;
         write.delegates.clear();
+        write.guest_account = false;
     }
 
     pub fn finalize_as_guest(&mut self) {
-        let inner: Box<dyn ObjSafeWalletSigner + Send + Sync> =
-            Box::new(LocalWallet::new(&mut rand::thread_rng()));
+        let inner: Arc<dyn ObjSafeWalletSigner + Send + Sync> =
+            Arc::new(PrivateKeySigner::random_with(&mut rand::thread_rng()));
         let mut write = self.0.try_write().unwrap();
         write.root_address = Some(inner.address());
         write.delegates.clear();
+        write.guest_account = false;
         write.inner = Some(inner);
     }
 
     pub fn finalize_as_guest_with_seed(&mut self, seed: [u8; 32]) {
-        let inner: Box<dyn ObjSafeWalletSigner + Send + Sync> =
-            Box::new(LocalWallet::new(&mut rand::rngs::StdRng::from_seed(seed)));
+        let inner: Arc<dyn ObjSafeWalletSigner + Send + Sync> = Arc::new(
+            PrivateKeySigner::random_with(&mut rand::rngs::StdRng::from_seed(seed)),
+        );
         let mut write = self.0.try_write().unwrap();
         write.root_address = Some(inner.address());
         write.delegates.clear();
+        write.guest_account = false;
         write.inner = Some(inner);
     }
 
     pub fn finalize(
         &mut self,
         root_address: Address,
-        local_wallet: LocalWallet,
+        local_wallet: PrivateKeySigner,
         auth: Vec<ChainLink>,
+        guest_account: bool,
     ) {
         let mut write = self.0.try_write().unwrap();
         write.root_address = Some(root_address);
         write.delegates = auth;
-        write.inner = Some(Box::new(local_wallet));
+        write.guest_account = guest_account;
+        write.inner = Some(Arc::new(local_wallet));
+    }
+
+    /// Like `finalize`, for an ephemeral key held outside the engine (`remote_signer`).
+    pub fn finalize_remote(
+        &mut self,
+        root_address: Address,
+        ephemeral_address: Address,
+        auth: Vec<ChainLink>,
+        guest_account: bool,
+    ) {
+        let mut write = self.0.try_write().unwrap();
+        write.root_address = Some(root_address);
+        write.delegates = auth;
+        write.guest_account = guest_account;
+        write.inner = Some(Arc::new(remote_signer::RemoteSigner {
+            address: ephemeral_address,
+        }));
     }
 
     pub async fn sign_message(&self, message: String) -> Result<SimpleAuthChain, WalletError> {
-        let read = self.0.read().await;
-        read.inner
-            .as_ref()
-            .ok_or_else(|| {
-                WalletError::IoError(std::io::Error::new(
+        // not held across the signing: a remote signer awaits the page, and logging in or out
+        // meanwhile needs the write lock
+        let (signer, root_address, delegates) = {
+            let read = self.0.read().await;
+            let signer = read.inner.clone().ok_or_else(|| {
+                WalletError::Other(Box::new(std::io::Error::new(
                     std::io::ErrorKind::NotConnected,
                     "wallet not connected",
-                ))
-            })?
-            .sign_message(message, read.root_address.unwrap(), &read.delegates)
-            .await
+                )))
+            })?;
+            (signer, read.root_address.unwrap(), read.delegates.clone())
+        };
+        signer.sign_message(message, root_address, &delegates).await
     }
 
     pub fn address(&self) -> Option<Address> {
@@ -104,6 +131,13 @@ impl Wallet {
 
     pub fn is_guest(&self) -> bool {
         self.0.try_read().unwrap().delegates.is_empty()
+    }
+
+    /// An account that was created for a guest. It signs in and keeps a profile like any
+    /// other account (so `is_guest` is false), but the user holds no wallet to approve
+    /// transactions with.
+    pub fn is_guest_account(&self) -> bool {
+        self.0.try_read().unwrap().guest_account
     }
 }
 
@@ -129,14 +163,14 @@ pub(crate) trait ObjSafeWalletSigner {
 
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-impl ObjSafeWalletSigner for LocalWallet {
+impl ObjSafeWalletSigner for PrivateKeySigner {
     async fn sign_message(
         &self,
         message: String,
         root_address: Address,
         delegates: &[ChainLink],
     ) -> Result<SimpleAuthChain, WalletError> {
-        let signature = Signer::sign_message(self, &message).await?;
+        let signature = Signer::sign_message(self, message.as_bytes()).await?;
         Ok(SimpleAuthChain::new(
             root_address,
             delegates,
@@ -178,7 +212,7 @@ impl SimpleAuthChain {
         links.push(ChainLink {
             ty: "ECDSA_SIGNED_ENTITY".to_owned(),
             payload,
-            signature: format!("0x{signature}"),
+            signature: signature.to_string(),
         });
         Self(links)
     }

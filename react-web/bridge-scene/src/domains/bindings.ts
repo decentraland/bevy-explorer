@@ -35,6 +35,11 @@ export function registerBindings(ctx: Ctx): void {
     void BevyApi.setUiFocus({ ui: msg.ui, text: msg.text, scroll: msg.scroll, covered: msg.covered, menu: msg.menu })
   })
 
+  // The area the React HUD occupies, measured by the page (lib/hudInset.ts).
+  ctx.on('interactableArea', (msg) => {
+    BevyApi.setInteractableArea({ left: msg.left, top: msg.top, right: msg.right, bottom: msg.bottom })
+  })
+
   let activeCaptureId: string | null = null
   ctx.on('captureInput', (msg) => {
     activeCaptureId = msg.id

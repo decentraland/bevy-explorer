@@ -3,6 +3,7 @@
 // it for the grid picker and for ":shortcode:" autocomplete in the chat input.
 
 import data from './emojis_complete.json'
+import { getPref, PREF, setPref } from '../../lib/prefs'
 
 export interface Emoji {
   code: string
@@ -15,49 +16,32 @@ export interface Emoji {
 
 interface RawCategory {
   name: string
-  spriteName: string
-  subcategories: string[]
 }
 
 const ALL = data.emojis as Emoji[]
 
 export interface EmojiGroup {
   name: string
-  /** A representative glyph used as the category tab icon. */
-  icon: string
   emojis: Emoji[]
 }
 
-// Skin-tone/hair "Component" emojis have no category tab — drop them from the grid.
-const CATEGORY_ICONS: Record<string, string> = {
-  'Smileys & Emotion': '😀',
-  'People & Body': '👋',
-  'Animals & Nature': '🐻',
-  'Food & Drink': '🍔',
-  'Travel & Places': '✈️',
-  Activities: '⚽',
-  Objects: '💡',
-  Symbols: '❤️',
-  Flags: '🏳️'
-}
-
-export const EMOJI_GROUPS: EmojiGroup[] = (data.categories as RawCategory[]).map(
-  (c) => ({
-    name: c.name,
-    icon: CATEGORY_ICONS[c.name] ?? '⭐',
-    emojis: ALL.filter((e) => e.category === c.name)
-  })
-)
+export const EMOJI_GROUPS: EmojiGroup[] = (data.categories as RawCategory[]).map((c) => ({
+  name: c.name,
+  emojis: ALL.filter((e) => e.category === c.name)
+}))
 
 export const EMOJI_BY_CODE: Map<string, Emoji> = new Map(ALL.map((e) => [e.code, e]))
+export const EMOJI_BY_GLYPH: Map<string, Emoji> = new Map(ALL.map((e) => [e.emoji, e]))
+
+/** The reaction bar's fixed emoji, Unity's: ♥️ 👏 👍 👎 🤣 🔥 😢. */
+export const QUICK_REACTIONS = ['\u2665\ufe0f', '\u{1f44f}', '\u{1f44d}', '\u{1f44e}', '\u{1f923}', '\u{1f525}', '\u{1f622}']
 
 // "Frequently used" — persisted across sessions, most-recent first.
-const RECENTS_KEY = 'dcl-emoji-recents'
 const RECENTS_MAX = 18
 
 export function loadRecents(): string[] {
   try {
-    const v = JSON.parse(localStorage.getItem(RECENTS_KEY) ?? '[]')
+    const v = JSON.parse(getPref(PREF.emojiRecents) ?? '[]')
     return Array.isArray(v) ? (v as string[]) : []
   } catch {
     return []
@@ -66,20 +50,13 @@ export function loadRecents(): string[] {
 
 export function pushRecent(code: string): string[] {
   const next = [code, ...loadRecents().filter((c) => c !== code)].slice(0, RECENTS_MAX)
-  try {
-    localStorage.setItem(RECENTS_KEY, JSON.stringify(next))
-  } catch {
-    // ignore quota / privacy-mode failures
-  }
+  setPref(PREF.emojiRecents, JSON.stringify(next))
   return next
 }
 
-/** Match a trailing ":word" the user is typing (caret assumed at end). */
-export const SHORTCODE_RE = /:([a-z0-9_+-]{2,})$/i
-
 /** Rank emoji whose shortcode starts-with then contains `query` (no colons). */
 export function searchByShortcode(query: string, limit = 8): Emoji[] {
-  const q = query.toLowerCase()
+  const q = query.toLowerCase().replace(/^:/, '')
   if (!q) return []
   const starts: Emoji[] = []
   const contains: Emoji[] = []

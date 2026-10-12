@@ -366,7 +366,7 @@ fn save_composite_cmd(
             }
         };
         let hash = match resolver.resolve() {
-            Ok((_, ctx)) => ctx.hash.clone(),
+            Ok((_, ctx)) => ctx.hash.to_string(),
             Err(e) => {
                 input.reply_failed(e);
                 return;

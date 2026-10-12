@@ -60,12 +60,17 @@ jobs:
       group: ${{ github.workflow }}-scenes-${{ github.ref }}
       cancel-in-progress: true
     steps:
+      # Checkout must precede rust-cache: the cache key hashes Cargo.lock, and
+      # without it the key is constant — saved once from main, then frozen stale.
       - uses: actions/checkout@v7
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           override: true
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
         uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
         with:
@@ -121,11 +126,8 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-      # The macOS/Windows legs are the longest jobs in the workflow; cache their dependency
-      # artifacts (rust-cache never keeps workspace crates). Linux finishes inside the other
-      # legs uncached, and every other cache in this repo was measured to give no reuse.
+      # rust-cache never keeps workspace crates, only dependency artifacts.
       - uses: Swatinem/rust-cache@v2
-        if: runner.os != 'Linux'
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
@@ -228,6 +230,10 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: headless-linux-x64
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       # NOT apt protobuf-compiler: ubuntu-22.04 ships protoc 3.12, which rejects the
       # proto3 optional fields in billboard.proto. The rest of this workflow uses the
       # action for the same reason.
@@ -311,6 +317,9 @@ jobs:
           toolchain: stable
           override: true
       - run: rustup component add clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
         uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
         with:
@@ -367,7 +376,7 @@ jobs:
           node-version: 24
           registry-url: 'https://registry.npmjs.org'
       - name: Set package.json version
-        uses: decentraland/oddish-action@0074f2d535c43b5c83f136525304a6277166d77f # @master
+        uses: decentraland/oddish-action@v1
         with:
           cwd: './deploy/web'
           deterministic-snapshot: true
@@ -378,6 +387,28 @@ jobs:
           target: wasm32-unknown-unknown
           components: rust-src
           override: true
+      # rustup installs rust-src with fresh mtimes on every runner, and cargo fingerprints
+      # build-std's path crates by mtime, so a restored target dir always rebuilds std.
+      # Stamp the sources with the toolchain's own commit date: older than any cached
+      # artifact built with it, newer than anything built with a previous nightly.
+      - name: Stamp rust-src with the toolchain date so cached build-std artifacts stay fresh
+        run: |
+          d=$(rustc -vV | sed -n 's/^commit-date: //p')
+          find "$(rustc --print sysroot)/lib/rustlib/src" -type f -exec touch -t "${d//-/}0000" {} +
+      # Plain cache rather than rust-cache: rust-cache prunes anything not in Cargo.lock
+      # before saving, which throws away the build-std std artifacts and forces a full
+      # wasm rebuild on every run. Saved only from main (see the Save step below).
+      - name: Restore wasm target cache
+        id: wasm-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: wasm-web-${{ hashFiles('Cargo.lock', 'Cargo.toml', '.cargo/config.toml') }}
+          restore-keys: wasm-web-
       - name: Install protoc
         uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
         with:
@@ -404,11 +435,13 @@ jobs:
           rm -f ./deploy/web/engine/pkg/.gitignore
           WASM_SIZE=$(wc -c < ./deploy/web/engine/pkg/webgpu_build_bg.wasm)
           echo "{\"wasmSize\":${WASM_SIZE}}" > ./deploy/web/engine/pkg/manifest.json
-          # Inline the glue into the sandbox worker: scene code shares that worker's realm and
-          # can re-import any module in it by URL, which for pkg/webgpu_build.js hands back our
-          # INITIALISED instance and with it the shared engine heap. Inlining turns the glue's
-          # exports into module-scope bindings of the bundle. Re-runs on every wasm build,
-          # since it embeds a copy of the generated glue.
+          # the scene runtime each sandbox worker runs its scene on, in that runtime's own memory
+          wasm-pack build crates/dcl_scene_wasm --target web $WASM_OPT_FLAG --out-dir ../../deploy/web/engine/pkg-scene --no-default-features
+          rm -f ./deploy/web/engine/pkg-scene/.gitignore
+          # Inline the scene runtime's glue into the sandbox worker: scene code shares that
+          # worker's realm and can re-import any module in it by URL. Inlining turns the worker's
+          # modules into module-scope bindings of the bundle. Re-runs on every wasm build, since it
+          # embeds a copy of the generated glue.
           npx --yes esbuild@0.28.1 ./deploy/web/engine/sandbox_worker.js \
             --bundle --format=esm --log-level=error \
             --metafile="${RUNNER_TEMP:-/tmp}/sandbox_worker.meta.json" \
@@ -435,6 +468,16 @@ jobs:
       # from the Rust system-api structs and gitignored — regenerate before building.
       - name: Generate TS bindings
         run: ./scripts/gen-ts-bindings.sh
+      - name: Save wasm target cache
+        if: github.ref == 'refs/heads/main' && steps.wasm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ steps.wasm-cache.outputs.cache-primary-key }}
       # The React HUD is the production page: build it into deploy/web root (vite outDir).
       # PUBLIC_URL = the versioned CDN base prebuild.js just wrote into package.json homepage —
       # index.html asset refs must be ABSOLUTE because the entry URL (decentraland.zone/bevy-web)
@@ -445,8 +488,11 @@ jobs:
           echo "PUBLIC_URL=$PUBLIC_URL"
           npm ci --prefix react-web
           npm run build --prefix react-web
+      # Some tests load bridge-scene sources, whose tsconfig extends the scene SDK's.
       - name: react-web unit tests
-        run: npm run test --prefix react-web
+        run: |
+          npm ci --prefix react-web/bridge-scene
+          npm run test --prefix react-web
       # The headless bridge scene the engine loads as its --ui systemScene. The realm (about) is
       # served same-origin with the engine iframe, but the scene CONTENT baseUrl is baked at
       # export — point it at the versioned CDN path so it's version-pinned + immutable and never
@@ -455,12 +501,11 @@ jobs:
         run: |
           export SCENE_BASE_URL="$(node -p "require('../../deploy/web/package.json').homepage || ''")/bridge-scene/static/"
           echo "SCENE_BASE_URL=$SCENE_BASE_URL"
-          npm ci
           npm run bundle
         working-directory: react-web/bridge-scene
       - name: Publish
         if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish-tag != '')
-        uses: decentraland/oddish-action@0074f2d535c43b5c83f136525304a6277166d77f # @master
+        uses: decentraland/oddish-action@v1
         with:
           cwd: './deploy/web'
           deterministic-snapshot: true

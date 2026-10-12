@@ -1,4 +1,5 @@
 import type { AuthIdentity } from '../features/auth/sso'
+import type { LaunchHostOptions } from './engineRpc'
 import type { PageToScene, SceneToPage } from './protocol'
 
 // The session surface the UI depends on. Two implementations:
@@ -14,14 +15,19 @@ export interface LoginDriver {
   getPreviousLogin(): Promise<{ userId: string | null }>
   loginPrevious(defaultOnError?: boolean): Promise<unknown>
   loginGuest(): Promise<void>
+  /** Create a guest account that persists across visits (a thirdweb guest wallet) and sign in
+   *  with it, replacing any earlier guest. Absent where there is no engine to take the identity;
+   *  `loginGuest` stays the throwaway guest (?guest=1, scene previews). */
+  loginPersistentGuest?(): Promise<void>
   loginCancel(): Promise<void>
   /** Sign out of the current account → back to the login screen. */
   logout(): Promise<void>
   /** Hand a same-domain SSO identity to the engine (replaces the auth-server poll).
    *  `defaultOnError` continues with (and deploys) a default profile if the user's current
    *  profile can't be fetched — it OVERWRITES the server-side profile, so only pass it after
-   *  a failed attempt, with explicit user consent. */
-  loginWithIdentity(identity: AuthIdentity, defaultOnError?: boolean): Promise<void>
+   *  a failed attempt, with explicit user consent. `guest` marks a guest account: the
+   *  engine reports it as a guest in analytics and refuses its transactions. */
+  loginWithIdentity(identity: AuthIdentity, defaultOnError?: boolean, guest?: boolean): Promise<void>
   /** Reuse the existing login (the "Jump in" button). Each backend logs in the way it
    *  supports: console `/login_identity` for the engine, `loginPrevious` over the bridge.
    *  `defaultOnError` as for loginWithIdentity. */
@@ -60,9 +66,14 @@ export interface LoginDriver {
   /** Boot the engine at a chosen realm/position (deferred-start: nothing loads until the user picks
    *  a destination). A parcel passes `position` "x,y"; a world passes `realm`; skip passes the
    *  home scene. Optional — the mock has no engine to launch. */
-  launch?(realm?: string, position?: string): void
+  launch?(realm?: string, position?: string, host?: LaunchHostOptions): void
   /** The engine's persisted home scene — the Skip target. Available pre-launch; null until the
-   *  engine module is up. Optional — the mock has no engine (and native skips keep the engine's
-   *  own start realm, which already IS home). */
+   *  engine module is up. Native and mock clients request it through the scene bridge instead. */
   homeScene?(): { realm: string | null; parcel: string } | null
+  /** Whether this install has accepted the terms, pre-launch (null = unknown), so a link can launch
+   *  holding the world for the welcome page. Native decides that hold itself (src/lib.rs). */
+  termsAccepted?(): boolean | null
+  /** Run an engine console command line (e.g. "/time 12 0") and resolve with its reply, without
+   *  the reply landing in chat. Optional — the mock has no engine console. */
+  command?(line: string): Promise<string>
 }

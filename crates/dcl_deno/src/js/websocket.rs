@@ -7,7 +7,7 @@ use common::{
 use deno_core::{anyhow, error::AnyError, op2, ByteString, JsBuffer, OpDecl, OpState, ResourceId};
 use deno_websocket::{CreateResponse, WebSocketPermissions};
 
-use dcl::{interface::crdt_context::CrdtContext, RpcCalls, SceneResourceCounters};
+use dcl::{RpcCalls, SceneResourceCounters};
 
 const MAX_OPEN_SOCKETS: usize = 32;
 const MAX_WS_BUFFERED_BYTES: usize = 8 * 1024 * 1024;
@@ -94,13 +94,11 @@ where
     WP: WebSocketPermissions + 'static,
 {
     // check permission
-    let scene = state.borrow_mut().borrow::<CrdtContext>().scene_id.0;
     let (sx, rx) = RpcResultSender::channel();
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
         .push(RpcCall::RequestGenericPermission {
-            scene,
             ty: common::structs::PermissionType::Websocket,
             message: Some(url.clone()),
             response: sx,

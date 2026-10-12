@@ -17,6 +17,8 @@ import type { SetAvatarData } from '../../../src/engine/generated'
 // Not via the generated barrel: it only re-exports the top-level files, not serde_json/.
 import type { JsonValue } from '../../../src/engine/generated/serde_json/JsonValue'
 import { BevyApi } from '../bevy-api'
+import { relay } from '../system-helpers'
+import { identity } from '../identity'
 import type { Ctx } from '../bridge'
 
 /** A deployed profile as the engine holds it (`common::profile::SerializedProfile`, serde JSON).
@@ -137,6 +139,7 @@ function toProfile(av: SerializedProfile | undefined, address: string, isGuest: 
     picture: httpOrUndef(snaps?.face256),
     bodyImage: httpOrUndef(snaps?.body),
     hasClaimedName: claimed,
+    nameColor: claimed ? av?.nameColor : undefined,
     isGuest,
     version: av?.version,
     description: av?.description != null && av.description !== '' ? av.description : undefined,
@@ -234,6 +237,9 @@ async function fetchPhotos(address: string): Promise<string[] | undefined> {
 type NamesResponse = { elements?: Array<{ name?: string }> }
 
 let ownedNames: string[] | undefined
+identity.onChange(() => {
+  ownedNames = undefined
+})
 async function fetchOwnedNames(address: string): Promise<string[]> {
   if (ownedNames != null) return ownedNames
   const base = await catalystBase()
@@ -290,9 +296,12 @@ export function registerProfile(ctx: Ctx): void {
       return
     }
 
+    // the account can change while this waits; the edit and its answers belong to this one only
+    const signedOut = (): boolean => getPlayer()?.userId !== player.userId
     const data: SetAvatarData = {}
     if (msg.name !== undefined) {
       const owned = await fetchOwnedNames(player.userId).catch(() => [])
+      if (signedOut()) return
       // An empty bodyShapeUrn and null colors mean "leave the avatar alone" — the name is the only
       // thing this edit touches, and the Backpack owns the rest.
       data.base = { skinColor: null, eyesColor: null, hairColor: null, bodyShapeUrn: '', name: msg.name }
@@ -311,15 +320,18 @@ export function registerProfile(ctx: Ctx): void {
       // is a genuinely failed save and the HUD must not keep showing the edit as if it stuck.
       await BevyApi.setAvatar(data)
     } catch (e) {
+      if (signedOut()) return
       console.error('[profile] save failed', e)
       ctx.send({ kind: 'profileSaved', ok: false, error: e instanceof Error ? e.message : String(e) })
       return
     }
 
+    if (signedOut()) return
     ctx.send({ kind: 'profileSaved', ok: true })
     // setAvatar amends the engine's own copy of the profile before it resolves, so re-reading it
     // is the post-save state — no need to fold the edit in by hand.
     const av = await fetchProfile(player.userId)
+    if (signedOut()) return
     ctx.send({ kind: 'profile', profile: toProfile(av, player.userId, player.isGuest, player.name) })
   })
 
@@ -351,14 +363,9 @@ export function registerProfile(ctx: Ctx): void {
 
   // The engine tells us when any profile it holds moves to a new version; the page decides what
   // it is still showing and re-reads only that.
-  void (async () => {
-    try {
-      const stream = await BevyApi.getProfileChangedStream()
-      for await (const ev of stream) ctx.send({ kind: 'profileChanged', address: ev.address, version: ev.version })
-    } catch (e) {
-      console.error('[profile] change stream failed', e)
-    }
-  })()
+  relay('profile', async () => await BevyApi.getProfileChangedStream(), (ev) => {
+    ctx.send({ kind: 'profileChanged', address: ev.address, version: ev.version })
+  })
 
   // A user's profile by address: the engine's copy alone for a name and a face (chat lines, the
   // profile card), plus badges + photos + equipped items when the passport asks (`extras`).

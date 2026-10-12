@@ -1,6 +1,5 @@
-/* Places browser body — "What's On" layout: Live Now + Featured highlight sections, then a toolbar
-   (section tabs + search + Any Category + Sort by) over a purple grid panel. Shared by the in-world
-   PlacesPage and the picker. */
+/* Places browser body — "What's On" layout: Live Now + Featured highlight sections above the
+   BrowsePage toolbar and panel. Shared by the in-world PlacesPage and the picker. */
 
 /* Live Now / Featured Places highlight sections. */
 .section {
@@ -31,62 +30,6 @@
   50% {
     opacity: 0.4;
   }
-}
-
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin-bottom: 20px;
-}
-
-
-.controls {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-left: auto;
-}
-.controls > * {
-  flex: none;
-}
-.search {
-  width: 240px;
-}
-.dd {
-  width: 168px;
-}
-.search > *,
-.dd > * {
-  width: 100%;
-}
-
-/* Purple grid panel (decentraland-ui2 GridPanel). */
-.panel {
-  background: rgba(179, 47, 255, 0.15);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 24px;
-  padding: 24px;
-}
-.grid {
-  display: grid;
-  /* Wide cards that fill the full width (~4 columns), like the Figma — not a narrow centered grid. */
-  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
-  gap: 18px;
-  align-content: start;
-}
-/* Fixed 4-up row: auto-fill would take the column count from the viewport (3 at 1440px, 7 at 2560px).
-   minmax(0, 1fr) keeps a long title/world pill from widening its track. */
-.gridLive {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.center {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 80px 0;
 }
 
 /* Featured Places — 2-row horizontal carousel of small FeaturedCards with arrow controls. */

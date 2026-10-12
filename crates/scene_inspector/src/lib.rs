@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use common::sets::SceneSets;
 use dcl_component::ComponentNameRegistry;
 use scene_runner::update_scene::raycast_result::SuperUserRaycastScene;
 
@@ -27,8 +28,18 @@ impl Plugin for SceneInspectorPlugin {
         write_commands::add_write_commands(app);
         asset_commands::add_asset_commands(app);
 
-        app.add_systems(Update, snapshot::handle_snapshot_events);
-        app.add_systems(Update, snapshot::handle_entity_allocated_events);
+        // after the scene loop so replies are handled the frame they arrive, and before pruning
+        // so a reply that raced a scene breaking is still delivered
+        app.add_systems(
+            Update,
+            (
+                snapshot::handle_snapshot_events,
+                snapshot::handle_entity_allocated_events,
+                snapshot::prune_dead_scene_requests,
+            )
+                .chain()
+                .in_set(SceneSets::PostLoop),
+        );
         app.add_systems(Update, sync_super_user_raycast_target);
     }
 }

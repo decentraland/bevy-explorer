@@ -10,6 +10,7 @@ import { renderHook, act, waitFor, type RenderHookResult } from '@testing-librar
 import { expect, vi } from 'vitest'
 import type { LoginDriver } from '../engine/driver'
 import type { PageToScene, SceneToPage } from '../engine/protocol'
+import { GENESIS_SATELLITE_VIEW } from '../features/map/atlas'
 import { useEngineSession, type EngineSession, type ProfileState } from '../features/session/useEngineSession'
 
 export class FakeDriver implements LoginDriver {
@@ -19,6 +20,12 @@ export class FakeDriver implements LoginDriver {
   readonly calls: string[] = []
   /** What getPreviousLogin resolves to (set before render to drive the login branch). */
   previousLogin: { userId: string | null } = { userId: null }
+  /** Every engine console command line run via `command`, in order. */
+  readonly commands: string[] = []
+  /** What `command` resolves to for a line (defaults to the engine's `/time` reply at 10:00, 12×). */
+  commandReply: (line: string) => string = () => 'time 10:0 -> 10:0, speed 12 (elapsed: 36000)'
+  /** The engine's answer to `getWelcome` (default: no page); null leaves it to the test to emit. */
+  welcome: { terms: boolean; newProfile: boolean } | null = { terms: false, newProfile: false }
 
   private readonly listeners = new Set<(msg: SceneToPage) => void>()
 
@@ -51,8 +58,14 @@ export class FakeDriver implements LoginDriver {
   rearmCrashWatchdog(): void {
     this.calls.push('rearmCrashWatchdog')
   }
+  async command(line: string): Promise<string> {
+    this.commands.push(line)
+    return this.commandReply(line)
+  }
   send(msg: PageToScene): void {
     this.sent.push(msg)
+    const welcome = this.welcome
+    if (msg.kind === 'getWelcome' && welcome != null) queueMicrotask(() => this.emit({ kind: 'welcome', ...welcome }))
   }
   on(fn: (msg: SceneToPage) => void): () => void {
     this.listeners.add(fn)
@@ -115,13 +128,16 @@ export function renderSession(
 export async function enterAsGuest(h: Harness, opts: { keepSent?: boolean } = {}): Promise<void> {
   await waitFor(() => expect(h.session().login.status).not.toBe('loading'))
   act(() => h.session().login.exploreAsGuest())
-  // Jump in now just shows the Places picker — the login is deferred until a destination is picked.
-  await waitFor(() => expect(h.session().phase).toBe('picking'))
-  // Skip it (null = default spawn); this launches the engine and runs the deferred login.
-  act(() => h.session().pickDestination(null))
-  // getPreviousLogin is the first call; the deferred login (fired on pick) adds a second.
+  // Jump in signs in and shows the lobby; getPreviousLogin is the first call, the login the second.
+  await waitFor(() => expect(h.session().phase).toBe('lobby'))
   await waitFor(() => expect(h.driver.calls.length).toBeGreaterThan(1))
+  // the lobby takes picks once sign-in has finished
+  await waitFor(() => expect(h.session().login.busy).toBe(false))
+  // Jump in from the lobby (null = home): a realm change, which releases the held world.
+  act(() => h.session().pickDestination(null))
   await waitFor(() => expect(h.session().phase).toBe('entering'))
+  const go = h.driver.last('teleport')!
+  h.driver.emit({ kind: 'travelResult', travelId: go.travelId!, realm: go.realm!, ok: true })
   h.driver.emit({ kind: 'event', name: 'playerReady' })
   // No loading state received counts as still-loading, so report "done" like the real
   // bridge-scene's stream does.
@@ -157,17 +173,27 @@ export const fakeProfileState = (over: Partial<ProfileState> = {}): ProfileState
 export function fakeSession(): EngineSession {
   return {
     phase: 'world',
+    playerReady: true,
+    lobbyStageReady: false,
+    lobbyPage: { open: false, toggle: vi.fn(), travel: vi.fn() },
+    homeScene: () => null,
+    avatarPreviewRect: null,
     pickDestination: vi.fn(),
+    welcome: { terms: false, newProfile: false, pending: false, saving: false, error: null, reroll: vi.fn(), accept: vi.fn(), openLegal: vi.fn() },
     sceneLoading: null,
+    loadingProgress: 0,
+    travelError: null,
+    dismissTravelError: vi.fn(),
+    travellingTo: null,
     fatalError: null,
     reload: vi.fn(),
     dismissFatal: vi.fn(),
     hover: [],
     cursorLocked: false,
     proximity: [],
-    chat: { messages: [], send: vi.fn(), open: true, toggle: vi.fn(), members: [], mention: vi.fn(), pendingMention: null, consumeMention: vi.fn(), unread: 0, focusTick: 0, requestFocus: vi.fn() },
-    friends: { available: true, list: [], received: [], sent: [], blocked: [], open: false, toggle: vi.fn(), act: vi.fn() },
-    settings: { list: [], open: false, toggle: vi.fn(), set: vi.fn() },
+    chat: { messages: [], send: vi.fn(), react: vi.fn(), nearby: [], bubbleText: vi.fn(), channel: 'Nearby', select: vi.fn(), conversations: [], openConversation: vi.fn(), closeConversation: vi.fn(), deleteHistory: vi.fn(), open: true, toggle: vi.fn(), members: [], speaking: new Set(), mention: vi.fn(), pendingMention: null, consumeMention: vi.fn(), unread: 0, setActive: vi.fn(), nearbyUnread: 0, focusTick: 0, requestFocus: vi.fn() },
+    friends: { available: true, list: [], received: [], sent: [], blocked: [], blockedUsers: [], loading: false, open: false, toggle: vi.fn(), act: vi.fn(), pending: new Set(), mutuals: {}, loadMutuals: vi.fn() },
+    settings: { list: [], open: false, toggle: vi.fn(), set: vi.fn(), load: vi.fn() },
     bindings: {
       list: [],
       set: vi.fn(),
@@ -176,19 +202,26 @@ export function fakeSession(): EngineSession {
     },
     profile: fakeProfileState(),
     notifications: { list: [], unread: 0, open: false, toggle: vi.fn(), markAllRead: vi.fn() },
+    skybox: { open: false, toggle: vi.fn(), hours: 10, progressing: true, setHours: vi.fn(), setProgressing: vi.fn() },
     emotes: { list: [], open: false, toggle: vi.fn(), play: vi.fn(), equip: vi.fn() },
-    backpack: { list: [], total: 0, loading: false, query: vi.fn(), equipped: [], open: false, toggle: vi.fn(), equip: vi.fn(), preview: vi.fn(), outfits: [], outfitSlots: 5, saveOutfit: vi.fn(), deleteOutfit: vi.fn(), equipOutfit: vi.fn() },
-    communities: { list: [], open: false, toggle: vi.fn(), create: vi.fn(), join: vi.fn(), leave: vi.fn(), detail: null, loadDetail: vi.fn() },
+    backpack: { list: [], total: 0, loading: false, query: vi.fn(), equipped: [], setColor: vi.fn(), open: false, toggle: vi.fn(), equip: vi.fn(), saveError: null, retrySave: vi.fn(), revertSave: vi.fn(), preview: vi.fn(), focus: vi.fn(), forceRender: [], setForceRender: vi.fn(), outfits: [], outfitSlots: 5, saveOutfit: vi.fn(), deleteOutfit: vi.fn(), equipOutfit: vi.fn() },
+    communities: { list: [], open: false, toggle: vi.fn(), create: vi.fn(), join: vi.fn(), requestToJoin: vi.fn(), cancelRequest: vi.fn(), leave: vi.fn(), error: null, detail: null, loadDetail: vi.fn() },
     map: { x: 0, y: 0, open: false, toggle: vi.fn(), teleport: vi.fn(), changeRealm: vi.fn(), teleportToPlace: vi.fn() },
-    minimap: { pose: { current: { x: 0, z: 0, yaw: 0, camYaw: 0 } }, isWorld: false, sceneTitle: '', setConfig: vi.fn() },
+    minimap: { pose: { current: { x: 0, z: 0, yaw: 0, camYaw: 0 } }, satelliteView: GENESIS_SATELLITE_VIEW, sceneTitle: '', setConfig: vi.fn() },
     places: { open: false, toggle: vi.fn() },
+    events: { open: false, toggle: vi.fn() },
+    shop: { open: false, toggle: vi.fn() },
     gallery: { list: [], current: 0, max: 0, loaded: false, open: false, toggle: vi.fn(), metas: {}, loadPhoto: vi.fn(), remove: vi.fn() },
     permissions: { pending: [], resolve: vi.fn() },
+    create: { open: false, toggle: vi.fn(), show: vi.fn() },
+    editor: { mode: 'off', setMode: vi.fn() },
     mic: { enabled: false, available: true, toggle: vi.fn() },
     nav: vi.fn(),
     setEngineViewport: vi.fn(),
+    setInteractableArea: vi.fn(),
     logout: vi.fn(),
     menuOpen: false,
+    closeAllPanels: vi.fn(),
     login: {
       status: 'sign-in-or-guest',
       account: null,

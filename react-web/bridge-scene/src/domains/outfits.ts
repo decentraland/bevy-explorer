@@ -1,14 +1,16 @@
 // Outfits: the player's saved avatar looks (backpack Outfits tab).
 //   load  ← localStorage cache first, else catalyst GET /lambdas/outfits/:address (unsigned)
 //   save/delete → localStorage (Phase 1; Phase 2 will deploy a signed `outfits` entity)
-//   equip → BevyApi.setAvatar (body shape + colors + wearables)
+//   equip → the Backpack's look (body shape + colors + wearables; ./avatarDraft deploys it on close)
 //
 // Mirrors bevy-ui-scene's outfits flow (localStorage-first read, host-mediated equip). The saved
 // shape matches the deployed catalyst `outfits` entity so Phase 2 can deploy it unchanged.
 import { getPlayer } from '@dcl/sdk/players'
-import { BevyApi } from '../bevy-api'
 import { catalystBase, getJson } from '../http'
-import { resolveEquippedSet } from './wearables'
+import { sendEquipped } from './wearables'
+import { currentLook, editLook } from './avatarDraft'
+import { captureAvatarThumbnail, waitFrames } from './avatarPreview'
+import type { AvatarLook } from '../../../src/engine/avatarEquip'
 import type { Ctx } from '../bridge'
 import type { Outfit, OutfitsMetadata, RGBColor } from '../../../src/engine/protocol'
 
@@ -23,6 +25,32 @@ const EMPTY: OutfitsMetadata = { outfits: [], namesForExtraSlots: [] }
 const GREY: RGBColor = { r: 0.5, g: 0.5, b: 0.5 }
 
 const storageKey = (address: string): string => `outfits:${address.toLowerCase()}`
+// Thumbnails stay local (never deployed), one key per slot so a save rewrites one image.
+const thumbKey = (address: string, slot: number): string => `outfit-thumb:${address.toLowerCase()}:${slot}`
+// Wait for an equipped outfit's wearables to load before picturing it.
+const EQUIP_THUMBNAIL_DELAY_FRAMES = 180
+
+function withThumbnails(address: string, metadata: OutfitsMetadata): OutfitsMetadata {
+  return {
+    ...metadata,
+    outfits: metadata.outfits.map((o) => {
+      let thumbnail: string | null = null
+      try {
+        thumbnail = localStorage.getItem(thumbKey(address, o.slot))
+      } catch {}
+      return thumbnail != null ? { ...o, thumbnail } : o
+    })
+  }
+}
+
+function writeThumbnail(address: string, slot: number, thumbnail: string | null): void {
+  try {
+    if (thumbnail != null) localStorage.setItem(thumbKey(address, slot), thumbnail)
+    else localStorage.removeItem(thumbKey(address, slot))
+  } catch (e) {
+    console.error('[outfits] thumbnail write failed', e)
+  }
+}
 
 function readLocal(address: string): OutfitsMetadata | null {
   try {
@@ -51,21 +79,23 @@ async function loadMetadata(address: string): Promise<OutfitsMetadata> {
   return res?.metadata ?? EMPTY
 }
 
-// Capture the player's CURRENT look into a deployable Outfit (colors default to grey if absent).
-function currentOutfit(player: NonNullable<ReturnType<typeof getPlayer>>): Outfit {
-  const a = player.avatar
+// Capture the Backpack's CURRENT look into a deployable Outfit (colors default to grey if absent).
+function currentOutfit(look: AvatarLook): Outfit {
   return {
-    bodyShape: a?.bodyShapeUrn ?? '',
-    eyes: { color: a?.eyesColor ?? GREY },
-    hair: { color: a?.hairColor ?? GREY },
-    skin: { color: a?.skinColor ?? GREY },
-    wearables: (player.wearables ?? []).map(String),
-    forceRender: (player.forceRender ?? []).map(String)
+    bodyShape: look.bodyShape,
+    eyes: { color: look.eyes ?? GREY },
+    hair: { color: look.hair ?? GREY },
+    skin: { color: look.skin ?? GREY },
+    wearables: look.wearables,
+    forceRender: look.forceRender
   }
 }
 
 export function registerOutfits(ctx: Ctx): void {
-  const emit = (metadata: OutfitsMetadata): void => { ctx.send({ kind: 'outfits', metadata }); }
+  const emit = (metadata: OutfitsMetadata): void => {
+    const me = getPlayer()
+    ctx.send({ kind: 'outfits', metadata: me != null ? withThumbnails(me.userId, metadata) : metadata })
+  }
 
   ctx.on('getOutfits', async () => {
     const me = getPlayer()
@@ -79,13 +109,16 @@ export function registerOutfits(ctx: Ctx): void {
   // Save the current look into `slot`, replacing any existing outfit there, then re-emit.
   ctx.on('saveOutfit', async (msg) => {
     const me = getPlayer()
-    if (me == null) return
+    const look = currentLook()
+    if (me == null || look == null) return
+    const thumbnail = await captureAvatarThumbnail()
     const metadata = await loadMetadata(me.userId)
     const outfits = metadata.outfits.filter((o) => o.slot !== msg.slot)
-    outfits.push({ slot: msg.slot, outfit: currentOutfit(me) })
+    outfits.push({ slot: msg.slot, outfit: currentOutfit(look) })
     outfits.sort((a, b) => a.slot - b.slot)
     const next = { ...metadata, outfits }
     writeLocal(me.userId, next)
+    writeThumbnail(me.userId, msg.slot, thumbnail)
     emit(next)
   })
 
@@ -95,10 +128,11 @@ export function registerOutfits(ctx: Ctx): void {
     const metadata = await loadMetadata(me.userId)
     const next = { ...metadata, outfits: metadata.outfits.filter((o) => o.slot !== msg.slot) }
     writeLocal(me.userId, next)
+    writeThumbnail(me.userId, msg.slot, null)
     emit(next)
   })
 
-  // Apply a saved outfit's body shape, colors and wearables to the live profile (keeps emotes).
+  // Put a saved outfit's body shape, colors and wearables on the Backpack's look (keeps emotes).
   ctx.on('equipOutfit', async (msg) => {
     const me = getPlayer()
     if (me == null) return
@@ -106,25 +140,26 @@ export function registerOutfits(ctx: Ctx): void {
     const found = metadata.outfits.find((o) => o.slot === msg.slot)
     if (found == null) return
     const { outfit } = found
-    BevyApi.setAvatar({
-      base: {
-        name: me.name,
-        bodyShapeUrn: outfit.bodyShape,
-        eyesColor: outfit.eyes.color,
-        hairColor: outfit.hair.color,
-        skinColor: outfit.skin.color
-      },
-      equip: {
-        wearableUrns: outfit.wearables,
-        emoteUrns: (me.emotes ?? []).map(String),
-        forceRender: outfit.forceRender
-      }
-    }).catch((e: unknown) => {
-      console.error('[outfits] equip failed', e)
+    editLook({
+      bodyShape: outfit.bodyShape,
+      eyes: outfit.eyes.color,
+      hair: outfit.hair.color,
+      skin: outfit.skin.color,
+      wearables: outfit.wearables,
+      forceRender: outfit.forceRender
     })
-    // setAvatar's deploy never pushes a wearables update, so re-emit the equipped set resolved from
-    // the outfit's wearables (by urn, independent of the loaded catalog page). Otherwise off-page
-    // outfit items never reach the HUD's category slots and the next single-item equip drops them.
-    ctx.send({ kind: 'wearables', equipped: await resolveEquippedSet(outfit.wearables.map(String)) })
+    // Re-emit the equipped set resolved from the outfit's wearables (by urn, independent of the
+    // loaded catalog page). Otherwise off-page outfit items never reach the HUD's category slots
+    // and the next single-item equip drops them.
+    await sendEquipped(ctx)
+    if (withThumbnails(me.userId, metadata).outfits.find((o) => o.slot === msg.slot)?.thumbnail == null) {
+      await waitFrames(EQUIP_THUMBNAIL_DELAY_FRAMES)
+      // Changed since: the preview no longer shows this outfit.
+      if (JSON.stringify(currentLook()?.wearables) !== JSON.stringify(outfit.wearables)) return
+      const thumbnail = await captureAvatarThumbnail()
+      if (thumbnail == null) return
+      writeThumbnail(me.userId, msg.slot, thumbnail)
+      emit(await loadMetadata(me.userId))
+    }
   })
 }

@@ -5,8 +5,8 @@
 // makes this affordable: without it every world entry would re-pull the whole list.
 
 import { fetchPlaces, type DiscoverPlace } from '../places/placesApi'
+import { getPref, PREF, setPref } from '../../lib/prefs'
 
-const CACHE_KEY = 'dcl-minimap-places'
 /** Places move around far less often than a session lasts; a few days keeps this to ~one pull. */
 const CACHE_TTL = 3 * 24 * 60 * 60 * 1000
 const PAGE = 100
@@ -51,7 +51,7 @@ function toMinimapPlaces(data: DiscoverPlace[]): MinimapPlace[] {
 
 function readCache(): MinimapPlace[] | null {
   try {
-    const raw = localStorage.getItem(CACHE_KEY)
+    const raw = getPref(PREF.minimapPlaces)
     if (raw == null) return null
     const parsed: unknown = JSON.parse(raw)
     if (typeof parsed !== 'object' || parsed == null) return null
@@ -64,11 +64,7 @@ function readCache(): MinimapPlace[] | null {
 }
 
 function writeCache(places: MinimapPlace[]): void {
-  try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), places }))
-  } catch {
-    // ignore quota / privacy-mode failures — we just refetch next session
-  }
+  setPref(PREF.minimapPlaces, JSON.stringify({ at: Date.now(), places }))
 }
 
 let inFlight: Promise<MinimapPlace[]> | null = null

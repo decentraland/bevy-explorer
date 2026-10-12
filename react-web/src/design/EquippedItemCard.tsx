@@ -18,11 +18,15 @@ export interface EquippedItemCardProps {
   name?: string
   rarity?: string
   shopUrl?: string
+  /** Label of the shop link (default "Shop"; the Shop section uses "Buy"). */
+  shopLabel?: string
+  /** Price line under the name (the Shop section). */
+  price?: string
   /** Body-part / item-kind glyph shown in the top-left rarity-colored corner flap. */
   categoryIcon?: React.ReactNode
 }
 
-export function EquippedItemCard({ thumbnail, name, rarity, shopUrl, categoryIcon }: EquippedItemCardProps): React.JSX.Element {
+export function EquippedItemCard({ thumbnail, name, rarity, shopUrl, shopLabel = 'Shop', price, categoryIcon }: EquippedItemCardProps): React.JSX.Element {
   const [failed, setFailed] = useState(false)
   return (
     <div className={`${styles.card} ${shopUrl != null ? styles.hasShop : ''}`.trim()} data-rarity={rarity ?? 'base'}>
@@ -37,9 +41,10 @@ export function EquippedItemCard({ thumbnail, name, rarity, shopUrl, categoryIco
       <span className={styles.name} title={name}>{name}</span>
       {/* Always rendered ('base' fallback) so every tile has the same height. */}
       <span className={styles.rarityTag}>{rarity ?? 'base'}</span>
+      {price != null && <span className={styles.price}>{price}</span>}
       {shopUrl != null && (
         <Button href={shopUrl} target="_blank" rel="noopener" size="sm" className={styles.shopBtn}>
-          Shop
+          {shopLabel}
         </Button>
       )}
     </div>

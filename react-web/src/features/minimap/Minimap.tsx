@@ -11,10 +11,10 @@
 // moves all of them. React only re-renders when the tile *set* changes, i.e. on a chunk
 // boundary.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp, Gear, Minus, Plus } from '../../design'
 import { EngineViewport } from '../engine/EngineViewport'
-import { PARCEL_METERS, atlasPx, chunksInRect, parcelTileFor, type Chunk } from '../map/atlas'
+import { PARCEL_METERS, atlasPx, chunksInRect, isGenesisSatelliteView, parcelTileFor, type Chunk } from '../map/atlas'
 import { pinForCategories } from '../map/mapArt'
 import { BASE_PX_PER_PARCEL, ParcelTiles, SatelliteTiles } from './MinimapTiles'
 import { loadMinimapPlaces, placesNear, type MinimapPlace } from './minimapPlaces'
@@ -36,6 +36,7 @@ import {
 import { MinimapSettings } from './MinimapSettings'
 import type { MapState, MinimapState } from '../session/useEngineSession'
 import type { MinimapStyle } from '../../engine/protocol'
+import { hudInsetRef } from '../../lib/hudInset'
 import styles from './Minimap.module.css'
 
 /** Diameter of the circle, before --ui-scale. Roughly the 0.25×viewport-height the SDK7 HUD used. */
@@ -46,7 +47,7 @@ const ZOOM_TIME = 0.2
  *  markers cluster near the middle rather than filling a map you're only glancing at. */
 const MARKER_RADIUS = 10
 
-export function Minimap({
+export const Minimap = memo(function Minimap({
   minimap,
   map,
   sceneTitle,
@@ -55,9 +56,12 @@ export function Minimap({
   minimap: MinimapState
   map: MapState
   sceneTitle: string
-  setEngineViewport: (region: 'map' | 'avatarPreview', rect: { x: number; y: number; width: number; height: number } | null) => void
+  setEngineViewport: (region: 'map' | 'avatarPreview' | 'lobby', rect: { x: number; y: number; width: number; height: number } | null) => void
 }): React.JSX.Element {
-  const [open, setOpen] = useState(() => loadOpen(minimap.isWorld))
+  // Only Genesis City advertises this satellite map, so it is what tells it from a World or a
+  // local scene.
+  const inGenesis = isGenesisSatelliteView(minimap.satelliteView)
+  const [open, setOpen] = useState(() => loadOpen(inGenesis))
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [style, setStyle] = useState<MinimapStyle>(loadStyle)
   const [rotation, setRotation] = useState(loadRotation)
@@ -67,7 +71,6 @@ export function Minimap({
   // Tiles + coords re-render only on a boundary, not per pose sample.
   const [chunks, setChunks] = useState<Chunk[]>([])
   const [parcelTile, setParcelTile] = useState(() => parcelTileFor(0, 0))
-  const [parcel, setParcel] = useState({ x: 0, y: 0 })
 
   const surfaceRef = useRef<HTMLDivElement>(null)
   // Wraps the gear AND its menu: the trigger has to count as "inside", or its own click would
@@ -77,15 +80,15 @@ export function Minimap({
   // during the ease, without a render per frame.
   const zoomRef = useRef(visibleMeters)
 
-  // In a World there are no satellite/parcel tiles, so only the engine-rendered style can show
-  // anything. Matches the SDK7 HUD's forceImposters.
-  const effectiveStyle: MinimapStyle = minimap.isWorld ? 'imposters' : style
+  // Outside Genesis City (a World, a local scene) there are no satellite/parcel tiles, so only
+  // the engine-rendered style can show anything. Matches the SDK7 HUD's forceImposters.
+  const effectiveStyle: MinimapStyle = inGenesis ? style : 'imposters'
 
-  // Crossing between Genesis City and a World swaps to that realm type's own open/closed
+  // Crossing between Genesis City and anywhere else swaps to that realm type's own open/closed
   // preference, so a World opens collapsed without discarding a manual collapse in Genesis.
   useEffect(() => {
-    setOpen(loadOpen(minimap.isWorld))
-  }, [minimap.isWorld])
+    setOpen(loadOpen(inGenesis))
+  }, [inGenesis])
 
   const { pose, setConfig } = minimap
 
@@ -97,7 +100,7 @@ export function Minimap({
 
   // Place markers. A World's scenes aren't on the Genesis City grid, so there is nothing to mark.
   useEffect(() => {
-    if (minimap.isWorld || markerCategories.length === 0) return
+    if (!inGenesis || markerCategories.length === 0) return
     let alive = true
     loadMinimapPlaces()
       .then((p) => {
@@ -110,18 +113,18 @@ export function Minimap({
     return () => {
       alive = false
     }
-  }, [minimap.isWorld, markerCategories.length])
+  }, [inGenesis, markerCategories.length])
 
   const nearby = useMemo(() => {
     // Guard here as well as on the fetch: places loaded in Genesis City stay in state when you
     // travel to a World, and a World's coordinates are local — they sit near the origin, which
     // is exactly where Genesis City has places. Without this you get Genesis markers on a map
     // they have nothing to do with. Kept in state rather than cleared so coming back doesn't refetch.
-    if (minimap.isWorld) return []
-    return placesNear(places, parcel.x, parcel.y, MARKER_RADIUS).filter((p) =>
+    if (!inGenesis) return []
+    return placesNear(places, map.x, map.y, MARKER_RADIUS).filter((p) =>
       p.categories.some((c) => markerCategories.includes(c))
     )
-  }, [minimap.isWorld, places, parcel.x, parcel.y, markerCategories])
+  }, [inGenesis, places, map.x, map.y, markerCategories])
 
   useEffect(() => {
     const surface = surfaceRef.current
@@ -129,7 +132,6 @@ export function Minimap({
     let raf = 0
     let lastChunkKey = ''
     let lastTileUrl = ''
-    let lastParcelKey = ''
     const tick = (): void => {
       raf = requestAnimationFrame(tick)
       const p = pose.current
@@ -146,14 +148,6 @@ export function Minimap({
       surface.style.setProperty('--map-yaw', String(mapYaw))
       surface.style.setProperty('--map-arrow', String(p.yaw + mapYaw))
 
-      // Boundary crossings — cheap to test, rare to fire.
-      const px = Math.floor(p.x / PARCEL_METERS)
-      const py = Math.floor(p.z / PARCEL_METERS)
-      const parcelKey = `${px},${py}`
-      if (parcelKey !== lastParcelKey) {
-        lastParcelKey = parcelKey
-        setParcel({ x: px, y: py })
-      }
       if (effectiveStyle === 'satellite') {
         // Cull to the circle's *rotated* extent — its bounding box is the circumscribed
         // square, so use the radius in every direction or chunks pop in while turning.
@@ -215,8 +209,8 @@ export function Minimap({
   // Every preference persists the moment it changes — the menu has no confirm step.
   const toggleOpen = useCallback(() => {
     setOpen(!open)
-    saveOpen(minimap.isWorld, !open)
-  }, [open, minimap.isWorld])
+    saveOpen(inGenesis, !open)
+  }, [open, inGenesis])
   const pickStyle = useCallback((s: MinimapStyle) => {
     setStyle(s)
     saveStyle(s)
@@ -241,13 +235,13 @@ export function Minimap({
   }, [effectiveStyle, chunks, parcelTile])
 
   return (
-    <div className={styles.root}>
+    <div ref={hudInsetRef} className={styles.root}>
       <div className={styles.header}>
         {/* No scene deployed on this parcel — say so, rather than implying the lookup failed
             (bevy-ui-scene's widget said "empty scene" for the same case). */}
         <span className={styles.title}>{sceneTitle || 'Empty parcel'}</span>
         <span className={styles.coords}>
-          {parcel.x},{parcel.y}
+          {map.x},{map.y}
         </span>
         <button
           type="button"
@@ -335,7 +329,7 @@ export function Minimap({
                 onRotation={pickRotation}
                 style={style}
                 onStyle={pickStyle}
-                hideStyle={minimap.isWorld}
+                hideStyle={!inGenesis}
                 markers={markerCategories}
                 onMarkers={pickMarkers}
               />
@@ -345,4 +339,4 @@ export function Minimap({
       )}
     </div>
   )
-}
+})

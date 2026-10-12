@@ -7,6 +7,7 @@ use std::{
     sync::{atomic::AtomicU32, Arc},
 };
 
+use alloy_core::primitives::Address;
 use bevy::{
     color::palettes,
     math::DVec3,
@@ -14,9 +15,15 @@ use bevy::{
     prelude::*,
     render::{primitives::Aabb, view::RenderLayers},
 };
-use dcl_component::proto_components::sdk::components::common::CameraTransition;
-use ethers_core::abi::Address;
+use dcl_component::proto_components::{
+    sdk::{
+        components::common::CameraTransition,
+        development::{ws_scene_message, UpdateModelType},
+    },
+    social_service::v2::PrivateMessagePrivacySetting,
+};
 use serde::{Deserialize, Serialize};
+use system_api_types::SatelliteView;
 pub use system_api_types::{PermissionLevel, PermissionType, PermissionValue, PointerTargetType};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
@@ -536,6 +543,8 @@ pub struct PreviousLogin {
     pub root_address: Address,
     pub ephemeral_key: Vec<u8>,
     pub auth: Vec<ChainLink>,
+    #[serde(default)]
+    pub guest_account: bool,
 }
 
 pub fn default_home_realm() -> String {
@@ -555,6 +564,8 @@ pub struct AppConfig {
     pub home_realm: Option<String>,
     pub home_location: Option<IVec2>,
     pub previous_login: Option<PreviousLogin>,
+    /// The [`TERMS_VERSION`] last accepted on this install, on the welcome page.
+    pub accepted_terms: Option<u32>,
     pub graphics: GraphicsSettings,
     pub audio: AudioSettings,
     pub cache_bytes: u64,
@@ -579,6 +590,11 @@ pub struct AppConfig {
     pub scene_permissions: HashMap<String, HashMap<PermissionType, PermissionValue>>,
     pub inputs: InputMapSerialized,
     pub point_at_marker_visibility: PointAtMarkerVisibility,
+    /// Who may DM the local user. Owned by the social service, so never persisted here: the
+    /// slot mirrors the server value and the social crate upserts user changes to it. `None`
+    /// until either the user or the server has set it.
+    #[serde(skip)]
+    pub dm_privacy: Option<DmPrivacy>,
     pub camera_smoothing: CameraSmoothing,
     // field-level default (0) so configs saved before this field existed read as outdated,
     // rather than taking the current generation from the container-level default
@@ -586,6 +602,10 @@ pub struct AppConfig {
     pub settings_generation: u32,
     #[serde(default)]
     pub inputs_generation: u32,
+    /// set when the user_id was minted here rather than loaded, so startup saves the config to
+    /// keep it. never serialized; the field-level default keeps loaded configs false
+    #[serde(skip, default)]
+    pub is_fresh_user_id: bool,
 }
 
 /// bump to run one-time migrations of the preset-managed settings in existing configs
@@ -596,12 +616,16 @@ pub const SETTINGS_GENERATION: u32 = 2;
 /// (see [`AppConfig::migrate_inputs`])
 pub const INPUTS_GENERATION: u32 = 1;
 
+/// bump when the terms of use change, so every install accepts them again
+pub const TERMS_VERSION: u32 = 1;
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
             home_realm: None,
             home_location: None,
             previous_login: None,
+            accepted_terms: None,
             graphics: Default::default(),
             audio: Default::default(),
             cache_bytes: 1024 * 1024 * 1024 * 10, // 10gb
@@ -626,14 +650,43 @@ impl Default for AppConfig {
             scene_permissions: Default::default(),
             inputs: Default::default(),
             point_at_marker_visibility: Default::default(),
+            dm_privacy: None,
             camera_smoothing: Default::default(),
             settings_generation: SETTINGS_GENERATION,
             inputs_generation: INPUTS_GENERATION,
+            is_fresh_user_id: true,
         }
     }
 }
 
 impl AppConfig {
+    pub fn terms_accepted(&self) -> bool {
+        self.accepted_terms.is_some_and(|v| v >= TERMS_VERSION)
+    }
+
+    /// Parse a saved config. One that fails to parse (e.g. written by a newer build) falls back
+    /// to the default, keeping its user_id when that can still be read, in which case the file
+    /// is left alone rather than overwritten at startup.
+    pub fn from_json(json: &[u8]) -> Self {
+        #[derive(Deserialize)]
+        struct UserIdOnly {
+            user_id: String,
+        }
+
+        match serde_json::from_slice(json) {
+            Ok(config) => config,
+            Err(e) => {
+                warn!("failed to parse config.json: {e}");
+                let mut config = Self::default();
+                if let Ok(UserIdOnly { user_id }) = serde_json::from_slice(json) {
+                    config.user_id = user_id;
+                    config.is_fresh_user_id = false;
+                }
+                config
+            }
+        }
+    }
+
     /// The effective home realm: the pinned value, else the base-domain-derived default.
     pub fn home_realm(&self) -> String {
         self.home_realm.clone().unwrap_or_else(default_home_realm)
@@ -671,6 +724,7 @@ impl AppConfig {
         self.graphics.bloom = default.graphics.bloom;
         self.graphics.dof = default.graphics.dof;
         self.graphics.ssao = default.graphics.ssao;
+        self.graphics.sky_reflections = default.graphics.sky_reflections;
         self.graphics.oob = default.graphics.oob;
         self.scene_load_distance = default.scene_load_distance;
         self.scene_unload_extra_distance = default.scene_unload_extra_distance;
@@ -814,6 +868,7 @@ pub struct GraphicsSettings {
     pub bloom: BloomSetting,
     pub dof: DofSetting,
     pub ssao: SsaoSetting,
+    pub sky_reflections: SkyReflectionSetting,
     pub oob: f32,
     pub ambient_brightness: i32,
     /// cel-shade avatars (toon shading) instead of standard PBR
@@ -840,6 +895,7 @@ impl Default for GraphicsSettings {
             bloom: BloomSetting::Low,
             dof: DofSetting::High,
             ssao: SsaoSetting::Off,
+            sky_reflections: SkyReflectionSetting::High,
             oob: 2.0,
             ambient_brightness: 50,
             cel_shading: true,
@@ -957,6 +1013,15 @@ pub struct DofConfig {
 pub enum SsaoSetting {
     Off,
     Low,
+    High,
+}
+
+/// The sky environment map: the sky's reflections and ambient light.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SkyReflectionSetting {
+    /// one colour per direction: sky, horizon and ground
+    Low,
+    /// filtered reflections of the sky
     High,
 }
 
@@ -1387,7 +1452,41 @@ pub struct AvatarDynamicState {
 
 #[derive(Event)]
 pub enum PreviewCommand {
-    ReloadScene { hash: String },
+    ReloadScene {
+        hash: String,
+    },
+    ReloadModel {
+        hash: String,
+        src: String,
+        scene_id: String,
+    },
+    RemoveModel {
+        hash: String,
+        src: String,
+        scene_id: String,
+    },
+}
+
+impl From<ws_scene_message::Message> for PreviewCommand {
+    fn from(value: ws_scene_message::Message) -> Self {
+        match value {
+            ws_scene_message::Message::UpdateScene(update_scene) => Self::ReloadScene {
+                hash: update_scene.scene_id.to_owned(),
+            },
+            ws_scene_message::Message::UpdateModel(update_model) => match update_model.r#type() {
+                UpdateModelType::UmtChange => Self::ReloadModel {
+                    hash: update_model.hash.to_owned(),
+                    src: update_model.src.to_owned(),
+                    scene_id: update_model.scene_id.to_owned(),
+                },
+                UpdateModelType::UmtRemove => Self::RemoveModel {
+                    hash: update_model.hash.to_owned(),
+                    src: update_model.src.to_owned(),
+                    scene_id: update_model.scene_id.to_owned(),
+                },
+            },
+        }
+    }
 }
 
 /// The local player was instantly repositioned — a durationless `move_player_to`, a `teleport_player`,
@@ -1404,12 +1503,20 @@ pub struct PlayerTeleported {
 #[derive(Component)]
 pub struct OutOfWorld;
 
+/// Holds the world back for a lobby shown before it: the realm is resolved (so sign-in, profiles
+/// and wearables work) and system scenes run, but no realm scenes or realm comms load. Released
+/// by the first successful realm change request.
+#[derive(Resource)]
+pub struct WorldHold;
+
 pub struct StartupScene {
     pub source: String,
     pub super_user: bool,
     pub preview: bool,
     pub hot_reload: Option<tokio::sync::mpsc::UnboundedSender<PreviewCommand>>,
     pub hash: Option<String>,
+    /// the source didn't resolve: the scene is never coming
+    pub failed: bool,
 }
 
 #[derive(Resource)]
@@ -1423,6 +1530,12 @@ pub struct SceneGlobalLight {
     pub dir_color: Color,
     pub dir_illuminance: f32,
     pub dir_direction: Vec3,
+    /// the sun as the sky draws it. the same as the directional light by day, but it keeps
+    /// setting below the horizon at night while the light follows the moon
+    pub sun_illuminance: f32,
+    pub sun_direction: Vec3,
+    /// the ambient light the sky env map is levelled towards: white at the ambient brightness
+    /// setting unless a scene overrides it, as a tint and a multiplier
     pub ambient_color: Color,
     pub ambient_brightness: f32,
     pub layers: RenderLayers,
@@ -1484,6 +1597,10 @@ impl Default for AudioEmitter {
         }
     }
 }
+
+// despawns the `AudioEmitter` entity once its (non-looping) sound has finished playing
+#[derive(Component, Debug, Default)]
+pub struct OneShotAudio;
 
 #[derive(Clone, Copy)]
 #[repr(i32)]
@@ -1667,22 +1784,13 @@ pub struct CurrentRealm {
 }
 
 impl CurrentRealm {
-    /// Identity used to tag scene pointers and detect staleness on realm
-    /// change. Realms with an explicit scene list (Worlds) are uniquely
-    /// identified by `about_url`; realms backed by parcel-based
-    /// ActiveEntities queries share a catalog scoped by `address` (the
-    /// content/services URL).
-    pub fn pointer_realm(&self) -> &str {
-        if self
-            .config
-            .scenes_urn
+    /// Serves a project being developed (a `dcl start` server, or the web editor's preview), which
+    /// it signals by listing the project's parcels in its `about`.
+    pub fn is_local(&self) -> bool {
+        self.config
+            .local_scene_parcels
             .as_ref()
-            .is_some_and(|s| !s.is_empty())
-        {
-            &self.about_url
-        } else {
-            &self.address
-        }
+            .is_some_and(|parcels| !parcels.is_empty())
     }
 }
 
@@ -1710,7 +1818,17 @@ pub struct ServerConfiguration {
 #[serde(rename_all = "camelCase")]
 pub struct MapData {
     pub minimap_enabled: Option<bool>,
+    #[serde(default, deserialize_with = "lenient_satellite_view")]
+    pub satellite_view: Option<SatelliteView>,
     pub sizes: Vec<Region>,
+}
+
+// A malformed satellite view is treated as absent rather than failing the whole `/about`.
+fn lenient_satellite_view<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<SatelliteView>, D::Error> {
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).ok())
 }
 
 #[derive(Deserialize, Debug, Clone, Default)]
@@ -1853,4 +1971,54 @@ mod tests {
             Some(vec![InputIdentifier::Key(KeyCode::KeyT)])
         );
     }
+
+    #[test]
+    fn malformed_satellite_view_is_absent() {
+        let parse = |map: &str| serde_json::from_str::<MapData>(map).unwrap().satellite_view;
+
+        let genesis = parse(
+            r#"{"minimapEnabled":true,"sizes":[],"satelliteView":{"version":"v1","baseUrl":"https://genesis.city/map/latest","suffixUrl":".jpg","topLeftOffset":{"x":-2,"y":-6}}}"#,
+        )
+        .unwrap();
+        assert_eq!(genesis.base_url, "https://genesis.city/map/latest");
+        assert_eq!(genesis.top_left_offset.y, -6.0);
+
+        assert!(parse(r#"{"minimapEnabled":false,"sizes":[]}"#).is_none());
+        assert!(parse(r#"{"sizes":[],"satelliteView":{"topLeftOffset":null}}"#).is_none());
+        assert!(parse(r#"{"sizes":[],"satelliteView":{"topLeftOffset":{"x":1}}}"#).is_none());
+        assert!(parse(r#"{"sizes":[],"satelliteView":{"version":1}}"#).is_none());
+    }
+}
+
+/// Who may DM a user.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DmPrivacy {
+    #[default]
+    All,
+    OnlyFriends,
+}
+
+impl From<PrivateMessagePrivacySetting> for DmPrivacy {
+    fn from(value: PrivateMessagePrivacySetting) -> Self {
+        match value {
+            PrivateMessagePrivacySetting::All => DmPrivacy::All,
+            PrivateMessagePrivacySetting::OnlyFriends => DmPrivacy::OnlyFriends,
+        }
+    }
+}
+
+impl From<DmPrivacy> for PrivateMessagePrivacySetting {
+    fn from(value: DmPrivacy) -> Self {
+        match value {
+            DmPrivacy::All => PrivateMessagePrivacySetting::All,
+            DmPrivacy::OnlyFriends => PrivateMessagePrivacySetting::OnlyFriends,
+        }
+    }
+}
+
+/// Another user's DM privacy, as returned by `GetPrivateMessagesSettings`.
+#[derive(Clone, Debug)]
+pub struct DmPrivacyOf {
+    pub address: String,
+    pub privacy: DmPrivacy,
 }

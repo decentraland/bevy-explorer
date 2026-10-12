@@ -1,5 +1,6 @@
 use crate::core::prelude::*;
 use crate::localhost::asset_loader::CefResponseHandle;
+use bevy::asset::LoadState;
 use bevy::platform::collections::HashSet;
 use bevy::prelude::*;
 
@@ -44,6 +45,7 @@ fn responser(
     mut commands: Commands,
     mut handle_stores: Local<HashSet<Handle<CefResponse>>>,
     responses: Res<Assets<CefResponse>>,
+    asset_server: Res<AssetServer>,
     handles: Query<(Entity, &CefResponseHandle, &Responser)>,
 ) {
     for (entity, handle, responser) in handles.iter() {
@@ -51,6 +53,11 @@ fn responser(
             let _ = responser.0.send_blocking(response.clone());
             commands.entity(entity).despawn();
             handle_stores.insert(handle.0.clone());
+        } else if let Some(LoadState::Failed(err)) = asset_server.get_load_state(&handle.0) {
+            // missing file etc: answer with a 404 so the cef request completes
+            debug!("[cef-scheme] load failed: {err}");
+            let _ = responser.0.send_blocking(CefResponse::default());
+            commands.entity(entity).despawn();
         }
     }
 }

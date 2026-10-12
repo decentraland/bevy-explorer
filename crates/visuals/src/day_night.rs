@@ -32,6 +32,19 @@ struct RunningClock {
     pub speed: f32,
 }
 
+impl RunningClock {
+    /// A stopped clock is a time set explicitly (HUD / `/time`), which overrides scene times.
+    fn overrides_scene(&self) -> bool {
+        self.speed == 0.0
+    }
+}
+
+/// Where a skip from `from` to `to` ends going the short way round the clock.
+fn nearest_end(from: f32, to: f32) -> f32 {
+    from + (to - from + TWENTY_FOUR_HOURS / 2.).rem_euclid(TWENTY_FOUR_HOURS)
+        - TWENTY_FOUR_HOURS / 2.
+}
+
 #[derive(Resource)]
 struct TimeSkip {
     start: f32,
@@ -258,10 +271,13 @@ fn push_time_of_day_from_time_skip(
     let duration = amount_to_skip / HOURS_PER_SECOND;
     time_skip.progress += delta / duration;
 
-    time_of_day.time = time_skip.start.lerp(
-        time_skip.end,
-        time_skip.easing.sample_clamped(time_skip.progress),
-    ) % TWENTY_FOUR_HOURS;
+    time_of_day.time = time_skip
+        .start
+        .lerp(
+            time_skip.end,
+            time_skip.easing.sample_clamped(time_skip.progress),
+        )
+        .rem_euclid(TWENTY_FOUR_HOURS);
 
     if time_skip.progress >= 1. {
         debug!("TimeSkip has ended.");
@@ -272,15 +288,15 @@ fn push_time_of_day_from_time_skip(
 #[expect(clippy::type_complexity, reason = "Queries are complex")]
 fn push_time_of_day_from_running_clock(
     mut commands: Commands,
-    time_keeper: Single<&RunningClock, (With<TimeKeeper>, Without<SceneTime>, Without<SkyboxTime>)>,
+    time_keeper: Single<(&RunningClock, Has<SceneTime>, Has<SkyboxTime>), With<TimeKeeper>>,
     mut time_of_day: ResMut<TimeOfDay>,
 ) {
-    if (time_keeper.time - time_of_day.time).abs() > ONE_HOUR {
-        let end = if time_keeper.time > time_of_day.time {
-            time_keeper.time
-        } else {
-            time_keeper.time + TWENTY_FOUR_HOURS
-        };
+    let (running_clock, has_scene_time, has_skybox_time) = time_keeper.into_inner();
+    if (has_scene_time || has_skybox_time) && !running_clock.overrides_scene() {
+        return;
+    }
+    let end = nearest_end(time_of_day.time, running_clock.time);
+    if (end - time_of_day.time).abs() > ONE_HOUR {
         debug!("Starting a TimeSkip from {} to {}.", time_of_day.time, end);
         commands.insert_resource(TimeSkip {
             start: time_of_day.time,
@@ -290,19 +306,22 @@ fn push_time_of_day_from_running_clock(
         });
     } else {
         trace!("Pushing time from RunningClock");
-        let running_clock = time_keeper.into_inner();
         time_of_day.time = running_clock.time;
     }
 }
 
+#[expect(clippy::type_complexity, reason = "Queries are complex")]
 fn check_new_scene_time(
     trigger: Trigger<OnInsert, SceneTime>,
     mut commands: Commands,
-    time_keeper: Single<&SceneTime, (With<TimeKeeper>, Without<SkyboxTime>)>,
+    time_keeper: Single<(&SceneTime, &RunningClock), (With<TimeKeeper>, Without<SkyboxTime>)>,
     mut time_of_day: ResMut<TimeOfDay>,
     time_skip: Option<Res<TimeSkip>>,
 ) {
-    let scene_time = time_keeper.into_inner();
+    let (scene_time, running_clock) = time_keeper.into_inner();
+    if running_clock.overrides_scene() {
+        return;
+    }
     debug!(
         "Received SceneTime on {} of {}.",
         trigger.target(),
@@ -333,11 +352,14 @@ fn check_new_scene_time(
 fn check_new_skybox_time(
     _trigger: Trigger<OnInsert, SkyboxTime>,
     mut commands: Commands,
-    time_keeper: Single<&SkyboxTime, With<TimeKeeper>>,
+    time_keeper: Single<(&SkyboxTime, &RunningClock), With<TimeKeeper>>,
     mut time_of_day: ResMut<TimeOfDay>,
     time_skip: Option<Res<TimeSkip>>,
 ) {
-    let skybox_time = time_keeper.into_inner();
+    let (skybox_time, running_clock) = time_keeper.into_inner();
+    if running_clock.overrides_scene() {
+        return;
+    }
     let new_time = skybox_time.fixed_time as f32;
     if (new_time - time_of_day.time).abs() < ONE_HOUR {
         time_of_day.time = new_time;
@@ -369,14 +391,36 @@ pub struct TimeOfDayConsoleCommand {
     pub speed: Option<f32>,
 }
 
+#[expect(clippy::type_complexity, reason = "Queries are complex")]
 fn timeofday_console_command(
     mut input: ConsoleCommand<TimeOfDayConsoleCommand>,
     mut commands: Commands,
-    time_keeper: Single<(&mut RunningClock, Has<SceneTime>), With<TimeKeeper>>,
+    time_keeper: Single<
+        (
+            Entity,
+            &mut RunningClock,
+            Option<&SceneTime>,
+            Option<&SkyboxTime>,
+        ),
+        With<TimeKeeper>,
+    >,
+    scene_time_component_id: ComponentIdFor<SceneTime>,
+    skybox_time_component_id: ComponentIdFor<SkyboxTime>,
 ) {
     if let Some(Ok(command)) = input.take() {
-        let (mut running_clock, has_scene_time) = time_keeper.into_inner();
-        let old_time = running_clock.time;
+        let (time_keeper, mut running_clock, scene_time, skybox_time) = time_keeper.into_inner();
+        // the time the sky is set to: the clock when it overrides, else the scene's, else the clock
+        let effective_time = |running_clock: &RunningClock| {
+            if running_clock.overrides_scene() {
+                return running_clock.time;
+            }
+            skybox_time
+                .map(|skybox_time| skybox_time.fixed_time as f32)
+                .or(scene_time.map(|scene_time| scene_time.time))
+                .unwrap_or(running_clock.time)
+        };
+        let old_time = effective_time(&running_clock);
+        let was_override = running_clock.overrides_scene();
         if let Some(hours) = command.time {
             running_clock.time = (hours * ONE_HOUR) % TWENTY_FOUR_HOURS;
         }
@@ -384,30 +428,24 @@ fn timeofday_console_command(
             running_clock.speed = speed;
         }
 
-        if (running_clock.time - old_time).abs() > ONE_HOUR {
-            let end = if running_clock.time > old_time {
-                running_clock.time
-            } else {
-                running_clock.time + TWENTY_FOUR_HOURS
-            };
-            if !has_scene_time {
-                commands.insert_resource(TimeSkip {
-                    start: old_time,
-                    end,
-                    progress: 0.,
-                    easing: EaseFunction::SmoothStep,
-                });
+        // the clock is running again: hand the sky back to the scene's time
+        if was_override && !running_clock.overrides_scene() {
+            if skybox_time.is_some() {
+                commands.trigger_targets(OnInsert, (time_keeper, *skybox_time_component_id));
+            } else if scene_time.is_some() {
+                commands.trigger_targets(OnInsert, (time_keeper, *scene_time_component_id));
             }
         }
 
+        let new_time = effective_time(&running_clock);
         input.reply_ok(format!(
             "time {}:{} -> {}:{}, speed {} (elapsed: {})",
             (old_time as u32 / ONE_HOUR_U32),
             old_time as u32 % ONE_HOUR_U32 / 60,
-            (running_clock.time as u32 / ONE_HOUR_U32),
-            running_clock.time as u32 % ONE_HOUR_U32 / 60,
+            (new_time as u32 / ONE_HOUR_U32),
+            new_time as u32 % ONE_HOUR_U32 / 60,
             running_clock.speed,
-            running_clock.time
+            new_time
         ));
     }
 }

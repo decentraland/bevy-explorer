@@ -2,7 +2,7 @@
 // getProfile relay (getPlayer + cached profile). Built on the design system.
 
 import { Avatar, ControlButton } from '../../design'
-import { nameColor, shortAddr, splitName } from '../../lib/identity'
+import { shortAddr, splitName, userColor } from '../../lib/identity'
 import type { ProfileState } from '../session/useEngineSession'
 import styles from './ProfilePanel.module.css'
 
@@ -11,7 +11,7 @@ export function ProfilePanel({ profile }: { profile: ProfileState }): React.JSX.
   const p = profile.data
   const labelName = p ? (p.name.trim() ? p.name : shortAddr(p.address)) : ''
   const { base, tag } = splitName(labelName)
-  const color = p ? nameColor(p.address) : 'var(--fill-4)'
+  const color = p ? userColor(p.address, p.name, p.hasClaimedName, p.nameColor) : 'var(--fill-4)'
 
   return (
     <div className={styles.root}>

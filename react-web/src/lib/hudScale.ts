@@ -1,8 +1,8 @@
 // The HUD's `--ui-scale`, and a signal for when it changes.
 //
-// Mirrors Unity's CanvasScaler ("Scale With Screen Size", 1080 reference height). `innerHeight`
-// is logical px, so it is DPI-correct as-is: a Retina 3024x1890 framebuffer is ~945 logical tall
-// → scale ~0.87.
+// Scales with a 1920x1080 reference canvas by the smaller of the width and height ratios, so the canvas
+// expands along the longer axis. Viewport sizes are logical px, so
+// this is DPI-correct as-is: a 1512x945 MacBook viewport → ~0.79.
 //
 // It is a store rather than a hook because the scale has a SUBSCRIBER that is not a React render:
 // the engine cutouts (minimap, avatar preview) report their on-screen rect to the scene, and the
@@ -17,6 +17,7 @@
 // subscriber's getBoundingClientRect() forces the style recalc, so it sees the new layout without
 // deferring to a frame.
 
+const REFERENCE_WIDTH = 1920
 const REFERENCE_HEIGHT = 1080
 const MIN = 0.6
 const MAX = 1.3
@@ -25,7 +26,8 @@ let scale = 0
 const listeners = new Set<() => void>()
 
 function apply(): void {
-  const next = Math.min(MAX, Math.max(MIN, window.innerHeight / REFERENCE_HEIGHT))
+  const expand = Math.min(window.innerWidth / REFERENCE_WIDTH, window.innerHeight / REFERENCE_HEIGHT)
+  const next = Math.min(MAX, Math.max(MIN, expand))
   if (next === scale) return
   scale = next
   document.documentElement.style.setProperty('--ui-scale', next.toFixed(3))

@@ -1,8 +1,13 @@
 mod atmosphere_params;
+mod coast;
 mod day_night;
-pub mod env_downsample;
 mod nishita_cloud;
+mod props;
 pub mod shell_texturing;
+mod sky_envmap;
+mod solids;
+pub mod terrain;
+mod trees;
 
 use bevy::{
     core_pipeline::dof::{DepthOfField, DepthOfFieldMode},
@@ -29,9 +34,20 @@ use common::{
     },
 };
 use console::DoAddConsoleCommand;
-// use env_downsample::{Envmap, EnvmapDownsamplePlugin};
+use scene_runner::update_world::lights::{moon_direction, SUN_COLOR_NOON};
 
-use crate::{day_night::DayNightPlugin, shell_texturing::ShellTexturingPlugin};
+use crate::{
+    coast::CoastPlugin,
+    day_night::DayNightPlugin,
+    props::PropsPlugin,
+    shell_texturing::ShellTexturingPlugin,
+    sky_envmap::{SkyEnvmapPlugin, SkyEnvmapSettings},
+    solids::SolidsPlugin,
+    terrain::TerrainPlugin,
+    trees::TreesPlugin,
+};
+
+const MIN_CASCADE: f32 = 0.1;
 
 pub struct VisualsPlugin {
     pub no_fog: bool,
@@ -42,17 +58,22 @@ impl Plugin for VisualsPlugin {
         app.insert_resource(DirectionalLightShadowMap { size: 4096 })
             .init_resource::<SceneGlobalLight>()
             .insert_resource(CloudCover {
-                cover: 0.35,
-                speed: 30.0,
+                cover: 0.375,
+                speed: 5.0,
                 density_cap: 0.8,
                 shadow: 0.05,
                 scale: 1.5,
                 steps: 44,
                 lacunarity: 2.0,
+                sharpness: 50.0,
+                sharp_mid: 0.1,
             })
             .add_plugins(WireframePlugin::default())
             .add_plugins(DayNightPlugin)
             .add_plugins(ShellTexturingPlugin)
+            .add_plugins(TerrainPlugin)
+            .add_plugins(CoastPlugin)
+            .add_plugins((TreesPlugin, PropsPlugin, SolidsPlugin))
             .add_systems(Update, apply_global_light)
             .add_systems(Update, update_dof)
             .add_systems(Startup, setup.in_set(SetupSets::Main));
@@ -66,9 +87,8 @@ impl Plugin for VisualsPlugin {
                 ),
         })
         .insert_resource(AtmosphereModel::new(NishitaCloud::default()))
-        .add_plugins(AtmospherePlugin);
-
-        // app.add_plugins(EnvmapDownsamplePlugin);
+        .add_plugins(AtmospherePlugin)
+        .add_plugins(SkyEnvmapPlugin);
 
         app.add_console_command::<ShadowConsoleCommand, _>(shadow_console_command);
         app.add_console_command::<FogConsoleCommand, _>(fog_console_command);
@@ -81,6 +101,7 @@ impl Plugin for VisualsPlugin {
         app.add_console_command::<CloudLacunarityConsoleCommand, _>(
             cloud_lacunarity_console_command,
         );
+        app.add_console_command::<CloudSharpConsoleCommand, _>(cloud_sharp_console_command);
         app.add_console_command::<TonemapConsoleCommand, _>(tonemap_console_command);
         app.add_console_command::<ExposureConsoleCommand, _>(exposure_console_command);
         app.add_console_command::<GammaConsoleCommand, _>(gamma_console_command);
@@ -104,7 +125,6 @@ fn setup(
     camera: Res<PrimaryCameraRes>,
     mut atmosphere: AtmosphereMut<NishitaCloud>,
     mut images: ResMut<Assets<Image>>,
-    // envmap: Res<Envmap>,
 ) {
     info!("visuals::setup");
 
@@ -125,14 +145,6 @@ fn setup(
 
         atmosphere.noise_texture = h_noise;
     }
-
-    // commands.entity(camera.0).try_insert(
-    //     EnvironmentMapLight {
-    //         diffuse_map: envmap.0.clone(),
-    //         specular_map: envmap.0.clone(),
-    //         intensity: 3000.0,
-    //     }
-    // );
 }
 
 static TRANSITION_TIME: f32 = 1.0;
@@ -155,6 +167,7 @@ fn apply_global_light(
     scene_distance: Res<SceneLoadDistance>,
     scene_global_light: Res<SceneGlobalLight>,
     time_of_day: Res<TimeOfDay>,
+    envmap_settings: Res<SkyEnvmapSettings>,
     mut prev: Local<(f32, SceneGlobalLight)>,
     mut cloud_dt: Local<f32>,
     mut last_primary_distance: Local<f32>,
@@ -183,6 +196,12 @@ fn apply_global_light(
                 .1
                 .dir_direction
                 .lerp(scene_global_light.dir_direction, new_amount),
+            sun_illuminance: scene_global_light.sun_illuminance * new_amount
+                + prev.1.sun_illuminance * old_amount,
+            sun_direction: prev
+                .1
+                .sun_direction
+                .lerp(scene_global_light.sun_direction, new_amount),
             ambient_color: (scene_global_light.ambient_color.to_srgba() * new_amount
                 + prev.1.ambient_color.to_srgba() * old_amount)
                 .into(),
@@ -194,24 +213,19 @@ fn apply_global_light(
 
     let rotation = Quat::from_rotation_arc(Vec3::NEG_Z, next_light.dir_direction);
 
-    // physically-simulated sky: rayleigh (hue) and mie (haze) are baked day-cycle
-    // curves keyed by time of day; the sun sets naturally (no floor), and a flat
-    // night colour (added in-shader) provides the night sky.
-    let day = (time_of_day.elapsed_secs() / (60.0 * 60.0 * 24.0)).rem_euclid(1.0);
-    atmosphere.sun_position = -next_light.dir_direction;
-    atmosphere.rayleigh_coefficient = atmosphere_params::RAYLEIGH.sample(day);
-    atmosphere.mie_coefficient = atmosphere_params::MIE.sample(day);
+    // physically-simulated sky: the rayleigh coefficient (hue) follows the light colour, so a
+    // scene's light colour changes the sky; the mie coefficient (haze) rises with the sun; the
+    // sun sets naturally (no floor), and a flat night colour (added in-shader) provides the
+    // night sky
+    let sun_elevation = -next_light.sun_direction.y;
+    let light_ratio = next_light.dir_color.to_srgba().to_vec3() / SUN_COLOR_NOON;
+    atmosphere.sun_position = -next_light.sun_direction;
+    atmosphere.rayleigh_coefficient = atmosphere_params::RAYLEIGH_NOON * light_ratio.powf(3.0);
+    atmosphere.mie_coefficient = atmosphere_params::mie(sun_elevation);
     atmosphere.night_color = atmosphere_params::NIGHT_SKY;
-    // moon on its own low orbit: rises at dusk, peaks at MOON_PEAK_ELEV around
-    // midnight (well below the zenith, so it never sits overhead like the sun),
-    // sets at dawn. Anti-phase to the sun but on an independent arc, so it has
-    // no singularity at midnight (where the antisolar direction is undefined).
-    const MOON_PEAK_ELEV: f32 = 0.45; // radians (~26°)
-    let a = day * std::f32::consts::TAU + std::f32::consts::FRAC_PI_2;
-    let (sin_a, cos_a) = a.sin_cos();
-    let (sin_b, cos_b) = MOON_PEAK_ELEV.sin_cos();
-    atmosphere.moon_position = Vec3::new(cos_a, sin_a * sin_b, -sin_a * cos_b);
-    atmosphere.dir_light_intensity = next_light.dir_illuminance;
+    // the moon is drawn where the night light comes from
+    atmosphere.moon_position = -moon_direction(time_of_day.elapsed_secs() / 3600.0);
+    atmosphere.dir_light_intensity = next_light.sun_illuminance;
     atmosphere.sun_color = next_light.dir_color.to_srgba().to_vec3();
     atmosphere.tick += 1;
 
@@ -236,6 +250,8 @@ fn apply_global_light(
     atmosphere.cloud_scale = cloud.scale;
     atmosphere.cloud_steps = cloud.steps;
     atmosphere.cloud_lacunarity = cloud.lacunarity;
+    atmosphere.cloud_sharpness = cloud.sharpness;
+    atmosphere.cloud_sharp_mid = cloud.sharp_mid;
 
     // skip the light/fog/ambient writes (which trigger change detection and re-extraction)
     // when the light has settled and nothing else affecting them has changed
@@ -253,6 +269,7 @@ fn apply_global_light(
         .any(|(_, fog)| fog.is_some_and(|fog| fog.is_added()));
     let skip_writes = settled
         && !setting.is_changed()
+        && !envmap_settings.is_changed()
         && !scene_distance.is_changed()
         && !fog_added
         && *last_primary_distance == primary_distance;
@@ -293,9 +310,15 @@ fn apply_global_light(
                 true,
                 CascadeShadowConfigBuilder {
                     num_cascades: 1,
-                    minimum_distance: 0.1,
-                    maximum_distance: setting.graphics.shadow_distance,
-                    first_cascade_far_bound: setting.graphics.shadow_distance,
+                    minimum_distance: MIN_CASCADE,
+                    maximum_distance: setting
+                        .graphics
+                        .shadow_distance
+                        .max(MIN_CASCADE + f32::EPSILON),
+                    first_cascade_far_bound: setting
+                        .graphics
+                        .shadow_distance
+                        .max(MIN_CASCADE + f32::EPSILON),
                     overlap_proportion: 0.2,
                 }
                 .build(),
@@ -304,9 +327,13 @@ fn apply_global_light(
                 true,
                 CascadeShadowConfigBuilder {
                     num_cascades: 4,
-                    minimum_distance: 0.1,
-                    maximum_distance: setting.graphics.shadow_distance,
-                    first_cascade_far_bound: setting.graphics.shadow_distance / 15.0,
+                    minimum_distance: MIN_CASCADE,
+                    maximum_distance: setting
+                        .graphics
+                        .shadow_distance
+                        .max(MIN_CASCADE + f32::EPSILON),
+                    first_cascade_far_bound: (setting.graphics.shadow_distance / 15.0)
+                        .max(MIN_CASCADE + f32::EPSILON),
                     overlap_proportion: 0.2,
                 }
                 .build(),
@@ -331,23 +358,24 @@ fn apply_global_light(
         let dir_light_lightness = Lcha::from(next_light.dir_color).lightness;
         // floor keeps night fog tinted instead of going black
         let skybox_brightness =
-            (next_light.dir_illuminance.sqrt() * 40.0 * dir_light_lightness).clamp(400.0, 2000.0);
+            (next_light.sun_illuminance.sqrt() * 40.0 * dir_light_lightness).clamp(400.0, 2000.0);
 
         if let Some(mut fog) = maybe_fog {
             let distance = (scene_distance.load + scene_distance.unload)
                 .max(scene_distance.load_imposter * 0.333)
                 + maybe_primary.map_or(0.0, |camera| camera.distance * 5.0);
 
-            // fog hue follows the (scene-overridable) ambient light rather than a
-            // fixed gradient, so a scene's global light tints the fog too. Overall
-            // brightness tracks the sky; an extra dir-intensity pull drops night
-            // fog toward the dark horizon colour (the authored night fog is darker
-            // than a plain ambient tint).
-            let night_pull = (next_light.dir_illuminance / 7000.0).clamp(0.35, 1.0);
-            let base_color = next_light.ambient_color.to_srgba()
-                * next_light.ambient_brightness
-                * 0.5
-                * skybox_brightness
+            // fog hue follows the (scene-overridable) sunlight, so a scene's global
+            // light tints the fog too, with a stronger fill when the sun is low
+            // (midnight ≈ 2.1x) so the night doesn't go black. Overall brightness
+            // tracks the sky; an extra dir-intensity pull drops night fog toward
+            // the dark horizon colour (the authored night fog is darker than a
+            // plain tint).
+            let sun_energy = ((-next_light.sun_direction.y + 0.05) / 0.35).clamp(0.0, 1.0);
+            let sun_energy = sun_energy * sun_energy * (3.0 - 2.0 * sun_energy);
+            let fill = 0.8 * (1.0 + (1.0 - sun_energy) * 1.1);
+            let night_pull = (next_light.sun_illuminance / 7000.0).clamp(0.35, 1.0);
+            let base_color = next_light.dir_color.to_srgba() * fill * 0.5 * skybox_brightness
                 / 2000.0
                 * night_pull;
             let base_color = Color::from(base_color).with_alpha(1.0);
@@ -370,9 +398,21 @@ fn apply_global_light(
         }
     }
 
-    ambient.brightness =
-        next_light.ambient_brightness * setting.graphics.ambient_brightness as f32 * 20.0;
-    ambient.color = next_light.ambient_color;
+    // the sky envmap is the only ambient light. the pbr shaders zero the flat ambient where an
+    // envmap is bound and level the envmap towards it instead: the setting's brightness, scaled
+    // and tinted by a scene's ambient override, the envmap already following the time of day.
+    // the compression rides in the alpha, negated (see sky_envmap_lookup.wgsl); the uniform
+    // holds alpha * brightness. the brightness is kept above zero so the compression survives a
+    // zero setting, levelling the envmap to ~nothing
+    const MIN_AMBIENT_BRIGHTNESS: f32 = 0.01;
+    ambient.brightness = (setting.graphics.ambient_brightness as f32
+        * 20.0
+        * envmap_settings.floor
+        * next_light.ambient_brightness)
+        .max(MIN_AMBIENT_BRIGHTNESS);
+    ambient.color = next_light
+        .ambient_color
+        .with_alpha(-envmap_settings.compression / ambient.brightness);
 
     if prev.1.source == scene_global_light.source {
         prev.0 += time.delta_secs()
@@ -495,6 +535,8 @@ fn update_dof(
     dof.focal_distance = current_distance;
 }
 
+/// cloud cover 0..1 (0 = clear, 1 = overcast; 0.35 is the default look) and
+/// drift speed.
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/cloud")]
 struct CloudConsoleCommand {
@@ -516,6 +558,10 @@ pub struct CloudCover {
     pub steps: u32,
     /// per-octave frequency step of the cloud noise (default 2.345).
     pub lacunarity: f32,
+    /// steepness of the logistic contrast curve on cloud coverage (0 = off).
+    pub sharpness: f32,
+    /// coverage value the contrast curve is centred on.
+    pub sharp_mid: f32,
 }
 
 fn cloud_console_command(
@@ -523,7 +569,9 @@ fn cloud_console_command(
     mut cloud: ResMut<CloudCover>,
 ) {
     if let Some(Ok(command)) = input.take() {
-        cloud.cover = command.cover;
+        // the shader's cover goes from no cloud at ~0.2 to solid at ~0.7 with the
+        // default sharpening; map the user's 0..1 onto that
+        cloud.cover = 0.2 + command.cover * 0.5;
 
         if let Some(speed) = command.speed {
             cloud.speed = speed;
@@ -619,6 +667,31 @@ fn cloud_lacunarity_console_command(
     if let Some(Ok(command)) = input.take() {
         cloud.lacunarity = command.lacunarity;
         input.reply_ok(format!("cloud lacunarity {}", command.lacunarity));
+    }
+}
+
+/// contrast curve on cloud coverage: logistic steepness (0 = off, default 50)
+/// and the coverage it is centred on (default 0.1).
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/cloudsharp")]
+struct CloudSharpConsoleCommand {
+    sharpness: f32,
+    mid: Option<f32>,
+}
+
+fn cloud_sharp_console_command(
+    mut input: ConsoleCommand<CloudSharpConsoleCommand>,
+    mut cloud: ResMut<CloudCover>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        cloud.sharpness = command.sharpness;
+        if let Some(mid) = command.mid {
+            cloud.sharp_mid = mid;
+        }
+        input.reply_ok(format!(
+            "cloud sharpness {}, mid {}",
+            cloud.sharpness, cloud.sharp_mid
+        ));
     }
 }
 

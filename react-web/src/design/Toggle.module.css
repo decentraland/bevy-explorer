@@ -29,3 +29,20 @@
 .on .knob {
   transform: translateX(20px);
 }
+.sm {
+  width: 39px;
+  height: 24px;
+  padding: 2px;
+  background: var(--switch-off);
+}
+.sm .knob {
+  background: var(--switch-knob-off);
+  box-shadow: none;
+}
+.sm.on {
+  background: var(--brand);
+}
+.sm.on .knob {
+  background: var(--text);
+  transform: translateX(15px);
+}

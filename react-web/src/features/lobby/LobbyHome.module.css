@@ -1,0 +1,210 @@
+/* Lobby on the 1920×1080 canvas (same DPI scaling as the places picker). Transparent: the engine
+   paints the stage and the avatar behind it. Positions are the parity layout's. */
+.root {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: calc(100% / var(--ui-scale));
+  height: calc(100% / var(--ui-scale));
+  transform: scale(var(--ui-scale));
+  transform-origin: top left;
+  /* under the panels the lobby opens (profile, notifications, backpack) */
+  z-index: var(--z-panel);
+  font-family: var(--font-family);
+  color: var(--white);
+}
+.stage {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.standIn {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transition: opacity var(--dur-fade) linear;
+}
+.standInHidden {
+  opacity: 0;
+}
+.standInBackdrop {
+  position: absolute;
+  object-fit: fill;
+}
+.standInEdge {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+.standInShade,
+.standInVignette {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+/* The snapshot stands where the engine draws the avatar: centred, feet at ~83% of the height. */
+.standInAvatar {
+  position: absolute;
+  left: 50%;
+  bottom: 17%;
+  height: 66%;
+  transform: translateX(-50%);
+}
+/* The avatar's 440×820 click area, centred 60px above the middle. */
+.avatarHit {
+  position: absolute;
+  left: calc(50% - 220px);
+  top: calc(50% - 470px);
+  width: 440px;
+  height: 820px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.tooltip {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: var(--r-md);
+  background: var(--lobby-tooltip);
+  font-size: var(--type-16);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  transform: translate(100px, -50%);
+  pointer-events: none;
+}
+
+.header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100px;
+}
+.logo {
+  position: absolute;
+  left: 50px;
+  top: 32.5px;
+  width: 256px;
+  height: 35px;
+}
+.headerRight {
+  position: absolute;
+  top: 0;
+  right: 50px;
+  height: 100px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sectionTitle {
+  margin: 0;
+  height: 30px;
+  font-size: var(--type-24);
+  font-weight: var(--fw-bold);
+  line-height: 30px;
+}
+
+.quickJump {
+  position: absolute;
+  left: 50px;
+  top: 180px;
+  width: 520px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+/* 28.7px puts the landing card at y 218.7, as measured */
+.welcome {
+  margin: 0;
+  font-size: var(--type-24);
+  font-weight: var(--fw-bold);
+  line-height: 28.7px;
+}
+
+.friends {
+  position: absolute;
+  left: 50px;
+  top: calc(50% + 25.8px);
+  width: 524px;
+  height: 180px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.friendsHead {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  height: 30px;
+}
+.friendsCount {
+  font-size: var(--type-12);
+  color: var(--lobby-ink-dim);
+}
+
+.live {
+  position: absolute;
+  right: 50px;
+  top: 180px;
+  width: 358px;
+  height: 462px;
+  padding-top: 38px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.liveTitle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.liveDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--lobby-live);
+}
+.liveEvents {
+  height: 230px;
+}
+.livePlaces {
+  height: 181px;
+}
+
+.jumpBack {
+  position: absolute;
+  left: 50px;
+  bottom: 29px;
+  width: 864px;
+  height: 200px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.jumpBackRow {
+  display: flex;
+  gap: 8px;
+  height: 165px;
+}
+
+.recommended {
+  position: absolute;
+  right: 50px;
+  bottom: 13.3px;
+  width: 864px;
+  height: 216px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}

@@ -88,12 +88,50 @@ pub struct HomeScene {
     pub parcel: Vector2,
 }
 
+/// What the welcome page must show for the signed-in account.
+#[derive(Serialize, Deserialize, Clone, Debug, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct WelcomeState {
+    /// The terms aren't accepted on this install.
+    pub terms: bool,
+    /// The account had no profile and signed in while the world was held: its new one deploys
+    /// with the page's save (a setAvatar once the terms are accepted).
+    pub new_profile: bool,
+}
+
+/// The satellite map tiles a realm advertises in its `/about` (`configurations.map.satelliteView`).
+/// Only Genesis City realms carry one.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, ts_rs::TS)]
+#[serde(rename_all = "camelCase", default)]
+#[ts(export)]
+pub struct SatelliteView {
+    pub version: String,
+    pub base_url: String,
+    pub suffix_url: String,
+    pub top_left_offset: Vector2,
+}
+
 #[derive(Clone, Serialize, Deserialize, ts_rs::TS)]
 #[ts(export)]
 pub struct ChatMessage {
     pub sender_address: String,
     pub message: String,
     pub channel: String,
+    /// What reactions name this message by; empty for system messages.
+    pub message_id: String,
+}
+
+/// A reaction added to or removed from a chat message, by the local user or a peer. `channel` is
+/// "Nearby" or the DM partner's wallet.
+#[derive(Clone, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export)]
+pub struct ChatReactionData {
+    pub channel: String,
+    pub message_id: String,
+    pub emoji: String,
+    pub from: String,
+    pub remove: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize, ts_rs::TS)]
@@ -316,6 +354,48 @@ pub struct BlockingStatusData {
 pub struct BlockUpdateData {
     pub address: String,
     pub is_blocked: bool,
+}
+
+/// One stored DM; `from` is the local user's wallet or the partner's.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(export)]
+pub struct DmHistoryEntryData {
+    pub from: String,
+    pub message: String,
+    /// Unix seconds when the local client stored it.
+    pub received_at: f64,
+    /// What reactions name this DM by; empty for DMs stored before reactions.
+    pub message_id: String,
+    /// Its reactions, in the order each emoji was first used.
+    pub reactions: Vec<DmReactionData>,
+}
+
+/// One emoji's reactions to a stored DM.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(export)]
+pub struct DmReactionData {
+    pub emoji: String,
+    /// The wallets that reacted with it.
+    pub from: Vec<String>,
+}
+
+/// Whether the local user can DM `address`, and why not; emitted for the watched recipient.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(export)]
+pub struct DmUserStateData {
+    pub address: String,
+    /// "notConnected" (the local user is not in the private chat room), "connected",
+    /// "blockedByOwnUser", "privateMessagesBlockedByOwnUser", "privateMessagesBlocked",
+    /// "disconnected" or "otherClient"
+    pub state: String,
+    /// In the private chat room and not blocked by the local user.
+    pub online: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

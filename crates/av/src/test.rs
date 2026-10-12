@@ -20,9 +20,7 @@ use scene_runner::{
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_test::*;
 
-#[cfg(feature = "html")]
-use crate::html_video_player::HtmlMediaEntity;
-#[cfg(feature = "ffmpeg")]
+#[cfg(any(feature = "ffmpeg", feature = "html"))]
 use crate::AVSinks;
 use crate::{
     AVPlayer, AVPlayerPlugin, AudioStream, InScene, ShouldBePlaying, Stream, VideoPlayer,
@@ -70,10 +68,8 @@ fn test_components<T: AVPlayer>(
     test_component!(app, entity, ActiveReceiver, active_receiver);
     test_component!(app, entity, ReceiverImage, receiver_image);
     test_component!(app, entity, VideoTextureOutput, video_texture_output);
-    #[cfg(feature = "ffmpeg")]
+    #[cfg(any(feature = "ffmpeg", feature = "html"))]
     test_component!(app, entity, AVSinks<T>, media);
-    #[cfg(feature = "html")]
-    test_component!(app, entity, HtmlMediaEntity<T>, media);
 }
 
 #[cfg(any(feature = "ffmpeg", feature = "html"))]
@@ -155,6 +151,7 @@ fn test_insert_audio_stream() {
             IVec2::splat(0),
             HashSet::from_iter([IVec2::splat(0)]),
             vec![],
+            Default::default(),
             vec![],
             Entity::PLACEHOLDER,
             0.,
@@ -215,6 +212,7 @@ fn test_insert_empty_audio_stream() {
             IVec2::splat(0),
             HashSet::from_iter([IVec2::splat(0)]),
             vec![],
+            Default::default(),
             vec![],
             Entity::PLACEHOLDER,
             0.,
@@ -275,6 +273,7 @@ fn test_insert_livekit_audio_stream() {
             IVec2::splat(0),
             HashSet::from_iter([IVec2::splat(0)]),
             vec![],
+            Default::default(),
             vec![],
             Entity::PLACEHOLDER,
             0.,
@@ -335,6 +334,7 @@ fn test_insert_video_player() {
             IVec2::splat(0),
             HashSet::from_iter([IVec2::splat(0)]),
             vec![],
+            Default::default(),
             vec![],
             Entity::PLACEHOLDER,
             0.,
@@ -395,6 +395,7 @@ fn test_insert_empty_video_player() {
             IVec2::splat(0),
             HashSet::from_iter([IVec2::splat(0)]),
             vec![],
+            Default::default(),
             vec![],
             Entity::PLACEHOLDER,
             0.,
@@ -455,6 +456,7 @@ fn test_insert_livekit_video_player() {
             IVec2::splat(0),
             HashSet::from_iter([IVec2::splat(0)]),
             vec![],
+            Default::default(),
             vec![],
             Entity::PLACEHOLDER,
             0.,
@@ -515,6 +517,7 @@ fn test_removing_video_player() {
             IVec2::splat(0),
             HashSet::from_iter([IVec2::splat(0)]),
             vec![],
+            Default::default(),
             vec![],
             Entity::PLACEHOLDER,
             0.,
@@ -595,6 +598,7 @@ fn test_removing_livekit_video_player() {
             IVec2::splat(0),
             HashSet::from_iter([IVec2::splat(0)]),
             vec![],
+            Default::default(),
             vec![],
             Entity::PLACEHOLDER,
             0.,
@@ -675,6 +679,7 @@ fn test_livekit_video_player_without_should_be_playing_should_not_be_receiver() 
             IVec2::splat(0),
             HashSet::from_iter([IVec2::splat(0)]),
             vec![],
+            Default::default(),
             vec![],
             Entity::PLACEHOLDER,
             0.,
@@ -811,6 +816,7 @@ fn test_source_change() {
             IVec2::splat(0),
             HashSet::from_iter([IVec2::splat(0)]),
             vec![],
+            Default::default(),
             vec![],
             Entity::PLACEHOLDER,
             0.,
@@ -1009,6 +1015,7 @@ fn test_despawn_av_player() {
             IVec2::splat(0),
             HashSet::from_iter([IVec2::splat(0)]),
             vec![],
+            Default::default(),
             vec![],
             Entity::PLACEHOLDER,
             0.,
