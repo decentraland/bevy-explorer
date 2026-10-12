@@ -24,8 +24,8 @@
 // --- baked params (edit + rebuild to tune) ---
 // the 3 cel bands (albedo brightness multiplier).
 const BAND_HIGH: f32 = 1.0; // lit and unshadowed
-const BAND_MID: f32 = 0.7;  // one darkening source (angle OR cast shadow)
-const BAND_LOW: f32 = 0.45; // both angle-shaded AND cast-shadowed
+const BAND_MID: f32 = 0.85; // one darkening source (angle OR cast shadow)
+const BAND_LOW: f32 = 0.725; // both angle-shaded AND cast-shadowed
 // half-lambert split between the lit and angle-shaded bands (0.5 = terminator).
 const ANGLE_STEP: f32 = 0.5;
 const ANGLE_FEATHER: f32 = 0.05;
@@ -42,10 +42,9 @@ const RIM_POWER: f32 = 5.0;
 const RIM_STRENGTH: f32 = 0.2;
 // multiplier on emissive wearables so they glow.
 const EMISSIVE_BOOST: f32 = 2.0;
-// ceiling on the (light-colour-derived, illuminance-premultiplied ~thousands of
-// lux) brightness, so bright midday doesn't wash avatars out while night, which
-// sits below the cap, is left untouched.
-const BRIGHTNESS_CAP: f32 = 1500.0;
+// the (light-colour-derived, illuminance-premultiplied ~thousands of lux)
+// brightness avatars are lit at, regardless of the scene light.
+const BRIGHTNESS: f32 = 2000.0;
 
 const LUMA: vec3<f32> = vec3<f32>(0.2126, 0.7152, 0.0722);
 
@@ -110,10 +109,10 @@ fn toon_lighting(pbr_input: PbrInput) -> vec4<f32> {
     let band = mix(band_shadowed, band_lit, shadow_lit);
     rim *= shadow_lit; // rim drops out in cast shadow
 
-    // light colour ignored; track only overall scene brightness (capped) so
-    // avatars dim at night without going dark and don't wash out at midday.
-    let ambient_lum = dot(lights.ambient_color.rgb, LUMA);
-    let brightness = min(scene_lum / 3.14159265 + ambient_lum, BRIGHTNESS_CAP) * view.exposure;
+    // light colour and level ignored: avatars are lit at a fixed brightness so
+    // they neither go dark at night nor wash out at midday. the scene light
+    // still drives the bands above.
+    let brightness = BRIGHTNESS * view.exposure;
 
     var color = (base_color.rgb * band + vec3(rim)) * brightness;
     color += pbr_input.material.emissive.rgb * view.exposure * EMISSIVE_BOOST;
