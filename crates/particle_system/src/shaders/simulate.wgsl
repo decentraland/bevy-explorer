@@ -1,5 +1,5 @@
-// One thread per particle slot: advance live particles, then let dead slots claim one of
-// this frame's `spawn_count` spawns through the atomic counter at the head of the buffer.
+// One thread per live slot of the ring (see SimParams): the last `spawn_count` threads spawn
+// into their slot, the rest advance it. The CPU owns the ring, so there are no atomics.
 #import "embedded://particle_system/shaders/common.wgsl"::{Particle, SimParams, is_alive, Rng, rng_new, rng_next, quat_mul, quat_rotate}
 #import "embedded://particle_system/shaders/shape.wgsl"::{emit_position, emit_direction}
 #import "embedded://particle_system/shaders/forces.wgsl"::apply_forces
@@ -8,27 +8,22 @@
 #import "embedded://particle_system/shaders/size.wgsl"::initial_size
 #import "embedded://particle_system/shaders/color.wgsl"::initial_color
 
-struct ParticleBuffer {
-    spawn_claimed: atomic<u32>,
-    _pad: vec3<u32>,
-    particles: array<Particle>,
-}
-
 @group(0) @binding(0) var<uniform> params: SimParams;
-@group(0) @binding(1) var<storage, read_write> particles: ParticleBuffer;
+@group(0) @binding(1) var<storage, read_write> particles: array<Particle>;
 
 @compute @workgroup_size(64)
 fn simulate(@builtin(global_invocation_id) id: vec3<u32>) {
     let index = id.x;
-    if index >= params.capacity {
+    if index >= params.slot_count {
         return;
     }
-    var p = particles.particles[index];
-    if params.reset != 0u {
-        p.lifetime = 0.0;
-    }
+    let slot = (params.first_slot + index) % params.capacity;
+    var p = particles[slot];
 
-    if is_alive(p) {
+    if index >= params.slot_count - params.spawn_count {
+        var rng = rng_new(slot, params.seed);
+        spawn(&p, &rng);
+    } else if is_alive(p) {
         p.age += params.dt;
         apply_forces(&p, params);
 #ifdef LIMIT_VELOCITY
@@ -40,15 +35,7 @@ fn simulate(@builtin(global_invocation_id) id: vec3<u32>) {
 #endif
     }
 
-    if !is_alive(p) {
-        p.lifetime = 0.0;
-        if params.spawn_count > 0u && atomicAdd(&particles.spawn_claimed, 1u) < params.spawn_count {
-            var rng = rng_new(index, params.seed);
-            spawn(&p, &rng);
-        }
-    }
-
-    particles.particles[index] = p;
+    particles[slot] = p;
 }
 
 fn spawn(p: ptr<function, Particle>, rng: ptr<function, Rng>) {

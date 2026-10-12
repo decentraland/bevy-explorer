@@ -35,9 +35,13 @@ struct SimParams {
     limit_dampen: f32,
     dt: f32,
     seed: u32,
+    // the live ring: slots [first_slot, first_slot + slot_count) mod capacity, the last
+    // spawn_count of which are spawned this step
+    first_slot: u32,
+    slot_count: u32,
     spawn_count: u32,
     capacity: u32,
-    reset: u32,
+    _pad: vec2<u32>,
 }
 
 // Per-emitter render parameters.
@@ -47,7 +51,8 @@ struct RenderParams {
     size_over_time: vec2<f32>,
     sprite_tiles: vec2<u32>,
     frames_per_second: f32,
-    _pad: vec3<f32>,
+    capacity: u32,
+    _pad: vec2<f32>,
 }
 
 fn is_alive(p: Particle) -> bool {

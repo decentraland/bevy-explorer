@@ -10,7 +10,7 @@ use bevy::{
         render_graph::{self, RenderGraph, RenderLabel},
         render_resource::{
             binding_types::{storage_buffer_sized, uniform_buffer},
-            BindGroup, BindGroupEntries, BindGroupLayout, BindGroupLayoutEntries, Buffer, BufferId,
+            BindGroup, BindGroupEntries, BindGroupLayout, BindGroupLayoutEntries, BufferId,
             CachedComputePipelineId, ComputePassDescriptor, ComputePipelineDescriptor,
             DynamicUniformBuffer, PipelineCache, ShaderStages, SpecializedComputePipeline,
             SpecializedComputePipelines,
@@ -22,7 +22,7 @@ use bevy::{
 };
 
 use super::{
-    config::{features, shader_defs, SimParams, BUFFER_HEADER_SIZE, WORKGROUP_SIZE},
+    config::{features, shader_defs, SimParams, WORKGROUP_SIZE},
     ParticleEmitter,
 };
 
@@ -124,9 +124,8 @@ impl SpecializedComputePipeline for ParticleSimPipeline {
 struct SimBatch {
     pipeline: CachedComputePipelineId,
     bind_group: BindGroup,
-    buffer: Buffer,
-    offsets: Vec<u32>,
-    workgroups: u32,
+    /// (uniform offset, workgroups) per step
+    steps: Vec<(u32, u32)>,
 }
 
 #[derive(Resource, Default)]
@@ -161,18 +160,22 @@ fn prepare_particle_sims(
         let Some(gpu_buffer) = gpu_buffers.get(&emitter.buffer) else {
             continue;
         };
-        let pipeline_id = pipelines.specialize(&pipeline_cache, &pipeline, emitter.features);
-        let offsets = emitter
+        let steps = emitter
             .steps
             .iter()
-            .map(|step| uniforms.push(step))
+            .filter(|step| step.slot_count > 0)
+            .map(|step| {
+                (
+                    uniforms.push(step),
+                    step.slot_count.div_ceil(WORKGROUP_SIZE),
+                )
+            })
             .collect::<Vec<_>>();
-        pending.push((
-            gpu_buffer.buffer.clone(),
-            pipeline_id,
-            offsets,
-            emitter.capacity.div_ceil(WORKGROUP_SIZE),
-        ));
+        if steps.is_empty() {
+            continue;
+        }
+        let pipeline_id = pipelines.specialize(&pipeline_cache, &pipeline, emitter.features);
+        pending.push((gpu_buffer.buffer.clone(), pipeline_id, steps));
     }
     if pending.is_empty() {
         bind_groups.clear();
@@ -187,7 +190,7 @@ fn prepare_particle_sims(
     let uniform_id = uniform_buffer.id();
 
     let mut used = Vec::with_capacity(pending.len());
-    for (buffer, pipeline_id, offsets, workgroups) in pending {
+    for (buffer, pipeline_id, steps) in pending {
         let key = (uniform_id, buffer.id());
         let bind_group = bind_groups
             .entry(key)
@@ -206,9 +209,7 @@ fn prepare_particle_sims(
         batches.push(SimBatch {
             pipeline: pipeline_id,
             bind_group,
-            buffer,
-            offsets,
-            workgroups,
+            steps,
         });
     }
     bind_groups.retain(|key, _| used.contains(key));
@@ -233,17 +234,17 @@ impl render_graph::Node for ParticleSimNode {
             let Some(pipeline) = pipeline_cache.get_compute_pipeline(batch.pipeline) else {
                 continue;
             };
-            for offset in &batch.offsets {
-                let encoder = render_context.command_encoder();
-                // zero the spawn counter for this step
-                encoder.clear_buffer(&batch.buffer, 0, Some(BUFFER_HEADER_SIZE));
-                let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
-                    label: Some("particle simulate"),
-                    timestamp_writes: None,
-                });
-                pass.set_pipeline(pipeline);
+            let mut pass =
+                render_context
+                    .command_encoder()
+                    .begin_compute_pass(&ComputePassDescriptor {
+                        label: Some("particle simulate"),
+                        timestamp_writes: None,
+                    });
+            pass.set_pipeline(pipeline);
+            for (offset, workgroups) in &batch.steps {
                 pass.set_bind_group(0, &batch.bind_group, &[*offset]);
-                pass.dispatch_workgroups(batch.workgroups, 1, 1);
+                pass.dispatch_workgroups(*workgroups, 1, 1);
             }
         }
         Ok(())

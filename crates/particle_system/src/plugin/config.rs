@@ -17,8 +17,8 @@ const GRAVITY: Vec3 = Vec3::new(0., -10., 0.);
 const CYCLE_DURATION: f32 = 1.0;
 /// Byte size of `Particle` in common.wgsl.
 pub const PARTICLE_SIZE: u64 = 80;
-/// Byte size of the spawn counter header in front of the particles.
-pub const BUFFER_HEADER_SIZE: u64 = 16;
+/// The ring offset and count share a u32 mesh tag.
+pub const MAX_CAPACITY: u32 = u16::MAX as u32;
 pub const WORKGROUP_SIZE: u32 = 64;
 
 /// Feature bits. Each selects a shader def; the uniform always carries every value.
@@ -106,9 +106,11 @@ mod uniforms {
         pub limit_dampen: f32,
         pub dt: f32,
         pub seed: u32,
+        pub first_slot: u32,
+        pub slot_count: u32,
         pub spawn_count: u32,
         pub capacity: u32,
-        pub reset: u32,
+        pub _pad: UVec2,
     }
 
     /// Matches `RenderParams` in common.wgsl.
@@ -119,7 +121,8 @@ mod uniforms {
         pub size_over_time: Vec2,
         pub sprite_tiles: UVec2,
         pub frames_per_second: f32,
-        pub _pad: Vec3,
+        pub capacity: u32,
+        pub _pad: Vec2,
     }
 }
 pub use uniforms::{RenderParams, SimParams};
@@ -168,6 +171,28 @@ fn color_range(range: Option<&ColorRange>) -> (Vec4, Vec4) {
 }
 
 impl EmitterConfig {
+    /// How far any particle can get from the emitter origin, in local units: the shape
+    /// extent plus the furthest reach over a lifetime, plus half the largest quad.
+    pub fn bound_radius(&self) -> f32 {
+        let sim = &self.sim;
+        let extent = match self.features & features::SHAPE_MASK {
+            features::SHAPE_BOX => sim.box_size.abs().max_element() * 0.5,
+            _ => sim.shape_radius,
+        };
+        let lifetime = sim.lifetime;
+        let reach = sim.speed_max.max(sim.speed_min).abs() * lifetime
+            + 0.5 * sim.acceleration.length() * lifetime * lifetime;
+        let size = sim.size_max.max(sim.size_min).abs()
+            * self
+                .render
+                .size_over_time
+                .x
+                .max(self.render.size_over_time.y)
+                .abs()
+                .max(1.);
+        extent + reach + size * 0.5
+    }
+
     pub fn from_proto(ps: &PbParticleSystem) -> Self {
         let mut features = 0;
 
@@ -281,9 +306,11 @@ impl EmitterConfig {
             limit_dampen,
             dt: 0.,
             seed: 0,
+            first_slot: 0,
+            slot_count: 0,
             spawn_count: 0,
             capacity: 0,
-            reset: 0,
+            _pad: UVec2::ZERO,
         };
 
         let render = RenderParams {
@@ -292,7 +319,8 @@ impl EmitterConfig {
             size_over_time: Vec2::new(size_over_time.0, size_over_time.1),
             sprite_tiles,
             frames_per_second,
-            _pad: Vec3::ZERO,
+            capacity: 0,
+            _pad: Vec2::ZERO,
         };
 
         let bursts = ps
@@ -424,5 +452,56 @@ impl Spawner {
         }
 
         count
+    }
+}
+
+/// The live particles as a FIFO ring over the buffer: the CPU decides spawn counts and
+/// knows every lifetime, so it knows which slots are live without reading the GPU back.
+#[derive(Clone, Debug, Default)]
+pub struct ParticleRing {
+    /// simulation time, the sum of the dts sent to the shader
+    time: f32,
+    /// next slot to spawn into
+    head: u32,
+    /// live slots ending at `head`
+    alive: u32,
+    /// (death time, count) in spawn order
+    events: std::collections::VecDeque<(f32, u32)>,
+}
+
+impl ParticleRing {
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    pub fn alive(&self) -> u32 {
+        self.alive
+    }
+
+    /// The oldest live slot.
+    pub fn first(&self, capacity: u32) -> u32 {
+        let capacity = capacity.max(1);
+        (self.head + capacity - self.alive % capacity) % capacity
+    }
+
+    /// Advance one step: retire expired particles, then spawn up to `spawn` new ones.
+    /// Returns (first live slot, live count, spawned count).
+    pub fn step(&mut self, dt: f32, spawn: u32, lifetime: f32, capacity: u32) -> (u32, u32, u32) {
+        self.time += dt;
+        while let Some(&(death, count)) = self.events.front() {
+            if death > self.time {
+                break;
+            }
+            self.events.pop_front();
+            self.alive = self.alive.saturating_sub(count);
+        }
+        // over capacity, drop the new ones (Unity stops emitting at max)
+        let spawn = spawn.min(capacity.saturating_sub(self.alive));
+        if spawn > 0 {
+            self.events.push_back((self.time + lifetime, spawn));
+            self.head = (self.head + spawn) % capacity.max(1);
+            self.alive += spawn;
+        }
+        (self.first(capacity), self.alive, spawn)
     }
 }

@@ -11,7 +11,8 @@ use bevy::{
     platform::collections::{HashMap, HashSet},
     prelude::*,
     render::{
-        mesh::{Indices, PrimitiveTopology},
+        mesh::{Indices, MeshTag, PrimitiveTopology},
+        primitives::Aabb,
         render_asset::RenderAssetUsages,
         render_resource::BufferUsages,
         storage::ShaderStorageBuffer,
@@ -34,13 +35,17 @@ use scene_runner::{
 };
 
 use crate::ParticleSystem;
-use config::{features, EmitterConfig, SimParams, Spawner, BUFFER_HEADER_SIZE, PARTICLE_SIZE};
+use config::{
+    features, EmitterConfig, ParticleRing, SimParams, Spawner, MAX_CAPACITY, PARTICLE_SIZE,
+};
 use material::ParticleMaterial;
 use simulate::ParticleSimulatePlugin;
 
 /// Prewarm simulates one lifetime in steps of this many seconds.
 const PREWARM_STEP: f32 = 1. / 30.;
 const MAX_PREWARM_STEPS: usize = 300;
+/// Smallest quad mesh handed to a live emitter; buckets double from here.
+const MIN_MESH_QUADS: u32 = 16;
 
 pub struct ParticleSystemPlugin;
 
@@ -96,24 +101,24 @@ pub struct ParticleEmitter {
     /// simulation steps to run this frame, rebuilt by `tick_emitters`
     pub steps: Vec<SimParams>,
     spawner: Spawner,
+    ring: ParticleRing,
     scene_root: Entity,
     material: Handle<ParticleMaterial>,
     pending_prewarm: bool,
-    pending_reset: bool,
 }
 
-/// Quad meshes by particle capacity; position.xy is the quad corner, position.z the index.
+/// Quad meshes by quad count; position.xy is the quad corner, position.z the quad index.
 #[derive(Default, Resource)]
 struct ParticleMeshes(HashMap<u32, Handle<Mesh>>);
 
 impl ParticleMeshes {
-    fn get(&mut self, capacity: u32, meshes: &mut Assets<Mesh>) -> Handle<Mesh> {
+    fn get(&mut self, quads: u32, meshes: &mut Assets<Mesh>) -> Handle<Mesh> {
         self.0
-            .entry(capacity)
+            .entry(quads)
             .or_insert_with(|| {
-                let mut positions = Vec::with_capacity(capacity as usize * 4);
-                let mut indices = Vec::with_capacity(capacity as usize * 6);
-                for index in 0..capacity {
+                let mut positions = Vec::with_capacity(quads as usize * 4);
+                let mut indices = Vec::with_capacity(quads as usize * 6);
+                for index in 0..quads {
                     let z = index as f32;
                     positions.extend([
                         [-0.5, -0.5, z],
@@ -137,14 +142,40 @@ impl ParticleMeshes {
     }
 }
 
+/// The mesh bucket for `alive` particles: the next power of two, at least
+/// `MIN_MESH_QUADS`, at most the capacity.
+fn mesh_quads(alive: u32, capacity: u32) -> u32 {
+    alive
+        .next_power_of_two()
+        .max(MIN_MESH_QUADS)
+        .min(capacity)
+        .max(1)
+}
+
 fn particle_buffer(capacity: u32) -> ShaderStorageBuffer {
-    let size = BUFFER_HEADER_SIZE + PARTICLE_SIZE * capacity as u64;
+    let size = PARTICLE_SIZE * capacity as u64;
     // zeroed = every slot dead
     let mut buffer =
         ShaderStorageBuffer::new(&vec![0; size as usize], RenderAssetUsages::RENDER_WORLD);
     buffer.buffer_description.label = Some("particles");
     buffer.buffer_description.usage = BufferUsages::STORAGE | BufferUsages::COPY_DST;
     buffer
+}
+
+/// Local-space emitters get an analytic bound for frustum culling; world-space particles
+/// don't follow the transform, so those emitters are never culled.
+fn apply_bounds(entity: &mut EntityCommands, config: &EmitterConfig) {
+    if config.features & features::WORLD_SPACE != 0 {
+        entity.remove::<Aabb>().insert(NoFrustumCulling);
+    } else {
+        let radius = config.bound_radius();
+        entity
+            .remove::<NoFrustumCulling>()
+            .insert(Aabb::from_min_max(
+                Vec3::splat(-radius),
+                Vec3::splat(radius),
+            ));
+    }
 }
 
 fn collect_active_scenes(
@@ -213,18 +244,19 @@ fn sync_emitters(
                 );
                 // modify in place: live particles survive value changes; the buffer only
                 // grows, so lowering max_particles keeps the old limit
-                let capacity = config.max_particles.max(1).max(emitter.capacity);
+                let capacity = config
+                    .max_particles
+                    .clamp(1, MAX_CAPACITY)
+                    .max(emitter.capacity);
                 if capacity != emitter.capacity {
                     emitter.buffer = buffers.add(particle_buffer(capacity));
                     emitter.capacity = capacity;
-                    commands
-                        .entity(child)
-                        .insert(Mesh3d(particle_meshes.get(capacity, &mut meshes)));
+                    emitter.ring.reset();
                 }
 
                 let was = emitter.config.playback;
                 if config.playback == PlaybackState::PsStopped && was != PlaybackState::PsStopped {
-                    emitter.pending_reset = true;
+                    emitter.ring.reset();
                 }
                 if config.playback != PlaybackState::PsStopped && was == PlaybackState::PsStopped {
                     let spawner_config = config.clone();
@@ -233,6 +265,7 @@ fn sync_emitters(
                 }
                 emitter.spawner.sync_bursts(&config);
 
+                config.render.capacity = capacity;
                 if let Some(material) = materials.get_mut(&emitter.material) {
                     material.params = config.render;
                     material.particles = emitter.buffer.clone();
@@ -240,11 +273,13 @@ fn sync_emitters(
                     material.features = config.features;
                     material.alpha_mode = config.alpha_mode;
                 }
+                apply_bounds(&mut commands.entity(child), &config);
                 emitter.features = config.features;
                 emitter.config = config;
             }
             None => {
-                let capacity = config.max_particles.max(1);
+                let capacity = config.max_particles.clamp(1, MAX_CAPACITY);
+                config.render.capacity = capacity;
                 let buffer = buffers.add(particle_buffer(capacity));
                 let material = materials.add(ParticleMaterial {
                     params: config.render,
@@ -259,26 +294,28 @@ fn sync_emitters(
                     "particle emitter for {entity} created: features {:#x}, capacity {capacity}, rate {}, playback {:?}, bursts {}",
                     config.features, config.rate, config.playback, config.bursts.len()
                 );
-                commands.spawn((
+                let mut child = commands.spawn((
                     ChildOf(entity),
                     ParticleRendererOf(entity),
                     Transform::default(),
-                    Mesh3d(particle_meshes.get(capacity, &mut meshes)),
+                    Visibility::Hidden,
+                    Mesh3d(particle_meshes.get(mesh_quads(0, capacity), &mut meshes)),
                     MeshMaterial3d(material.clone()),
-                    NoFrustumCulling,
-                    ParticleEmitter {
-                        buffer,
-                        capacity,
-                        features: config.features,
-                        config,
-                        steps: Vec::new(),
-                        spawner,
-                        scene_root: container_entity.root,
-                        material,
-                        pending_prewarm,
-                        pending_reset: false,
-                    },
+                    MeshTag(0),
                 ));
+                apply_bounds(&mut child, &config);
+                child.insert(ParticleEmitter {
+                    buffer,
+                    capacity,
+                    features: config.features,
+                    config,
+                    steps: Vec::new(),
+                    spawner,
+                    ring: ParticleRing::default(),
+                    scene_root: container_entity.root,
+                    material,
+                    pending_prewarm,
+                });
             }
         }
     }
@@ -297,29 +334,38 @@ fn particle_system_on_remove(
 }
 
 /// Build this frame's simulation steps: the spawner decides how many particles to emit,
-/// the shader does the rest.
+/// the ring tracks which slots are live, the shader does the rest. The live range goes to
+/// the vertex shader through the mesh tag, and the mesh is sized to the live count.
+#[allow(clippy::type_complexity)]
 fn tick_emitters(
     time: Res<Time>,
     active_scenes: Res<ActiveScenes>,
-    mut emitters: Query<(&mut ParticleEmitter, &GlobalTransform)>,
+    mut particle_meshes: ResMut<ParticleMeshes>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut emitters: Query<(
+        &mut ParticleEmitter,
+        &GlobalTransform,
+        &mut MeshTag,
+        &mut Mesh3d,
+        &mut Visibility,
+    )>,
 ) {
     let dt = time.delta_secs();
-    for (mut emitter, transform) in &mut emitters {
+    for (mut emitter, transform, mut tag, mut mesh, mut visibility) in &mut emitters {
         let ParticleEmitter {
             capacity,
             config,
             steps,
             spawner,
+            ring,
             scene_root,
             pending_prewarm,
-            pending_reset,
             ..
         } = &mut *emitter;
         steps.clear();
 
         let playing = config.playback == PlaybackState::PsPlaying;
         let emitting = playing && config.active && active_scenes.contains(scene_root);
-        let reset = std::mem::take(pending_reset);
 
         let (_, rotation, _) = transform.to_scale_rotation_translation();
         let mut params = config.sim;
@@ -328,12 +374,14 @@ fn tick_emitters(
         params.emitter_inv_rotation = Vec4::from(rotation.inverse());
         params.capacity = *capacity;
 
-        let mut push = |dt: f32, spawn_count: u32, reset: bool| {
+        let mut push = |dt: f32, spawn: u32| {
+            let (first, alive, spawned) = ring.step(dt, spawn, config.sim.lifetime, *capacity);
             steps.push(SimParams {
                 dt,
-                spawn_count,
-                reset: reset as u32,
                 seed: rand::random(),
+                first_slot: first,
+                slot_count: alive,
+                spawn_count: spawned,
                 ..params
             });
         };
@@ -344,19 +392,40 @@ fn tick_emitters(
                 ((config.sim.lifetime / PREWARM_STEP).ceil() as usize).clamp(1, MAX_PREWARM_STEPS);
             let step = config.sim.lifetime / count as f32;
             for _ in 0..count {
-                push(step, spawner.tick(step, config), false);
+                push(step, spawner.tick(step, config));
             }
         }
 
         if playing {
-            let spawn_count = if emitting {
+            let spawn = if emitting {
                 spawner.tick(dt, config)
             } else {
                 0
             };
-            push(dt, spawn_count, reset);
-        } else if reset {
-            push(0., 0, true);
+            push(dt, spawn);
+        }
+
+        let alive = ring.alive();
+        let new_tag = ring.first(*capacity) | (alive << 16);
+        if tag.0 != new_tag {
+            tag.0 = new_tag;
+            // bevy's mesh extraction doesn't watch MeshTag (0.16); Mesh3d is on its list
+            mesh.set_changed();
+        }
+        let new_visibility = if alive == 0 {
+            Visibility::Hidden
+        } else {
+            Visibility::Inherited
+        };
+        if *visibility != new_visibility {
+            *visibility = new_visibility;
+        }
+        if alive > 0 {
+            let quads = mesh_quads(alive, *capacity);
+            let handle = particle_meshes.get(quads, &mut meshes);
+            if mesh.0 != handle {
+                mesh.0 = handle;
+            }
         }
     }
 }
