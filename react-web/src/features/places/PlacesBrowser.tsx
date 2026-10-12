@@ -22,8 +22,6 @@ const SECTIONS: TabItem<PlacesSection>[] = [
 ]
 
 const LIVE_NOW_LIMIT = 4
-// decentraland.org/places' `dapps-places-live-min-user` (min_users variant) in production.
-const LIVE_MIN_USERS = 0
 
 // "Any Category" dropdown — labels map to the usePlaces category id (featured = only_highlighted).
 const CATEGORY_OPTIONS = ['Any Category', 'Featured', 'Social', 'Music', 'Art', 'Game', 'Fashion', 'Education', 'Shop', 'Sports', 'Business']
@@ -78,7 +76,7 @@ export function PlacesBrowser({
   const liveNow = useMemo(
     () =>
       liveFeed
-        .filter((p) => !isHiddenPlace(p) && placePlayers(p) >= LIVE_MIN_USERS)
+        .filter((p) => !isHiddenPlace(p) && placePlayers(p) > 0)
         .sort((a, b) => placePlayers(b) - placePlayers(a))
         .slice(0, LIVE_NOW_LIMIT),
     [liveFeed]
