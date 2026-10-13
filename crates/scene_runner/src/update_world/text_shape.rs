@@ -112,7 +112,7 @@ use dcl_component::{
 };
 use ui_core::{ui_builder::SpawnSpacer, WeightName, FONT_SIZE_SCALE};
 use unicode_segmentation::UnicodeSegmentation;
-use world_ui::{spawn_world_ui_view, WorldUi};
+use world_ui::{spawn_world_ui_view, TextShapeMaterial, WorldUi};
 
 use crate::{renderer_context::RendererSceneContext, SceneEntity};
 
@@ -133,6 +133,8 @@ impl Plugin for TextShapePlugin {
             Update,
             update_text_shapes.in_set(SceneLoopSets::UpdateWorld),
         );
+        app.add_observer(text_shape_removed);
+
         app.add_systems(
             PostUpdate,
             apply_text_extras
@@ -264,10 +266,10 @@ fn update_text_shapes(
             &TextShape,
             Option<&PriorTextShapeUi>,
             Option<&RetryTextShape>,
+            Option<&Children>,
         ),
         Or<(Changed<TextShape>, With<RetryTextShape>)>,
     >,
-    mut removed: RemovedComponents<TextShape>,
     scenes: Query<&RendererSceneContext>,
     frame: Res<FrameCount>,
     mut cameras: Query<&mut Camera>,
@@ -276,25 +278,8 @@ fn update_text_shapes(
     mut text_pipeline: ResMut<TextPipeline>,
     mut scene_fonts: SceneFontServer,
     mut font_system: ResMut<CosmicFontSystem>,
+    mats: Query<&MeshMaterial3d<TextShapeMaterial>>,
 ) {
-    // remove deleted ui nodes
-    for e in removed.read() {
-        if let Ok(mut commands) = commands.get_entity(e) {
-            commands.remove::<WorldUi>();
-        }
-
-        if let Ok(view) = views.get(e) {
-            if let Ok(mut commands) = commands.get_entity(view.view) {
-                commands.despawn();
-            }
-            if let Ok(mut commands) = commands.get_entity(view.ui_root) {
-                commands.despawn();
-            }
-        }
-
-        debug!("[{}] kill textshape {e:?}", frame.0);
-    }
-
     let mut active_count = 0;
     let mut queue_count = 0;
     let mut wait_count = 0;
@@ -322,14 +307,14 @@ fn update_text_shapes(
 
     let mut oldest = query
         .iter()
-        .flat_map(|(_, _, _, _, since)| since.map(|s| s.0))
+        .flat_map(|(_, _, _, _, since, _)| since.map(|s| s.0))
         .collect::<Vec<_>>();
     oldest.sort();
 
     let stop_at = oldest.get(MAX_ACTIVE - active_count);
 
     // add new nodes
-    for (ent, scene_ent, text_shape, maybe_prior, maybe_retry) in query.iter() {
+    for (ent, scene_ent, text_shape, maybe_prior, maybe_retry, maybe_children) in query.iter() {
         let skip = active_count >= MAX_ACTIVE
             || stop_at.is_some_and(|stop_at| maybe_retry.is_none_or(|retry| retry.0 > *stop_at));
 
@@ -376,6 +361,14 @@ fn update_text_shapes(
         }
 
         if text_shape.0.text.is_empty() || text_shape.0.font_size.is_some_and(|size| size <= 0.0) {
+            clean_up_text_shape(
+                &mut commands,
+                ent,
+                views.get(ent).ok(),
+                maybe_prior,
+                maybe_children,
+                mats,
+            );
             continue;
         }
 
@@ -654,6 +647,57 @@ fn update_text_shapes(
     }
 
     debug!("active: {active_count}, queue: {queue_count}, wait: {wait_count}");
+}
+
+fn text_shape_removed(
+    trigger: Trigger<OnRemove, TextShape>,
+    mut commands: Commands,
+    text_shape_uis: Query<&TextShapeUi>,
+    prior_text_shape_uis: Query<&PriorTextShapeUi>,
+    children: Query<&Children>,
+    mats: Query<&MeshMaterial3d<TextShapeMaterial>>,
+) {
+    let entity = trigger.target();
+    debug!("Removing TextShape");
+
+    clean_up_text_shape(
+        &mut commands,
+        entity,
+        text_shape_uis.get(entity).ok(),
+        prior_text_shape_uis.get(entity).ok(),
+        children.get(entity).ok(),
+        mats,
+    );
+}
+
+fn clean_up_text_shape(
+    commands: &mut Commands,
+    entity: Entity,
+    text_shape_ui: Option<&TextShapeUi>,
+    prior_text_shape_ui: Option<&PriorTextShapeUi>,
+    children: Option<&Children>,
+    mats: Query<&MeshMaterial3d<TextShapeMaterial>>,
+) {
+    if let Some(text_shape_ui) = text_shape_ui {
+        debug!("Despawning TextShapeUi entities");
+        commands.entity(text_shape_ui.ui_root).try_despawn();
+        commands.entity(text_shape_ui.view).try_despawn();
+    }
+    if let Some(PriorTextShapeUi(prior_text_shape_ui, _)) = prior_text_shape_ui {
+        debug!("Despawning PriorTextShapeUi entities");
+        commands.entity(*prior_text_shape_ui).try_despawn();
+    }
+    if let Some(children) = children {
+        for child in children {
+            if mats.contains(*child) {
+                commands.entity(*child).try_despawn();
+            }
+        }
+    }
+
+    commands
+        .entity(entity)
+        .try_remove::<(WorldUi, TextShapeUi, PriorTextShapeUi)>();
 }
 
 #[derive(Component)]
