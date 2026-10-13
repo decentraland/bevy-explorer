@@ -38,6 +38,20 @@ const PI: f32 = 3.141592653589793;
 const ISTEPS: u32 = 16u;
 const JSTEPS: u32 = 8u;
 
+// fake above/below shading: each step's density is weighted by how low it sits in the layer,
+// raised to this power, and the cloud darkens by up to this much as that density-weighted
+// lowness approaches 1 (all of the cloud at the base: an underside)
+const CLOUD_HEIGHT_POWER: f32 = 2.0;
+const CLOUD_HEIGHT_DARKEN: f32 = 0.33;
+
+// how much more saturated than the light colour the clouds are (1 = as the light), so the
+// moon's violet shows against the night sky fill
+const CLOUD_LIGHT_SATURATION: f32 = 1.6;
+
+// the least of the light colour clouds take when the light is dim (night, dusk): the indirect
+// factor is illuminance / 5000 lux, floored here
+const CLOUD_INDIRECT_FLOOR: f32 = 0.5;
+
 fn rsi(rd: vec3<f32>, r0: vec3<f32>, sr: f32) -> vec2<f32> {
     // ray-sphere intersection that assumes
     // the sphere is centered at the origin.
@@ -213,6 +227,8 @@ fn render_cloud(sky: vec3<f32>, pos: vec3<f32>, dir: vec3<f32>) -> vec4<f32> {
 
     let add = dir * ((high - low) / f32(nishita.cloud_steps));
     var shade_sum: vec2<f32> = vec2<f32>(0.0);
+    // density weighted by lowness in the layer, normalised by the density afterwards
+    var low_sum = 0.0;
 
     let density_cap = nishita.cloud_density_cap;
     let base_density = clamp(cloudy(), 0.0, 1.0);
@@ -228,7 +244,9 @@ fn render_cloud(sky: vec3<f32>, pos: vec3<f32>, dir: vec3<f32>) -> vec4<f32> {
                     break;
                 }
 
-                shade_sum += vec2<f32>(base_light, base_density) * (vec2<f32>(1.0) - shade_sum.y);
+                let covered = 1.0 - shade_sum.y;
+                shade_sum += vec2<f32>(base_light, base_density) * covered;
+                low_sum += base_density * covered * pow(1.0 - f32(i) / f32(nishita.cloud_steps), CLOUD_HEIGHT_POWER);
             }
         }
     } else {
@@ -243,11 +261,14 @@ fn render_cloud(sky: vec3<f32>, pos: vec3<f32>, dir: vec3<f32>) -> vec4<f32> {
             let density = mix(sample_density, base_density, clamp(length(p.xz) / 100000.0, 0.0, 1.0));
             let light = mix(sample_light, base_light, clamp(length(p.xz) / 100000.0, 0.0, 1.0));
 
-            shade_sum += vec2<f32>(light, density) * (vec2<f32>(1.0) - shade_sum.y);
+            let covered = 1.0 - shade_sum.y;
+            shade_sum += vec2<f32>(light, density) * covered;
+            low_sum += density * covered * pow(1.0 - f32(i) / f32(nishita.cloud_steps), CLOUD_HEIGHT_POWER);
             p += add;
         }
     }
 
+    let lowness = low_sum / max(shade_sum.y, 0.001);
     shade_sum /= max(shade_sum.y, density_cap);
 
     // contrast curve on the coverage: a logistic centred on cloud_sharp_mid with steepness
@@ -262,12 +283,17 @@ fn render_cloud(sky: vec3<f32>, pos: vec3<f32>, dir: vec3<f32>) -> vec4<f32> {
         shade_sum.y = clamp((sy - s0) / (s1 - s0), 0.0, 1.0);
     }
 
-    let light_cloud_color_indirect = max(vec3(nishita.cloud_shadow), saturate(nishita.sun_color * 1.5) * min(1.0, nishita.dir_light_intensity / 5000.0));
-    let light_cloud_color_direct = max(vec3(nishita.cloud_shadow), saturate(nishita.sun_color * 1.5) * min(nishita.dir_light_intensity / 1000.0, 4.0));
+    // the light colour, more saturated
+    let light_luma = dot(nishita.sun_color, vec3<f32>(0.299, 0.587, 0.114));
+    let light_color = max(mix(vec3<f32>(light_luma), nishita.sun_color, CLOUD_LIGHT_SATURATION), vec3<f32>(0.0));
+    let light_cloud_color_indirect = max(vec3(nishita.cloud_shadow), saturate(light_color * 1.5) * clamp(nishita.dir_light_intensity / 5000.0, CLOUD_INDIRECT_FLOOR, 1.0));
+    let light_cloud_color_direct = max(vec3(nishita.cloud_shadow), saturate(light_color * 1.5) * min(nishita.dir_light_intensity / 1000.0, 4.0));
     let light_cloud_color = mix(light_cloud_color_indirect, light_cloud_color_direct, pow(smoothstep(0.8 + (0.1 * shade_sum.y), 1.0, sun_amount), 5.0));
     shade_sum.y = mix(shade_sum.y, sqrt(shade_sum.y), smoothstep(0.9, 1.0, sun_amount));
 
-    let clouds = mix(light_cloud_color, vec3(nishita.cloud_shadow), pow(shade_sum.x, 3.0));
+    var clouds = mix(light_cloud_color, vec3(nishita.cloud_shadow), pow(shade_sum.x, 3.0));
+    // undersides: the more of the cloud's density sits low in the layer, the darker
+    clouds *= 1.0 - CLOUD_HEIGHT_DARKEN * lowness;
     let result = mix(sky, min(clouds, vec3<f32>(1.0)), shade_sum.y);
     // no upper clamp: the sun disc keeps its HDR brightness; alpha carries the cloud
     // coverage for effects that treat clouds differently from the clear sky
