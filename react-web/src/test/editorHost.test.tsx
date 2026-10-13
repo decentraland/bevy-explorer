@@ -198,7 +198,8 @@ describe('editor host', () => {
       await expect(host().engineConsole(line), line).rejects.toThrow('not-allowed')
     await host().engineConsole(`/reload ${own}`)
     await host().engineConsole(`set_scene ${own}`)
-    expect(engineConsole.mock.calls.map(([line]) => line)).toEqual(['/time', `/reload ${own}`, `set_scene ${own}`])
+    await host().engineConsole('/walk_player_to 5 2 3.5 5')
+    expect(engineConsole.mock.calls.map(([line]) => line)).toEqual(['/time', `/reload ${own}`, `set_scene ${own}`, '/walk_player_to 5 2 3.5 5'])
     engineConsole.mockClear()
 
     // the engine's url sync, as boot.js receives it while on the preview realm
