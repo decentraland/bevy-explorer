@@ -199,7 +199,7 @@ fn lighting(p: vec3<f32>, dir: vec3<f32>, sun: vec3<f32>, m: mat3x3<f32>) -> f32
     return clamp(pow(l, 0.25), 0.0, 1.0);
 }
 
-fn render_cloud(sky: vec3<f32>, pos: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
+fn render_cloud(sky: vec3<f32>, pos: vec3<f32>, dir: vec3<f32>) -> vec4<f32> {
     let p_sun = normalize(nishita.sun_position);
     let sun_amount: f32 = max(dot(dir, p_sun), 0.0);
 
@@ -269,18 +269,13 @@ fn render_cloud(sky: vec3<f32>, pos: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
 
     let clouds = mix(light_cloud_color, vec3(nishita.cloud_shadow), pow(shade_sum.x, 3.0));
     let result = mix(sky, min(clouds, vec3<f32>(1.0)), shade_sum.y);
-    return clamp(result, vec3<f32>(0.0), vec3<f32>(1.0));
+    // no upper clamp: the sun disc keeps its HDR brightness; alpha carries the cloud
+    // coverage for effects that treat clouds differently from the clear sky
+    return vec4<f32>(max(result, vec3<f32>(0.0)), shade_sum.y);
 }
 
 @group(1) @binding(0)
 var image: texture_storage_2d_array<rgba16float, write>;
-
-fn hash13(p: vec3<f32>) -> f32 {
-    // A common simple hash function
-    var p3 = fract(p * vec3<f32>(0.1031, 0.1030, 0.0973));
-    p3 = p3 + dot(p3, p3.yzx + 19.19);
-    return fract((p3.x + p3.y) * p3.z);
-}
 
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @builtin(num_workgroups) num_workgroups: vec3<u32>) {
@@ -338,7 +333,7 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
             image,
             vec2<i32>(invocation_id.xy),
             i32(invocation_id.z),
-            vec4<f32>(vec3<f32>(0.0), 1.0)
+            vec4<f32>(vec3<f32>(0.0), 0.0)
         );
         return;
     }
@@ -349,12 +344,6 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
 
 
     var render_base = vec3<f32>(0.0);
-
-    let fwd = normalize(nishita.sun_position);
-    let basis_u = vec3<f32>(0.0, sign(nishita.sun_position.z), 0.0);
-    let right = normalize(cross(basis_u, fwd));
-    let up = normalize(cross(fwd, right));
-    let sun_transform = mat3x3(right, up, fwd);
 
     let multiplier = 1.0 + saturate(nishita.dir_light_intensity / 11000.0);
 
@@ -393,8 +382,9 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
         }
     }
 
-    // stars: fade in by how far the sun is below the horizon (not intensity,
-    // which floors at the horizon and would show stars at dusk)
+    // night: how far the sun is below the horizon (not intensity, which floors
+    // at the horizon). the stars themselves are drawn after depth of field, in
+    // stars.wgsl
     let night_amount = smoothstep(0.0, 0.15, -normalize(nishita.sun_position).y);
 
     // moon: a plain disc (no tint) on its own low orbit, fading in with the
@@ -416,42 +406,14 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
     // faint cool halo (full circle)
     render_base += vec3<f32>(0.5, 0.5, 0.6) * pow(max(moon_dot, 0.0), 250.0) * night_amount * 0.3;
 
-    // rays clamped to y = 0 get a zero horizon factor below: skip the thousand stars
-    if night_amount > 0.0 && ray.y > 0.0 {
-        for (var i=0u; i<1000u; i++) {
-            let star_world_dir = normalize(
-                vec3<f32>(
-                    hash13(vec3::<f32>(17.5, 19.2, -888.2) * f32(i)), 
-                    hash13(vec3::<f32>(117.5, 19.2, -888.2) * f32(i)), 
-                    abs(hash13(vec3::<f32>(217.5, 19.2, -888.2) * f32(i)))
-                ) * 2.0 - 1.0
-            );
-            let star_dir = sun_transform * star_world_dir;
-            let stardirdot = dot(normalize(star_dir), ray);
-            let hash = hash13(star_world_dir);
-            // size range should vary based on resolution of the cubemap
-            let size = 0.99995 + 0.000025 * pow(fract(hash * 100000.0), 0.25);
-            if stardirdot > size {
-                let color = vec3<f32>(0.25 + 0.75 * fract(hash * 1000.0), 0.625 + 0.375 * fract(hash * 1000.0), 1.0);
-                let brightness = 1.0 - smoothstep(0.99995, 0.99995 + 0.000025, size);
-                render_base += vec3<f32>(
-                    color
-                    * night_amount) // fades in below the horizon
-                    * brightness // star brightness
-                    * pow(smoothstep(size, 1.0, stardirdot), 3.0)  // distance from middle of the star
-                    * clamp(ray.y * 10.0, 0.0, 1.0); // distance above horizon
-            }
-        }
-    }
-
     let render = render_cloud(render_base, nishita.ray_origin * 0.0, normalize(ray));
 
-    let store_value = mix(render, vec3(0.0), 1.0 - smoothstep(-0.5, 0.0, initial_y));
+    let store_value = mix(render.rgb, vec3(0.0), 1.0 - smoothstep(-0.5, 0.0, initial_y));
 
     textureStore(
         image,
         vec2<i32>(invocation_id.xy),
         i32(invocation_id.z),
-        vec4<f32>(store_value, 1.0)
+        vec4<f32>(store_value, render.a)
     );
 }

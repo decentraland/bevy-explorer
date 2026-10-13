@@ -61,36 +61,26 @@ impl AppSetting for DofSetting {
             return;
         };
 
-        match self {
-            DofSetting::Off => cmds.remove::<(DepthOfField, DofConfig)>(),
-            DofSetting::Low => cmds.try_insert((
-                DepthOfField {
-                    mode: DepthOfFieldMode::Gaussian,
-                    focal_distance: 50.0, // updated based on cam + extra
-                    aperture_f_stops: 0.15,
-                    max_depth: 250.0,
-                    max_circle_of_confusion_diameter: 20.0,
-                    sensor_height: 0.06,
-                },
-                DofConfig {
-                    default_sensor_height: 0.06,
-                    extra_focal_distance: 50.0,
-                },
-            )),
-            DofSetting::High => cmds.try_insert((
-                DepthOfField {
-                    mode: DepthOfFieldMode::Gaussian,
-                    focal_distance: 50.0, // updated based on cam + extra
-                    aperture_f_stops: 0.05,
-                    max_depth: 250.0,
-                    max_circle_of_confusion_diameter: 20.0,
-                    sensor_height: 0.06,
-                },
-                DofConfig {
-                    default_sensor_height: 0.06,
-                    extra_focal_distance: 50.0,
-                },
-            )),
+        let (mode, aperture_f_stops) = match self {
+            // no blur, but depth of field stays active so its transparent focus texture is still
+            // rendered: the stars read it to hide behind imposters
+            DofSetting::Off => (DepthOfFieldMode::Disabled, 0.15),
+            DofSetting::Low => (DepthOfFieldMode::Gaussian, 0.15),
+            DofSetting::High => (DepthOfFieldMode::Gaussian, 0.05),
         };
+        cmds.try_insert((
+            DepthOfField {
+                mode,
+                focal_distance: 50.0, // updated based on cam + extra
+                aperture_f_stops,
+                max_depth: 250.0,
+                max_circle_of_confusion_diameter: 20.0,
+                sensor_height: 0.06,
+            },
+            DofConfig {
+                default_sensor_height: 0.06,
+                extra_focal_distance: 50.0,
+            },
+        ));
     }
 }
