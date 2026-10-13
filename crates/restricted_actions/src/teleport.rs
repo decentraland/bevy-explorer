@@ -232,12 +232,21 @@ pub fn handle_out_of_world(
                     .unwrap_or(1000.0);
             let mut count = 100;
 
-            if !context.spawn_points.is_empty() {
+            // spawn points marked `default` take precedence; a scene without any uses them all
+            let default_spawn_points = context
+                .spawn_points
+                .iter()
+                .filter(|sp| sp.default)
+                .collect::<Vec<_>>();
+            let spawn_points = if default_spawn_points.is_empty() {
+                context.spawn_points.iter().collect()
+            } else {
+                default_spawn_points
+            };
+
+            if !spawn_points.is_empty() {
                 while best_distance < 0.75 && count > 0 {
-                    let spawn_point = context.spawn_points.choose(rng).unwrap();
-                    if !spawn_point.default && count > 50 {
-                        continue;
-                    }
+                    let spawn_point = spawn_points.choose(rng).unwrap();
                     let aabb = spawn_point.position.bounding_box();
                     let position = base_position
                         + Vec3::new(
