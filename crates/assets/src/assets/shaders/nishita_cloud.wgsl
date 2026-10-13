@@ -52,6 +52,11 @@ const CLOUD_LIGHT_SATURATION: f32 = 1.6;
 // factor is illuminance / 5000 lux, floored here
 const CLOUD_INDIRECT_FLOOR: f32 = 0.5;
 
+// toward the horizon the sharpened coverage fades to the cover fraction, the field's average:
+// an exponential approach that is two thirds of the way there when the march starts this far
+// away (metres, horizontal), so it begins close in and settles slowly
+const CLOUD_FAR_DISTANCE: f32 = 25000.0;
+
 fn rsi(rd: vec3<f32>, r0: vec3<f32>, sr: f32) -> vec2<f32> {
     // ray-sphere intersection that assumes
     // the sphere is centered at the origin.
@@ -220,55 +225,40 @@ fn render_cloud(sky: vec3<f32>, pos: vec3<f32>, dir: vec3<f32>) -> vec4<f32> {
     // per-octave rotation×lacunarity, computed once for all samples this pixel
     let m = m_base * nishita.cloud_lacunarity;
 
-	var low = ((CLOUD_LOWER-pos.y) / dir.y);
-	let high = ((CLOUD_UPPER-pos.y) / dir.y);
+    // rays along the horizon (dir.y clamped to 0) still get a march, a very long one
+    let d = vec3<f32>(dir.x, max(dir.y, 0.002), dir.z);
+	var low = ((CLOUD_LOWER-pos.y) / d.y);
+	let high = ((CLOUD_UPPER-pos.y) / d.y);
 	    
-    var p = pos + dir * low;
+    var p = pos + d * low;
+    // how far away the march starts: the field averages out with distance
+    let far = 1.0 - exp(-length(p.xz) / CLOUD_FAR_DISTANCE);
 
-    let add = dir * ((high - low) / f32(nishita.cloud_steps));
+    let add = d * ((high - low) / f32(nishita.cloud_steps));
     var shade_sum: vec2<f32> = vec2<f32>(0.0);
     // density weighted by lowness in the layer, normalised by the density afterwards
     var low_sum = 0.0;
 
     let density_cap = nishita.cloud_density_cap;
-    let base_density = clamp(cloudy(), 0.0, 1.0);
-    let base_light = pow(base_density, 0.25) * base_density;
 
-    // the far mix reaches exactly the base values at 100 km, and the march only moves away from
-    // the origin, so a ray that starts there (or runs along the horizon: dir.y clamped to 0, the
-    // march degenerate) takes the base values for every step without sampling any noise
-    if dir.y == 0.0 || clamp(length(p.xz) / 100000.0, 0.0, 1.0) == 1.0 {
-        if base_density > 0.0 {
-            for (var i = 0u; i < nishita.cloud_steps; i += 1u) {
-                if shade_sum.y >= density_cap {
-                    break;
-                }
-
-                let covered = 1.0 - shade_sum.y;
-                shade_sum += vec2<f32>(base_light, base_density) * covered;
-                low_sum += base_density * covered * pow(1.0 - f32(i) / f32(nishita.cloud_steps), CLOUD_HEIGHT_POWER);
-            }
+    for (var i = 0u; i < nishita.cloud_steps; i += 1u) {
+        if shade_sum.y >= density_cap {
+            break;
         }
-    } else {
-        for (var i = 0u; i < nishita.cloud_steps; i += 1u) {
-            if shade_sum.y >= density_cap {
-                break;
-            }
 
-            let sample_density = density(p, m);
-            let sample_light = lighting(p, dir, p_sun, m) * sample_density;
+        let density = density(p, m);
+        let light = lighting(p, d, p_sun, m) * density;
 
-            let density = mix(sample_density, base_density, clamp(length(p.xz) / 100000.0, 0.0, 1.0));
-            let light = mix(sample_light, base_light, clamp(length(p.xz) / 100000.0, 0.0, 1.0));
+        let covered = 1.0 - shade_sum.y;
+        shade_sum += vec2<f32>(light, density) * covered;
+        low_sum += density * covered * pow(1.0 - f32(i) / f32(nishita.cloud_steps), CLOUD_HEIGHT_POWER);
 
-            let covered = 1.0 - shade_sum.y;
-            shade_sum += vec2<f32>(light, density) * covered;
-            low_sum += density * covered * pow(1.0 - f32(i) / f32(nishita.cloud_steps), CLOUD_HEIGHT_POWER);
-            p += add;
-        }
+        p += add;
     }
 
-    let lowness = low_sum / max(shade_sum.y, 0.001);
+    // a distant march saturates in its first, lowest steps, which says nothing about height:
+    // fade the lowness to a uniform column's value with distance
+    let lowness = mix(low_sum / max(shade_sum.y, 0.001), 1.0 / (CLOUD_HEIGHT_POWER + 1.0), far);
     shade_sum /= max(shade_sum.y, density_cap);
 
     // contrast curve on the coverage: a logistic centred on cloud_sharp_mid with steepness
@@ -282,6 +272,8 @@ fn render_cloud(sky: vec3<f32>, pos: vec3<f32>, dir: vec3<f32>) -> vec4<f32> {
         let sy = 1.0 / (1.0 + exp(-k * (shade_sum.y - mid)));
         shade_sum.y = clamp((sy - s0) / (s1 - s0), 0.0, 1.0);
     }
+    // the distant field is seen as its average: the cover fraction
+    shade_sum.y = mix(shade_sum.y, clamp(nishita.cloudy, 0.0, 1.0), far);
 
     // the light colour, more saturated
     let light_luma = dot(nishita.sun_color, vec3<f32>(0.299, 0.587, 0.114));
