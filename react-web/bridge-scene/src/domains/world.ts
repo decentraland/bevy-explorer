@@ -219,7 +219,7 @@ export function registerWorld(ctx: Ctx): void {
         attempts++
         const scenes = await BevyApi.liveSceneInfo().catch(() => null)
         if (scenes == null) return // transient RPC failure — the next tick retries
-        const current = scenes.find((s) => !s.isSuper && s.parcels.some((p) => p.x === px && p.y === py))
+        const current = scenes.find((s) => !s.isSuper && !s.isPortable && s.parcels.some((p) => p.x === px && p.y === py))
         // A scene the player just walked (or teleported) into isn't in the live list until it
         // registers, so an immediate miss means "not yet", not "nothing here" — keep trying for
         // ~1s before settling on empty. bevy-ui-scene's widget did the same (20 tries × 100 ms).
