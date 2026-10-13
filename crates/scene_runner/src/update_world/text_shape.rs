@@ -270,7 +270,6 @@ fn update_text_shapes(
         ),
         Or<(Changed<TextShape>, With<RetryTextShape>)>,
     >,
-    mut removed: RemovedComponents<TextShape>,
     scenes: Query<&RendererSceneContext>,
     frame: Res<FrameCount>,
     mut cameras: Query<&mut Camera>,
@@ -281,24 +280,6 @@ fn update_text_shapes(
     mut font_system: ResMut<CosmicFontSystem>,
     mats: Query<&MeshMaterial3d<TextShapeMaterial>>,
 ) {
-    // remove deleted ui nodes
-    for e in removed.read() {
-        if let Ok(mut commands) = commands.get_entity(e) {
-            commands.remove::<WorldUi>();
-        }
-
-        if let Ok(view) = views.get(e) {
-            if let Ok(mut commands) = commands.get_entity(view.view) {
-                commands.despawn();
-            }
-            if let Ok(mut commands) = commands.get_entity(view.ui_root) {
-                commands.despawn();
-            }
-        }
-
-        debug!("[{}] kill textshape {e:?}", frame.0);
-    }
-
     let mut active_count = 0;
     let mut queue_count = 0;
     let mut wait_count = 0;
