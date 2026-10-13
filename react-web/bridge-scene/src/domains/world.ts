@@ -89,7 +89,7 @@ export function registerWorld(ctx: Ctx): void {
     const py = Math.floor((pos?.z ?? 0) / 16)
     BevyApi.liveSceneInfo()
       .then(async (scenes) => {
-        const current = scenes.find((s) => !s.isSuper && (s.parcels ?? []).some((p) => p.x === px && p.y === py))
+        const current = scenes.find((s) => !s.isSuper && !s.isPortable && (s.parcels ?? []).some((p) => p.x === px && p.y === py))
         if (current == null) {
           pushSystem(ctx, 'Could not find the current scene to reload.')
           return
