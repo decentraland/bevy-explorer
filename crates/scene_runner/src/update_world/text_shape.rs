@@ -676,9 +676,9 @@ fn text_shape_removed(
     clean_up_text_shape(
         &mut commands,
         entity,
-        text_shape_uis,
-        prior_text_shape_uis,
-        children,
+        text_shape_uis.get(entity).ok(),
+        prior_text_shape_uis.get(entity).ok(),
+        children.get(entity).ok(),
         mats,
     );
 }
@@ -686,21 +686,21 @@ fn text_shape_removed(
 fn clean_up_text_shape(
     commands: &mut Commands,
     entity: Entity,
-    text_shape_uis: Query<&TextShapeUi>,
-    prior_text_shape_uis: Query<&PriorTextShapeUi>,
-    children: Query<&Children>,
+    text_shape_ui: Option<&TextShapeUi>,
+    prior_text_shape_ui: Option<&PriorTextShapeUi>,
+    children: Option<&Children>,
     mats: Query<&MeshMaterial3d<TextShapeMaterial>>,
 ) {
-    if let Ok(text_shape_ui) = text_shape_uis.get(entity) {
+    if let Some(text_shape_ui) = text_shape_ui {
         debug!("Despawning TextShapeUi entities");
         commands.entity(text_shape_ui.ui_root).try_despawn();
         commands.entity(text_shape_ui.view).try_despawn();
     }
-    if let Ok(PriorTextShapeUi(prior_text_shape_ui, _)) = prior_text_shape_uis.get(entity) {
+    if let Some(PriorTextShapeUi(prior_text_shape_ui, _)) = prior_text_shape_ui {
         debug!("Despawning PriorTextShapeUi entities");
         commands.entity(*prior_text_shape_ui).try_despawn();
     }
-    if let Ok(children) = children.get(entity) {
+    if let Some(children) = children {
         for child in children {
             if mats.contains(*child) {
                 commands.entity(*child).try_despawn();
