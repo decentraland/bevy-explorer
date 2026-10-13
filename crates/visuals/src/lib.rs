@@ -6,6 +6,7 @@ mod props;
 pub mod shell_texturing;
 mod sky_envmap;
 mod solids;
+mod stars;
 pub mod terrain;
 mod trees;
 
@@ -88,7 +89,8 @@ impl Plugin for VisualsPlugin {
         })
         .insert_resource(AtmosphereModel::new(NishitaCloud::default()))
         .add_plugins(AtmospherePlugin)
-        .add_plugins(SkyEnvmapPlugin);
+        .add_plugins(SkyEnvmapPlugin)
+        .add_plugins(stars::StarsPlugin);
 
         app.add_console_command::<ShadowConsoleCommand, _>(shadow_console_command);
         app.add_console_command::<FogConsoleCommand, _>(fog_console_command);
