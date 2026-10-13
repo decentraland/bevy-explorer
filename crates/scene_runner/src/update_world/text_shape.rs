@@ -89,7 +89,7 @@ bevy: not implemented
 
 use bevy::{
     diagnostic::FrameCount,
-    ecs::{component::ComponentIdFor, relationship::RelatedSpawner, spawn::SpawnWith},
+    ecs::{relationship::RelatedSpawner, spawn::SpawnWith},
     platform::collections::HashSet,
     prelude::*,
     render::view::VisibilitySystems,
@@ -266,6 +266,7 @@ fn update_text_shapes(
             &TextShape,
             Option<&PriorTextShapeUi>,
             Option<&RetryTextShape>,
+            Option<&Children>,
         ),
         Or<(Changed<TextShape>, With<RetryTextShape>)>,
     >,
@@ -278,7 +279,7 @@ fn update_text_shapes(
     mut text_pipeline: ResMut<TextPipeline>,
     mut scene_fonts: SceneFontServer,
     mut font_system: ResMut<CosmicFontSystem>,
-    text_shape_component_id: ComponentIdFor<TextShape>,
+    mats: Query<&MeshMaterial3d<TextShapeMaterial>>,
 ) {
     // remove deleted ui nodes
     for e in removed.read() {
@@ -325,14 +326,14 @@ fn update_text_shapes(
 
     let mut oldest = query
         .iter()
-        .flat_map(|(_, _, _, _, since)| since.map(|s| s.0))
+        .flat_map(|(_, _, _, _, since, _)| since.map(|s| s.0))
         .collect::<Vec<_>>();
     oldest.sort();
 
     let stop_at = oldest.get(MAX_ACTIVE - active_count);
 
     // add new nodes
-    for (ent, scene_ent, text_shape, maybe_prior, maybe_retry) in query.iter() {
+    for (ent, scene_ent, text_shape, maybe_prior, maybe_retry, maybe_children) in query.iter() {
         let skip = active_count >= MAX_ACTIVE
             || stop_at.is_some_and(|stop_at| maybe_retry.is_none_or(|retry| retry.0 > *stop_at));
 
@@ -379,9 +380,14 @@ fn update_text_shapes(
         }
 
         if text_shape.0.text.is_empty() || text_shape.0.font_size.is_some_and(|size| size <= 0.0) {
-            // This will break if changes to observers using `Trigger<OnRemove, TextShape>`
-            // are made
-            commands.trigger_targets(OnRemove, (ent, text_shape_component_id.get()));
+            clean_up_text_shape(
+                &mut commands,
+                ent,
+                views.get(ent).ok(),
+                maybe_prior,
+                maybe_children,
+                mats,
+            );
             continue;
         }
 
