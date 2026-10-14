@@ -540,13 +540,22 @@ static TIMEOUT: OnceLock<Option<f32>> = OnceLock::new();
 /// Standalone servers hold an OS file lock per scene hash (the `b64-` project path in
 /// preview) for the life of the process, so a second local server for the same scene
 /// declines to run instead of fighting the first over the scene room. A crashed holder's
-/// lock is released by the OS.
+/// lock is released by the OS. A preview reload respawns the scene entity under the same
+/// hash; the lock this process already holds covers it, so it is not claimed again (a
+/// second handle on the same file would conflict with our own lock). A lock whose scene
+/// is gone (removed, or never loaded) is released.
 fn claim_scene_locks(
-    scenes: Query<&SceneHash, Added<SceneHash>>,
-    mut held: Local<Vec<std::fs::File>>,
+    added: Query<&SceneHash, Added<SceneHash>>,
+    scenes: Query<&SceneHash>,
+    mut held: Local<std::collections::HashMap<String, std::fs::File>>,
     mut exit: EventWriter<AppExit>,
 ) {
-    for SceneHash(hash) in scenes.iter() {
+    held.retain(|hash, _| scenes.iter().any(|SceneHash(h)| h == hash));
+
+    for SceneHash(hash) in added.iter() {
+        if held.contains_key(hash) {
+            continue;
+        }
         let dir = platform::project_directories()
             .unwrap()
             .data_local_dir()
@@ -571,7 +580,9 @@ fn claim_scene_locks(
             }
         };
         match file.try_lock() {
-            Ok(()) => held.push(file),
+            Ok(()) => {
+                held.insert(hash.clone(), file);
+            }
             Err(std::fs::TryLockError::WouldBlock) => {
                 println!(
                     "[headless] scene {} is already served by another local server (lock {}); exiting",
