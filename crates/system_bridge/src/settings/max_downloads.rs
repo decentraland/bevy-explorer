@@ -1,6 +1,5 @@
 use bevy::{platform::collections::HashSet, prelude::*};
 use common::structs::AppConfig;
-use ipfs::IpfsAssetServer;
 
 use super::{AppSetting, IntAppSetting};
 
@@ -26,7 +25,7 @@ impl IntAppSetting for MaxDownloadsSetting {
 }
 
 impl AppSetting for MaxDownloadsSetting {
-    type Param = IpfsAssetServer<'static, 'static>;
+    type Param = ();
 
     fn title() -> String {
         "Max Downloads".to_owned()
@@ -48,7 +47,6 @@ impl AppSetting for MaxDownloadsSetting {
         super::SettingCategory::Performance
     }
 
-    fn apply(&self, ipfas: IpfsAssetServer, _: Commands, _: &HashSet<Entity>) {
-        ipfas.ipfs().set_concurrent_remote_count(self.0 as usize)
-    }
+    // applied by ipfs, which follows the config
+    fn apply(&self, _: (), _: Commands, _: &HashSet<Entity>) {}
 }

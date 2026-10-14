@@ -10,7 +10,6 @@ common = { workspace = true }
 dcl = { workspace = true }
 dcl_component = { workspace = true }
 dcl_deno = { workspace = true }
-ipfs = { workspace = true }
 system_bridge = { workspace = true }
 platform = { workspace = true }
 

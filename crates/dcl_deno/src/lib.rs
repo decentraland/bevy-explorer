@@ -12,7 +12,7 @@ use once_cell::sync::Lazy;
 use system_bridge::SystemApi;
 use tokio::sync::mpsc::UnboundedSender;
 
-use ipfs::SceneJsFile;
+use common::structs::SceneJsFile;
 
 use dcl::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},

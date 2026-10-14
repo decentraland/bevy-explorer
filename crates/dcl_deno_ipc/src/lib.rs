@@ -1,5 +1,6 @@
 use anyhow::anyhow;
 use bevy::log::{debug, error, warn};
+use common::structs::SceneJsFile;
 use common::{
     rpc::{rmp_encode, IpcMessage, ResponseContext, ENGINE_IPC_CONTEXT},
     structs::GlobalCrdtStateUpdate,
@@ -14,7 +15,6 @@ use interprocess::local_socket::{
     traits::tokio::{Listener, Stream as _},
     GenericFilePath, ListenerOptions, ToFsName,
 };
-use ipfs::SceneJsFile;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::{

@@ -2,12 +2,12 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use anyhow::anyhow;
 use bevy::log::debug;
+use common::structs::SceneJsFile;
 use common::structs::{CameraFov, GlobalCrdtStateUpdate, TimeOfDay};
 use dcl_component::{
     proto_components::sdk::components::PbPlayerIdentityData, DclReader, FromDclReader,
     SceneComponentId, SceneEntityId,
 };
-use ipfs::SceneJsFile;
 use system_bridge::SystemApi;
 use tokio::sync::{mpsc::UnboundedReceiver, Mutex};
 

@@ -20,7 +20,8 @@ use common::{
     sets::RealmLifecycle,
     structs::{
         server_mode, AppConfig, AppError, CurrentRealm, EditorMode, GlobalCrdtStateUpdate,
-        IVec2Arg, PreviewMode, SceneLoadDistance, SceneMeta, SceneTime, StartupScenes, WorldHold,
+        IVec2Arg, PreviewMode, SceneJsFile, SceneLoadDistance, SceneMeta, SceneTime, StartupScenes,
+        WorldHold,
     },
     terrain::{Occupancy, TerrainChange, TerrainTargets, BORDER_PADDING},
     util::{TaskExt, TryPushChildrenEx},
@@ -37,7 +38,7 @@ use dcl_component::{
 };
 use ipfs::{
     ipfs_path::IpfsPath, ActiveEntityTask, EntityDefinition, IpfsAssetServer, RealmInitialLocation,
-    SceneIpfsLocation, SceneJsFile,
+    SceneIpfsLocation,
 };
 use scene_material::{BoundRegion, SceneBounds};
 use system_bridge::{LiveSceneInfo, SystemApi, SystemBridge};

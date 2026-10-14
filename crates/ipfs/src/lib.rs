@@ -17,6 +17,7 @@ use std::{
 };
 
 #[cfg(feature = "ipfs_debug")]
+use common::structs::SceneJsFile;
 use common::util::ReportErr;
 use common::util::UrlLoopbackExt;
 use futures_io::{AsyncRead, AsyncSeek};
@@ -114,9 +115,6 @@ impl IpfsAsset for EntityDefinition {
         "entity_definition"
     }
 }
-
-#[derive(Asset, Debug, Clone, TypePath)]
-pub struct SceneJsFile(pub Arc<String>);
 
 impl IpfsAsset for SceneJsFile {
     fn ext() -> &'static str {
@@ -572,6 +570,7 @@ impl Plugin for IpfsIoPlugin {
         app.register_diagnostic(Diagnostic::new(IPFS_NON_IPFS_DIAGNOSTIC_PATH));
 
         app.add_systems(PostUpdate, ipfs_diagnostics);
+        app.add_systems(Update, apply_max_downloads);
 
         #[cfg(feature = "ipfs_debug")]
         app.add_plugins(ipfs_debug::IpfsDebugPlugin)
@@ -2354,5 +2353,12 @@ mod tests {
         ] {
             assert_eq!(map.hash(src).as_deref(), Some(expected), "{src}");
         }
+    }
+}
+
+/// Follows the max downloads setting
+fn apply_max_downloads(config: Option<Res<common::structs::AppConfig>>, ipfs: Res<IpfsResource>) {
+    if let Some(config) = config.filter(|config| config.is_changed()) {
+        ipfs.set_concurrent_remote_count(config.max_concurrent_remotes);
     }
 }
