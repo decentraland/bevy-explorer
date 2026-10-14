@@ -197,27 +197,114 @@ function toInfo(av: SerializedProfile | undefined): ProfileInfo | undefined {
   return Object.keys(info).length > 0 ? info : undefined
 }
 
-// --- badges (achieved only) ----------------------------------------------------
-type BadgesResponse = {
-  data?: {
-    achieved?: Array<{
-      id: string
-      name: string
-      assets?: { '2d'?: Partial<Record<string, string>> }
-      progress?: { lastCompletedTierName?: string | null; lastCompletedTierImage?: string | null }
-    }>
+// --- badges --------------------------------------------------------------------
+type BadgeAssets = { '2d'?: Partial<Record<string, string>> }
+type ApiBadge = {
+  id: string
+  name: string
+  description?: string
+  isTier?: boolean
+  assets?: BadgeAssets
+  /** Unix millis as a string; null until complete (the top tier, for tiered badges). */
+  completedAt?: string | null
+  progress?: {
+    stepsDone?: number
+    nextStepsTarget?: number | null
+    totalStepsTarget?: number
+    achievedTiers?: Array<{ tierId: string; completedAt?: number | string | null }>
+    lastCompletedTierName?: string | null
+    lastCompletedTierImage?: string | null
+    /** Unix millis (a number, unlike `completedAt`). */
+    lastCompletedTierAt?: number | string | null
   }
 }
-async function fetchBadges(address: string): Promise<Badge[] | undefined> {
-  const r = await getJson<BadgesResponse>(`https://badges.decentraland.org/users/${address}/badges`).catch(() => undefined)
-  const achieved = r?.data?.achieved
-  if (achieved == null) return undefined
-  return achieved.map((b) => ({
+type BadgesResponse = { data?: { achieved?: ApiBadge[]; notAchieved?: ApiBadge[] } }
+type ApiTier = { tierId: string; tierName: string; description?: string; assets?: BadgeAssets }
+type TiersResponse = { data?: { tiers?: ApiTier[] } }
+
+function millis(raw: number | string | null | undefined): number | undefined {
+  const ms = raw == null ? NaN : Number(raw)
+  return Number.isFinite(ms) && ms > 0 ? ms : undefined
+}
+
+// A badge's tier definitions never change, so one fetch per badge id serves every passport.
+const tierCache = new Map<string, Promise<ApiTier[] | undefined>>()
+async function fetchTiers(badgeId: string): Promise<ApiTier[] | undefined> {
+  let tiers = tierCache.get(badgeId)
+  if (tiers == null) {
+    tiers = getJson<TiersResponse>(`https://badges.decentraland.org/badges/${badgeId}/tiers`).then((r) => r?.data?.tiers)
+    tiers.catch(() => tierCache.delete(badgeId))
+    tierCache.set(badgeId, tiers)
+  }
+  return await tiers
+}
+
+function toBadge(b: ApiBadge, locked: boolean): Badge {
+  const p = b.progress
+  const done = p?.stepsDone ?? 0
+  const progress =
+    b.completedAt != null
+      ? undefined
+      : b.isTier && p?.nextStepsTarget != null
+        ? { done, target: p.nextStepsTarget }
+        : !b.isTier && p?.totalStepsTarget != null && p.totalStepsTarget > 1
+          ? { done, target: p.totalStepsTarget }
+          : undefined
+  return {
     id: b.id,
     name: b.name,
-    tier: b.progress?.lastCompletedTierName ?? undefined,
-    image: httpOrUndef(b.progress?.lastCompletedTierImage) ?? httpOrUndef(b.assets?.['2d']?.normal)
+    description: b.description,
+    tier: p?.lastCompletedTierName ?? undefined,
+    image: httpOrUndef(p?.lastCompletedTierImage) ?? httpOrUndef(b.assets?.['2d']?.normal),
+    // Unity shows the latest tier's date where there is one, else the badge's own.
+    unlockedAt: millis(p?.lastCompletedTierAt ?? b.completedAt),
+    locked: locked || undefined,
+    progress
+  }
+}
+
+async function withTiers(badge: Badge, b: ApiBadge): Promise<Badge> {
+  const tierDefs = b.isTier ? await fetchTiers(b.id).catch(() => undefined) : undefined
+  if (tierDefs == null) return badge
+  const reached = new Map((b.progress?.achievedTiers ?? []).map((t) => [t.tierId, millis(t.completedAt)]))
+  const tiers = tierDefs.map((t) => ({
+    id: t.tierId,
+    name: t.tierName,
+    description: t.description ?? '',
+    image: httpOrUndef(t.assets?.['2d']?.normal),
+    unlockedAt: reached.get(t.tierId)
   }))
+  return { ...badge, tiers }
+}
+
+type BadgesFetch = {
+  /** The list, from one request. */
+  badges: Badge[]
+  /** Whether any of them is tiered, i.e. whether `withTiers` has anything to fetch. */
+  tiered: boolean
+  /** The same list with each tiered badge's tiers filled in: one more request per tiered badge
+   *  (cached per badge id), so it is awaited separately and never holds the passport up. */
+  withTiers: () => Promise<Badge[]>
+}
+
+// `includeLocked` (your own passport) adds the badges not earned yet; the service only lists them
+// on request, and unity-explorer only asks for its own user.
+async function fetchBadges(address: string, includeLocked: boolean): Promise<BadgesFetch | undefined> {
+  const r = await getJson<BadgesResponse>(`https://badges.decentraland.org/users/${address}/badges?includeNotAchieved=${includeLocked}`).catch(
+    () => undefined
+  )
+  const achieved = r?.data?.achieved
+  if (achieved == null) return undefined
+  // Newest first: the service's order is its badge catalogue, which means nothing to a reader.
+  // Locked badges follow in catalogue order, as in unity-explorer.
+  const unlocked = achieved.map((b): [Badge, ApiBadge] => [toBadge(b, false), b])
+  unlocked.sort(([a], [b]) => (b.unlockedAt ?? 0) - (a.unlockedAt ?? 0))
+  const all = [...unlocked, ...(r?.data?.notAchieved ?? []).map((b): [Badge, ApiBadge] => [toBadge(b, true), b])]
+  return {
+    badges: all.map(([badge]) => badge),
+    tiered: all.some(([, b]) => b.isTier === true),
+    withTiers: async () => await Promise.all(all.map(async ([badge, b]) => await withTiers(badge, b)))
+  }
 }
 
 // --- camera-reel photos --------------------------------------------------------
@@ -379,9 +466,11 @@ export function registerProfile(ctx: Ctx): void {
       })
       return
     }
+    const me = getPlayer()
+    const isSelf = me != null && me.userId.toLowerCase() === msg.address.toLowerCase()
     const [av, badges, photos] = await Promise.all([
       fetchProfile(msg.address),
-      fetchBadges(msg.address).catch(() => undefined),
+      fetchBadges(msg.address, isSelf).catch(() => undefined),
       fetchPhotos(msg.address).catch(() => undefined)
     ])
     if (av == null && badges == null && photos == null) {
@@ -391,8 +480,6 @@ export function registerProfile(ctx: Ctx): void {
     // Your OWN passport: read the live avatar (getPlayer()) so it matches the Backpack exactly.
     // Other users have no live source (getPlayer(userId) only resolves nearby avatars), so they
     // read the equipment their deployed profile lists.
-    const me = getPlayer()
-    const isSelf = me != null && me.userId.toLowerCase() === msg.address.toLowerCase()
     const wearableUrns = isSelf ? (me.wearables ?? []).map(String) : (av?.avatar?.wearables ?? [])
     // Through equippedSlots, not me.emotes: the bevy runtime leaves a fresh profile's wheel empty
     // and the emote wheel fills it with the 10 base emotes, so reading the raw array would show an
@@ -406,10 +493,18 @@ export function registerProfile(ctx: Ctx): void {
       (isSelf ? resolveEquippedSet : resolveWearables)(wearableUrns, { shopUrls: true }).catch(() => undefined),
       resolveEquippedEmotes(emoteEntries).catch(() => undefined)
     ])
-    ctx.send({
-      kind: 'userProfile',
-      address: msg.address,
-      profile: { ...toProfile(av, msg.address, false, av?.name ?? msg.address), badges, photos, equippedWearables, equippedEmotes }
-    })
+    const profile: Profile = {
+      ...toProfile(av, msg.address, false, av?.name ?? msg.address),
+      badges: badges?.badges,
+      photos,
+      equippedWearables,
+      equippedEmotes
+    }
+    ctx.send({ kind: 'userProfile', address: msg.address, profile })
+    // The tiers arrive in a second copy of the same profile, so the passport shows its badges at
+    // once and the tier rows (and NEXT TIER names) fill in when they land.
+    if (badges?.tiered === true) {
+      ctx.send({ kind: 'userProfile', address: msg.address, profile: { ...profile, badges: await badges.withTiers() } })
+    }
   })
 }

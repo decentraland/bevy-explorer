@@ -13,7 +13,22 @@ const profile: Profile = {
   description: 'old gamer in dcl',
   mutuals: 30,
   links: [{ title: 'x account', url: 'https://x.com/kurd' }],
-  badges: [{ id: 'b1', name: 'Festive Trail' }],
+  badges: [
+    { id: 'festive', name: 'Festive Trail', description: 'Followed the trail', image: 'https://x/festive.png', unlockedAt: Date.UTC(2024, 11, 4, 14, 16, 34) },
+    {
+      id: 'traveler',
+      name: 'Traveler',
+      description: 'Scenes explored',
+      tier: 'Starter',
+      unlockedAt: Date.UTC(2024, 10, 1),
+      progress: { done: 5, target: 50 },
+      tiers: [
+        { id: 'traveler-starter', name: 'Starter', description: '1 scene explored', unlockedAt: Date.UTC(2024, 10, 1) },
+        { id: 'traveler-bronze', name: 'Bronze', description: '50 scenes explored' }
+      ]
+    },
+    { id: 'voyager', name: 'Vertical Voyager', description: 'Reached 500m', image: 'https://x/voyager.png', locked: true }
+  ],
   info: { gender: 'Male', realName: 'mohammad', language: 'Persian' }
 }
 
@@ -55,6 +70,58 @@ describe('profile passport', () => {
     render(<ProfilePassport profile={profile} onClose={onClose} />)
     await userEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('the Overview row shows unlocked badges only', () => {
+    render(<ProfilePassport profile={profile} onClose={vi.fn()} />)
+    expect(screen.getByAltText('Festive Trail')).toBeInTheDocument()
+    expect(screen.queryByAltText('Vertical Voyager')).not.toBeInTheDocument()
+  })
+
+  describe('Badges tab', () => {
+    const open = async (isSelf = false) => {
+      render(<ProfilePassport profile={profile} isSelf={isSelf} onClose={vi.fn()} />)
+      await userEvent.click(screen.getByRole('tab', { name: 'BADGES' }))
+    }
+
+    it('lists every badge as a card with its unlock month, a dash while locked', async () => {
+      await open()
+      const cards = screen.getAllByRole('button').filter((b) => b.hasAttribute('aria-pressed'))
+      expect(cards.map((c) => c.textContent)).toEqual(['Festive TrailDec. 2024', 'Traveler · StarterNov. 2024', 'Vertical Voyager—'])
+      expect(screen.getByText('Dec. 2024')).toHaveAttribute('dateTime', '2024-12-04T14:16:34.000Z')
+    })
+
+    it('opens on the first badge and shows the picked one in place of the avatar', async () => {
+      await open()
+      expect(screen.getByRole('heading', { name: 'Festive Trail' })).toBeInTheDocument()
+      expect(screen.getByText('Unlocked: Dec. 2024')).toBeInTheDocument()
+      expect(screen.getByText('Followed the trail')).toBeInTheDocument()
+      await userEvent.click(screen.getByRole('button', { name: /^Vertical Voyager/ }))
+      expect(screen.getByRole('heading', { name: 'Vertical Voyager' })).toBeInTheDocument()
+      expect(screen.getByText('Locked')).toBeInTheDocument()
+    })
+
+    it("a tiered badge opens on its latest tier; someone else's passport lists only reached tiers", async () => {
+      await open()
+      await userEvent.click(screen.getByRole('button', { name: /^Traveler/ }))
+      expect(screen.getByRole('heading', { name: 'Traveler Starter' })).toBeInTheDocument()
+      expect(screen.getByText('1 scene explored')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Traveler Starter' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Traveler Bronze' })).not.toBeInTheDocument()
+      expect(screen.queryByText(/NEXT TIER/)).not.toBeInTheDocument()
+      expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+    })
+
+    it('your own passport shows every tier, the next one to reach, and the progress toward it', async () => {
+      await open(true)
+      await userEvent.click(screen.getByRole('button', { name: /^Traveler/ }))
+      await userEvent.click(screen.getByRole('button', { name: 'Traveler Bronze' }))
+      expect(screen.getByRole('heading', { name: 'Traveler Bronze' })).toBeInTheDocument()
+      expect(screen.getByText('Locked')).toBeInTheDocument()
+      expect(screen.getByText('50 scenes explored', { selector: 'p' })).toBeInTheDocument()
+      expect(screen.getByText('NEXT TIER: Bronze')).toBeInTheDocument()
+      expect(screen.getAllByText('5/50')).toHaveLength(2) // the card's bar and the detail's
+    })
   })
 
   it('Photos tab renders the camera-reel photos', async () => {

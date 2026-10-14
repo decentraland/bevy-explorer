@@ -498,9 +498,27 @@ export interface SettingsMessage {
 export interface Badge {
   id: string
   name: string
-  /** e.g. 'bronze' | 'silver' | 'gold' — for the tier ring. */
+  description?: string
+  /** The latest reached tier's name, e.g. 'Bronze' — for the tier ring. */
   tier?: string
   image?: string
+  /** Unix millis when the badge (or, for tiered badges, its latest tier) was unlocked. */
+  unlockedAt?: number
+  /** Not earned yet. Only your own passport lists these. */
+  locked?: boolean
+  /** Steps toward the next tier, or toward a multi-step badge's completion, while there is one. */
+  progress?: { done: number; target: number }
+  /** Every tier in order, for tiered badges. */
+  tiers?: BadgeTier[]
+}
+
+export interface BadgeTier {
+  id: string
+  name: string
+  description: string
+  image?: string
+  /** Unix millis when it was reached; absent while locked. */
+  unlockedAt?: number
 }
 
 /** The about-me field grid on the passport (all optional). */
