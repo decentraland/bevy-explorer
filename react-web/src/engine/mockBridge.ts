@@ -5,6 +5,8 @@
 
 import {
   bridgeChannelName,
+  type Badge,
+  type BadgeTier,
   type BindingEntry,
   type Community,
   type DmHistoryEntry,
@@ -24,6 +26,47 @@ import type { Color3 } from './generated'
 import { GENESIS_SATELLITE_VIEW } from '../features/map/atlas'
 import { DEFAULT_REALM } from '../lib/baseDomain'
 
+const badgeImg = (seed: string): string => `https://picsum.photos/seed/${seed}/96/96`
+const tier = (badge: string, name: string, steps: string, unlockedAt?: number): BadgeTier => ({
+  id: `${badge}-${name.toLowerCase()}`,
+  name,
+  description: `${steps} Genesis City scenes explored (for at least 1 min)`,
+  image: badgeImg(`${badge}-${name}`),
+  unlockedAt
+})
+// Newest first, then the locked ones — the order the bridge delivers.
+function mockBadges(): Badge[] {
+  return [
+    { id: 'regally_rare', name: 'Regally Rare', description: 'Equipped at least 3 Rare Wearables at the same time', image: badgeImg('rare'), unlockedAt: Date.UTC(2026, 6, 15, 14, 16) },
+    { id: 'festive_trail_2025', name: 'Festive Trail 2025', description: 'Followed the Festive Trail', image: badgeImg('festive'), unlockedAt: Date.UTC(2026, 0, 6, 20, 24) },
+    { id: 'profile_pro', name: 'Profile Pro', description: 'Completed your profile', image: badgeImg('profile'), unlockedAt: Date.UTC(2025, 6, 1, 15, 27) },
+    {
+      id: 'traveler',
+      name: 'Traveler',
+      description: 'Genesis City scenes explored',
+      tier: 'Starter',
+      image: badgeImg('traveler-Starter'),
+      unlockedAt: Date.UTC(2024, 11, 4, 14, 17),
+      progress: { done: 5, target: 50 },
+      tiers: [tier('traveler', 'Starter', '1', Date.UTC(2024, 11, 4, 14, 17)), tier('traveler', 'Bronze', '50'), tier('traveler', 'Silver', '250'), tier('traveler', 'Gold', '1,000'), tier('traveler', 'Platinum', '2,500'), tier('traveler', 'Diamond', '10,000')]
+    },
+    { id: 'dclcitizen', name: 'Decentraland Citizen', description: 'Landed in Decentraland', image: badgeImg('citizen'), unlockedAt: Date.UTC(2024, 11, 4, 14, 16) },
+    {
+      id: 'social_butterfly',
+      name: 'Social Butterfly',
+      description: 'Friends made',
+      tier: 'Bronze',
+      image: badgeImg('butterfly-Bronze'),
+      unlockedAt: Date.UTC(2024, 2, 27, 15, 18),
+      progress: { done: 12, target: 50 },
+      tiers: [tier('butterfly', 'Starter', '1', Date.UTC(2024, 2, 20, 9, 0)), tier('butterfly', 'Bronze', '5', Date.UTC(2024, 2, 27, 15, 18)), tier('butterfly', 'Silver', '50'), tier('butterfly', 'Gold', '250')]
+    },
+    { id: 'moves_master', name: 'Moves Master', description: 'Emotes played', image: badgeImg('moves-Starter'), locked: true, progress: { done: 8, target: 100 }, tiers: [tier('moves', 'Starter', '100'), tier('moves', 'Bronze', '500'), tier('moves', 'Silver', '1,000')] },
+    { id: 'vertical_voyager', name: 'Vertical Voyager', description: 'Reached 500m above ground', image: badgeImg('voyager'), locked: true },
+    { id: 'open_for_business', name: 'Open for Business', description: 'Listed 2 items on the Marketplace', image: badgeImg('business'), locked: true, progress: { done: 0, target: 2 } }
+  ]
+}
+
 // A fully-populated passport for the mock, so the React passport shows every section.
 function richProfile(address: string, name: string, isGuest: boolean): Profile {
   return {
@@ -39,7 +82,7 @@ function richProfile(address: string, name: string, isGuest: boolean): Profile {
       { title: 'Discord', url: 'https://discord.com' }
     ],
     mutuals: 30,
-    badges: Array.from({ length: 8 }, (_, i) => ({ id: `b${i}`, name: `Badge ${i + 1}`, tier: ['bronze', 'silver', 'gold'][i % 3], image: `https://picsum.photos/seed/badge${i}/96/96` })),
+    badges: mockBadges(),
     photos: Array.from({ length: 6 }, (_, i) => `https://picsum.photos/seed/photo${i}/300/300`),
     equippedWearables: equippedNow(),
     equippedEmotes: mockEquippedEmotes(),

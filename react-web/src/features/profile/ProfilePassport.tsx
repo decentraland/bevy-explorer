@@ -48,14 +48,124 @@ function Verified(): React.JSX.Element {
   )
 }
 
+const badgeLabel = (badge: Badge): string => (badge.tier != null ? `${badge.name} · ${badge.tier}` : badge.name)
+// unity-explorer's badge date: month and year ("Oct. 2026").
+const monthYear = (ms: number): string => `${new Date(ms).toLocaleDateString('en-US', { month: 'short' })}. ${new Date(ms).getFullYear()}`
+
+// The badge picture in a circle: the 56px tile by default, `className` for the other sizes.
+function BadgeIcon({ image, alt, className = '' }: { image?: string; alt: string; className?: string }): React.JSX.Element {
+  return (
+    <div className={`${styles.badge} ${className}`}>
+      {image ? <img src={image} alt={alt} /> : <span className={styles.badgePlaceholder} />}
+    </div>
+  )
+}
+
+// The Overview's compact row: icon only, name on hover.
 function BadgeTile({ badge }: { badge: Badge }): React.JSX.Element {
   return (
-    <Tooltip label={badge.tier != null ? `${badge.name} · ${badge.tier}` : badge.name} side="top">
-      <div className={styles.badge}>
-        {badge.image ? <img src={badge.image} alt={badge.name} /> : <span className={styles.badgePlaceholder} />}
-      </div>
+    <Tooltip label={badgeLabel(badge)} side="top">
+      <BadgeIcon image={badge.image} alt={badge.name} />
     </Tooltip>
   )
+}
+
+function BadgeProgress({ done, target }: { done: number; target: number }): React.JSX.Element {
+  const pct = target > 0 ? Math.min(100, Math.round((done * 100) / target)) : 0
+  return (
+    <div className={styles.badgeProgress}>
+      <div className={styles.badgeBar} role="progressbar" aria-valuenow={done} aria-valuemin={0} aria-valuemax={target}>
+        <div className={styles.badgeBarFill} style={{ width: `${pct}%` }} />
+      </div>
+      <span className={styles.badgeBarValue}>
+        {done}/{target}
+      </span>
+    </div>
+  )
+}
+
+// The Badges tab's grid card, after unity-explorer's: icon, name, then the unlock month — or,
+// on your own passport, how far you are from the next tier (or from a multi-step badge).
+function BadgeCard({ badge, isSelf, selected, onSelect }: { badge: Badge; isSelf: boolean; selected: boolean; onSelect: (id: string) => void }): React.JSX.Element {
+  const foot =
+    isSelf && badge.progress != null ? (
+      <>
+        {badge.tiers != null && <span className={styles.badgeLabel}>NEXT TIER</span>}
+        <BadgeProgress {...badge.progress} />
+      </>
+    ) : badge.unlockedAt != null ? (
+      <time dateTime={new Date(badge.unlockedAt).toISOString()}>{monthYear(badge.unlockedAt)}</time>
+    ) : (
+      '—'
+    )
+  return (
+    <button
+      type="button"
+      className={`${styles.badgeCard} ${selected ? styles.picked : ''} ${badge.locked ? styles.badgeLocked : ''}`}
+      aria-pressed={selected}
+      onClick={() => onSelect(badge.id)}
+    >
+      <BadgeIcon image={badge.image} alt={badge.name} />
+      <div className={styles.badgeName}>{badgeLabel(badge)}</div>
+      <div className={styles.badgeFoot}>{foot}</div>
+    </button>
+  )
+}
+
+// The selected badge, in place of the avatar: a big picture, when it was unlocked, what it took,
+// and for tiered badges the tiers in a row (picking one shows that tier) plus, on your own
+// passport, the next tier's requirement and your progress toward it.
+function BadgeDetail({ badge, tierId, isSelf, onSelectTier }: { badge: Badge; tierId?: string; isSelf: boolean; onSelectTier: (id: string) => void }): React.JSX.Element {
+  // Other people's passports list only the tiers they have reached, as unity-explorer does.
+  const tiers = isSelf ? badge.tiers : badge.tiers?.filter((t) => t.unlockedAt != null)
+  const tier = tiers?.find((t) => t.id === tierId)
+  const name = tier != null ? `${badge.name} ${tier.name}` : badge.name
+  const image = tier?.image ?? badge.image
+  const unlockedAt = tier != null ? tier.unlockedAt : badge.unlockedAt
+  const locked = tier != null ? tier.unlockedAt == null : badge.locked === true
+  const description = tier?.description ?? badge.description
+  const nextTier = badge.tiers?.find((t) => t.unlockedAt == null)
+  return (
+    <div className={styles.badgeDetail}>
+      <BadgeIcon image={image} alt={name} className={`${styles.badgeHero} ${locked ? styles.badgeLocked : ''}`} />
+      <h2 className={styles.badgeDetailName}>{name}</h2>
+      <div className={styles.badgeDetailDate}>{unlockedAt != null ? `Unlocked: ${monthYear(unlockedAt)}` : 'Locked'}</div>
+      {description && <p className={styles.badgeDetailDesc}>{description}</p>}
+      {tiers != null && tiers.length > 0 && (
+        <div className={styles.tierRow}>
+          {tiers.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className={`${styles.tierBtn} ${t.id === tier?.id ? styles.picked : ''} ${t.unlockedAt == null ? styles.badgeLocked : ''}`}
+              aria-pressed={t.id === tier?.id}
+              aria-label={`${badge.name} ${t.name}`}
+              onClick={() => onSelectTier(t.id)}
+            >
+              <BadgeIcon image={t.image} alt="" className={styles.badgeSm} />
+            </button>
+          ))}
+        </div>
+      )}
+      {isSelf && badge.progress != null && (
+        <div className={styles.badgeNext}>
+          {nextTier != null && (
+            <>
+              <div className={styles.badgeLabel}>NEXT TIER: {nextTier.name}</div>
+              <div className={styles.badgeNextDesc}>{nextTier.description}</div>
+            </>
+          )}
+          <BadgeProgress {...badge.progress} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** The tier a badge opens on: the latest reached, else (nothing reached yet) the first. */
+function defaultTier(badge: Badge): string | undefined {
+  const reached = badge.tiers?.filter((t) => t.unlockedAt != null)
+  return (reached != null && reached.length > 0 ? reached[reached.length - 1] : badge.tiers?.[0])?.id
 }
 
 // Read-only equipped-item tiles, 6 per row like unity-explorer's passport. No equip affordance
@@ -138,6 +248,13 @@ export function ProfilePassport({
   onDirtyChange?: (dirty: boolean) => void
 }): React.JSX.Element {
   const [tab, setTab] = useState<Tab>('overview')
+  // The Badges tab's selection: a badge id and, for tiered badges, a tier id. Both fall back —
+  // to the first badge, and to the badge's latest reached tier — so the panel is never empty.
+  const [picked, setPicked] = useState<{ badge?: string; tier?: string }>({})
+  const badges = profile.badges ?? []
+  const unlockedBadges = badges.filter((b) => !b.locked)
+  const selectedBadge = badges.find((b) => b.id === picked.badge) ?? badges[0]
+  const selectedTier = selectedBadge?.tiers?.some((t) => t.id === picked.tier) ? picked.tier : selectedBadge != null ? defaultTier(selectedBadge) : undefined
   const [editMode, setEditMode] = useState(false)
   const canEdit = isSelf && editing != null
   // SAVE sits in the header rather than at the end of the form: the form is taller than the panel,
@@ -188,7 +305,7 @@ export function ProfilePassport({
   const { base, tag } = splitName(profile.name)
   const claimed = profile.hasClaimedName
   const fields = PROFILE_FIELDS.filter(({ key }) => profile.info?.[key])
-  const hasBadges = (profile.badges?.length ?? 0) > 0
+  const hasBadges = unlockedBadges.length > 0
   const hasAbout = !!profile.description || fields.length > 0 || (profile.links?.length ?? 0) > 0
   // The body shape isn't a collectible you can shop for — Unity skips it before filling the grid
   // (EquippedItems_PassportModuleController.SetGridElements). It skips hidden categories too, but
@@ -284,7 +401,9 @@ export function ProfilePassport({
           {/* --- left: the avatar — the catalyst full-body snapshot (Unity-style hero),
                   falling back to the 2D face if the body render isn't available. --- */}
           <div className={styles.avatarCol}>
-            {profile.bodyImage ? (
+            {tab === 'badges' && !editMode && selectedBadge != null ? (
+              <BadgeDetail badge={selectedBadge} tierId={selectedTier} isSelf={isSelf} onSelectTier={(tier) => setPicked({ badge: selectedBadge.id, tier })} />
+            ) : profile.bodyImage ? (
               <img className={styles.avatarImg} src={profile.bodyImage} alt={base} />
             ) : (
               <Avatar src={profile.picture} name={base} color={userColor(profile.address, profile.name, profile.hasClaimedName, profile.nameColor)} size={180} status="online" />
@@ -376,11 +495,11 @@ export function ProfilePassport({
                     )}
                   </section>
                 )}
-                {profile.badges && profile.badges.length > 0 && (
+                {hasBadges && (
                   <section className={styles.card}>
                     <h2 className={styles.cardTitle}>Badges</h2>
                     <div className={styles.badgeRow}>
-                      {profile.badges.map((b) => <BadgeTile key={b.id} badge={b} />)}
+                      {unlockedBadges.map((b) => <BadgeTile key={b.id} badge={b} />)}
                     </div>
                   </section>
                 )}
@@ -389,9 +508,11 @@ export function ProfilePassport({
 
             {tab === 'badges' && (
               <section className={styles.card}>
-                {profile.badges && profile.badges.length > 0 ? (
+                {badges.length > 0 ? (
                   <div className={styles.badgeGrid}>
-                    {profile.badges.map((b) => <BadgeTile key={b.id} badge={b} />)}
+                    {badges.map((b) => (
+                      <BadgeCard key={b.id} badge={b} isSelf={isSelf} selected={b.id === selectedBadge?.id} onSelect={(badge) => setPicked({ badge })} />
+                    ))}
                   </div>
                 ) : (
                   <div className={styles.empty}>No badges yet.</div>
