@@ -96,7 +96,7 @@ then reopening the Create page. The host talks to the bridge scene on its own ch
 (`host/bridge.ts`: its travels and its scene), and its signing code (`host/signer.ts`, with the
 curve library) is a separate script added the first time the editor signs.
 
-The package must hold `editor.js`, `web-build/` and `scene/`: the editor scene's `export-static`
+The package must hold `editor.js`, `scene-compiler/` and `scene/`: the editor scene's `export-static`
 output (`scene/about` plus the content files named by hash). The page never runs those files from
 the package's host: `spawnEditorScene` fetches the entity, checks it and every file it lists
 against their hashes (`host/editorScene.ts`), stores them, and the service worker serves them at
@@ -224,7 +224,7 @@ Two tiers cover every domain's bridge API and the clicks that drive them:
   (`move_player_to`, `teleport`) and real clicks, and asserts each API call round-trips
   over a BroadcastChannel spy. Needs a real GPU (WebGPU, headed) — see `e2e/README.md`.
 - **Scene editor gates (`playwright.gate.config.ts`).** `preview-realm`: a scene built in the page
-  by the scene editor's web-build, served from the service worker's preview realm and hot-reloaded
+  by the scene editor's scene-compiler, served from the service worker's preview realm and hot-reloaded
   in the real engine. `editor`: what the page owes the editor package — Create loads nothing until
   clicked, a scene is previewed under a random id, the editor's privileged scene attaches, a code
   save reloads only that scene, Play and Stop never restart the HUD scene, and leaving gives the HUD
