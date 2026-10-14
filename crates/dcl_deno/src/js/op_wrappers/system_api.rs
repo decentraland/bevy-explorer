@@ -7,6 +7,8 @@ use dcl::js::system_api::{JsBindingsData, PermissionTypeDetail};
 use dcl_component::proto_components::common::Vector2;
 use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc};
+#[cfg(feature = "livekit")]
+use system_bridge::LivekitUpdate;
 use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
     BlockingStatusData, ChatMessage, ChatReactionData, DmHistoryEntryData, DmUserStateData,
@@ -108,6 +110,11 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_close_dm_user_state_stream(),
             op_get_dm_history(),
             op_delete_dm_history(),
+            // Connectivity
+            #[cfg(feature = "livekit")]
+            op_get_livekit_status_stream(),
+            #[cfg(feature = "livekit")]
+            op_read_livekit_status_stream(),
         ]
     } else {
         Vec::default()
@@ -748,4 +755,20 @@ pub async fn op_read_block_update_stream(
     #[smi] rid: u32,
 ) -> Result<Option<BlockUpdateData>, anyhow::Error> {
     dcl::js::system_api::op_read_block_update_stream(state, rid).await
+}
+
+#[cfg(feature = "livekit")]
+#[op2(async)]
+pub async fn op_get_livekit_status_stream(state: Rc<RefCell<OpState>>) -> u32 {
+    dcl::js::system_api::op_get_livekit_status_stream(state).await
+}
+
+#[cfg(feature = "livekit")]
+#[op2(async)]
+#[serde]
+pub async fn op_read_livekit_status_stream(
+    state: Rc<RefCell<OpState>>,
+    #[smi] rid: u32,
+) -> Result<Option<LivekitUpdate>, anyhow::Error> {
+    dcl::js::system_api::op_read_livekit_status_stream(state, rid).await
 }

@@ -18,6 +18,8 @@ use common::{
 };
 use serde::{Deserialize, Serialize};
 use settings::SettingBridgePlugin;
+#[cfg(feature = "livekit")]
+pub use system_api_types::livekit::LivekitUpdate;
 pub use system_api_types::*;
 
 pub struct SystemBridgePlugin {
@@ -177,6 +179,9 @@ pub enum SystemApi {
     GetDmHistory(String, RpcResultSender<Vec<DmHistoryEntryData>>),
     /// Deletes the stored DMs with a partner.
     DeleteDmHistory(String),
+    // Connection
+    #[cfg(feature = "livekit")]
+    LivekitStatusStream(RpcStreamSender<LivekitUpdate>),
 }
 
 #[derive(Resource)]

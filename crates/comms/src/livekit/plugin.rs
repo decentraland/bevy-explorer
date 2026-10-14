@@ -1,5 +1,6 @@
 use bevy::prelude::*;
-use common::debug_panic;
+use common::{debug_panic, util::ReportErr};
+use system_bridge::{LivekitUpdate, SystemApi};
 use tokio::{sync::mpsc, task::JoinHandle};
 #[cfg(not(target_arch = "wasm32"))]
 use {
@@ -19,7 +20,8 @@ use crate::{
         mic::MicPlugin, participant::plugin::LivekitParticipantPlugin,
         room::plugin::LivekitRoomPlugin, runtime::LivekitRuntimePlugin,
         track::plugin::LivekitTrackPlugin, ConnectionAvailability, LivekitChannelControl,
-        LivekitNetworkMessage, LivekitRuntime, LivekitTransport, StartLivekit,
+        LivekitDisconnect, LivekitNetworkMessage, LivekitParticipantConnectionQuality,
+        LivekitRuntime, LivekitSystemApiSenders, LivekitTransport, StartLivekit,
     },
     Transport, TransportType,
 };
@@ -32,7 +34,10 @@ impl Plugin for LivekitPlugin {
         app.init_resource::<PlayerUpdateTasks>();
         #[cfg(target_arch = "wasm32")]
         app.init_non_send_resource::<PlayerUpdateTasks>();
+        app.init_resource::<LivekitSystemApiSenders>();
         app.init_state::<ConnectionAvailability>();
+        app.add_event::<LivekitDisconnect>();
+        app.add_event::<LivekitParticipantConnectionQuality>();
 
         #[cfg(target_arch = "wasm32")]
         {
@@ -65,6 +70,16 @@ impl Plugin for LivekitPlugin {
                     .run_if(resource_exists_and_changed::<AudioSettings>),
             );
         }
+        app.add_systems(
+            PostUpdate,
+            (
+                new_system_api_senders,
+                disconnect_reason.run_if(on_event::<LivekitDisconnect>),
+                connection_availability_changed.run_if(state_changed::<ConnectionAvailability>),
+                connection_quality_changed.run_if(on_event::<LivekitParticipantConnectionQuality>),
+            )
+                .chain(),
+        );
 
         app.add_event::<StartLivekit>();
 
@@ -170,4 +185,53 @@ fn respond_to_audio_settings_change(
     livekit_audio_manager
         .main_track()
         .set_volume(audio_settings.scene() as f64, Tween::default());
+}
+
+fn new_system_api_senders(
+    mut event_reader: EventReader<SystemApi>,
+    mut livekit_system_api_senders: ResMut<LivekitSystemApiSenders>,
+) {
+    for e in event_reader.read() {
+        if let SystemApi::LivekitStatusStream(sx) = e {
+            livekit_system_api_senders.push(sx.clone());
+        }
+    }
+}
+
+fn disconnect_reason(
+    mut disconnect_reason: EventReader<LivekitDisconnect>,
+    mut livekit_system_api_senders: ResMut<LivekitSystemApiSenders>,
+) {
+    for event in disconnect_reason.read() {
+        for sender in livekit_system_api_senders.iter_mut() {
+            sender
+                .send(LivekitUpdate::DisconnectReason(event.0.clone()))
+                .report();
+        }
+    }
+}
+
+fn connection_availability_changed(
+    connection_availability: Res<State<ConnectionAvailability>>,
+    mut livekit_system_api_senders: ResMut<LivekitSystemApiSenders>,
+) {
+    let new_state = connection_availability.get();
+    for sender in livekit_system_api_senders.iter_mut() {
+        sender
+            .send(LivekitUpdate::Availability(new_state.0))
+            .report();
+    }
+}
+
+fn connection_quality_changed(
+    mut connection_quality: EventReader<LivekitParticipantConnectionQuality>,
+    mut livekit_system_api_senders: ResMut<LivekitSystemApiSenders>,
+) {
+    for event in connection_quality.read() {
+        for sender in livekit_system_api_senders.iter_mut() {
+            sender
+                .send(LivekitUpdate::ConnectionQuality(event.0.clone()))
+                .report();
+        }
+    }
 }
