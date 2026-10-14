@@ -39,7 +39,7 @@ import { SceneLoadingOverlay } from './features/session/SceneLoadingOverlay'
 import { openTravelError } from './features/session/TravelError'
 import { useEngineSession } from './features/session/useEngineSession'
 import { useWindowKeyDown } from './lib/useWindowKeyDown'
-import { useHudInsetReport } from './lib/hudInset'
+import { useEditorInsetReport, useHudInsetReport } from './lib/hudInset'
 import { bootMode } from './lib/bootMode'
 import { isMobile, isChromiumBased, hasBypassCookie } from './lib/isMobile'
 import { inShell } from './lib/shell'
@@ -299,8 +299,10 @@ function Hud(): React.JSX.Element {
   const chrome = !pageOpen && editorMode === 'off'
 
   // Tell the engine how much of the screen the persistent HUD occupies. A full-screen page is
-  // transient, so the last in-world value stands while one is open.
-  useHudInsetReport(session.setInteractableArea, session.phase === 'world' && !session.menuOpen && !pageOpen)
+  // transient, so the last in-world value stands while one is open. The editor hides the HUD but
+  // reports the world's value, so a scene's UI sits where it will for players.
+  useHudInsetReport(session.setInteractableArea, session.phase === 'world' && !session.menuOpen && !pageOpen && editorMode === 'off')
+  useEditorInsetReport(session.setInteractableArea, session.phase === 'world' && !pageOpen && editorMode !== 'off')
 
   // Embedded mode: mount only the engine (+ the error surfaces so a crash isn't silently blank).
   // No sidebar / chat / pointer / panels / sign-in UI. PopupHost renders nothing while the stack is

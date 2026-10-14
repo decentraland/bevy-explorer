@@ -12,7 +12,7 @@
 // HUD has already switched reporting off (see `useHudInsetReport`) by the time it is measured.
 
 import { useLayoutEffect } from 'react'
-import { subscribeHudScale } from './hudScale'
+import { getHudScale, subscribeHudScale } from './hudScale'
 
 /** Insets from each window edge, in CSS pixels. */
 export interface InteractableArea {
@@ -80,5 +80,20 @@ export function useHudInsetReport(report: (area: InteractableArea) => void, enab
       reported = null
       unsubscribe()
     }
+  }, [report, enabled])
+}
+
+// The docked chat (Chat.module.css): fixed at left 56px, 356px wide, scaled from its left edge.
+const CHAT_LEFT = 56
+const CHAT_WIDTH = 356
+
+/** While the scene editor hides the HUD, report the inset the world HUD gives with the chat docked, so a scene's
+ *  UI lays out in the editor as it will in the world. */
+export function useEditorInsetReport(report: (area: InteractableArea) => void, enabled: boolean): void {
+  useLayoutEffect(() => {
+    if (!enabled) return
+    const send = () => report({ left: Math.round(CHAT_LEFT + CHAT_WIDTH * getHudScale()), top: 0, right: 0, bottom: 0 })
+    send()
+    return subscribeHudScale(send)
   }, [report, enabled])
 }
