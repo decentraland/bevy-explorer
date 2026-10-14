@@ -4,6 +4,7 @@ import location from '../../assets/lobby/location.png'
 import players from '../../assets/lobby/players.png'
 import { Avatar, Button, MaskIcon, VerifiedBadge } from '../../design'
 import type { DclEvent } from '../events/eventsApi'
+import { useCreatorName } from '../places/useCreatorName'
 import type { Friend } from '../../engine/protocol'
 import styles from './LobbyCards.module.css'
 
@@ -43,6 +44,7 @@ export function LandingCard({
   disabled: boolean
   onJumpIn: () => void
 }): React.JSX.Element {
+  const creatorName = useCreatorName(creator)
   return (
     <div className={styles.landing} aria-busy={loading}>
       <div className={`${styles.thumb} ${loading ? styles.skeleton : ''}`.trim()}>{image && <img src={image} alt="" />}</div>
@@ -52,7 +54,7 @@ export function LandingCard({
         </div>
       )}
       <div className={styles.landingTitle}>{title}</div>
-      {creator && <div className={styles.landingCreator}>{creator}</div>}
+      {creatorName && <div className={styles.landingCreator}>{creatorName}</div>}
       <div className={styles.landingJump}>
         <JumpIn size="card" disabled={loading || disabled} onClick={onJumpIn} />
       </div>
@@ -78,6 +80,7 @@ export function PlaceCard({
   disabled: boolean
   onJumpIn: () => void
 }): React.JSX.Element {
+  const creatorName = useCreatorName(creator)
   return (
     <div className={`${styles.place} ${wide ? styles.placeWide : ''}`.trim()}>
       <div className={styles.placeHeader}>
@@ -88,7 +91,7 @@ export function PlaceCard({
       </div>
       <div className={styles.placeFooter}>
         <div className={styles.placeTitle}>{title}</div>
-        {creator && <div className={styles.placeCreator}>{creator}</div>}
+        {creatorName && <div className={styles.placeCreator}>{creatorName}</div>}
         <div className={styles.placeJump}>
           <JumpIn size="cardSm" disabled={disabled} onClick={onJumpIn} />
         </div>

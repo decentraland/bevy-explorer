@@ -8,11 +8,12 @@ import {
   placePlayers,
   type DiscoverPlace
 } from './placesApi'
+import { useCreatorName } from './useCreatorName'
 
 export function PlaceCard({ place, onClick }: { place: DiscoverPlace; onClick: () => void }): React.JSX.Element {
   const players = placePlayers(place)
   const coords = placeCoords(place)
-  const creator = placeCreator(place)
+  const creator = useCreatorName(placeCreator(place)) ?? ''
   const isWorld = place.world === true
   return (
     <DiscoverCard

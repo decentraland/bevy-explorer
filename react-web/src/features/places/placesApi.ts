@@ -166,7 +166,7 @@ export function placePlayers(p: DiscoverPlace): number {
 }
 
 export function placeCreator(p: DiscoverPlace): string {
-  return p.user_name || p.contact_name || (p.owner ?? '')
+  return p.user_name || (isJunkContactName(p.contact_name) ? '' : p.contact_name) || (p.owner ?? '')
 }
 
 export function placeIsFeatured(p: DiscoverPlace): boolean {

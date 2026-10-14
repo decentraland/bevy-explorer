@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { PlacesBrowser } from '../features/places/PlacesBrowser'
 import type { DiscoverPlace } from '../features/places/placesApi'
 
@@ -47,5 +47,24 @@ describe('places browser', () => {
     expect(screen.getByRole('button', { name: /Quiet Gallery/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Other Scene/ })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /\bEmpty\b/ })).not.toBeInTheDocument()
+  })
+
+  it('shows a search match even when its record looks like an unfinished deploy', async () => {
+    const untitled = place('tortilla', 'My Scene', {
+      world: true,
+      world_name: 'tortilla.dcl.eth',
+      image: 'https://peer/content/contents/bafkreidj26s7aenyxfthfdibnqonzqm5ptc4iamml744gmcyuokewkr76y',
+      user_count: 0
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        const data = url.includes('search=tortilla') ? [untitled] : []
+        return Promise.resolve(new Response(JSON.stringify({ ok: true, total: data.length, data })))
+      })
+    )
+    render(<PlacesBrowser onPick={vi.fn()} />)
+    fireEvent.change(screen.getByPlaceholderText('Search places'), { target: { value: 'tortilla' } })
+    expect(await screen.findByRole('button', { name: /My Scene/ }, { timeout: 2000 })).toBeInTheDocument()
   })
 })
