@@ -20,7 +20,7 @@ use system_bridge::{
     FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo, PermanentPermissionItem,
     PermissionRequestEvent, ProfileChangedEvent, ProximityEvent, SatelliteView, SceneLoadingUi,
     SetAvatarData, SetPermanentPermission, SetSinglePermission, SystemApi, VoiceMessage,
-    WelcomeState,
+    WelcomeState, WorldAccessEvent,
 };
 use tokio::sync::Notify;
 
@@ -688,6 +688,48 @@ pub fn op_set_single_permission(state: Rc<RefCell<impl State>>, id: usize, allow
             id,
             allow,
         }))
+        .unwrap();
+}
+
+pub async fn op_get_world_access_stream(state: Rc<RefCell<impl State>>) -> u32 {
+    let (sx, rx) = RpcStreamSender::channel();
+    state.borrow_mut().put(rx);
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetWorldAccessStream(sx))
+        .unwrap();
+
+    1
+}
+
+pub async fn op_read_world_access_stream(
+    state: Rc<RefCell<impl State>>,
+    _rid: u32,
+) -> Result<Option<WorldAccessEvent>, anyhow::Error> {
+    let Some(mut receiver) = state
+        .borrow_mut()
+        .try_take::<RpcStreamReceiver<WorldAccessEvent>>()
+    else {
+        return Ok(None);
+    };
+
+    let res = match receiver.recv().await {
+        Some(data) => Ok(Some(data)),
+        None => Ok(None),
+    };
+
+    state.borrow_mut().put(receiver);
+
+    res
+}
+
+pub fn op_set_world_password(state: Rc<RefCell<impl State>>, password: Option<String>) {
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::SetWorldPassword(password))
         .unwrap();
 }
 

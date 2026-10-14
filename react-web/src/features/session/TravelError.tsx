@@ -6,7 +6,7 @@ import { Button, ModalShell, openPopup } from '../../design'
 export function openTravelError(message: string, onClose: () => void): () => void {
   return openPopup(
     (close) => (
-      <ModalShell title="Can't travel there" width={400} closeButton={false} ariaLabel="Can't travel there" actions={<Button onClick={close}>OK</Button>}>
+      <ModalShell title="Can't travel there" width={400} closeButton={false} ariaLabel="Can't travel there" actionsAlign="center" actions={<Button onClick={close}>OK</Button>}>
         <p>{message}</p>
       </ModalShell>
     ),

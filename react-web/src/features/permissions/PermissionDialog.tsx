@@ -94,11 +94,11 @@ export function PermissionDialog({
       </div>
 
       <div className={styles.actions}>
-        <Button variant="primary" onClick={() => onResolve(true, level)}>
-          Allow
-        </Button>
         <Button variant="ghost" className={styles.deny} onClick={() => onResolve(false, level)}>
           Deny
+        </Button>
+        <Button variant="primary" onClick={() => onResolve(true, level)}>
+          Allow
         </Button>
       </div>
     </div>

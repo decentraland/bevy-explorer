@@ -13,7 +13,7 @@ use system_bridge::{
     FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData,
     FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo, PermanentPermissionItem,
     PermissionRequestEvent, ProfileChangedEvent, ProximityEvent, SatelliteView, SceneLoadingUi,
-    SetAvatarData, VoiceMessage, WelcomeState,
+    SetAvatarData, VoiceMessage, WelcomeState, WorldAccessEvent,
 };
 
 // list of op declarations
@@ -75,6 +75,9 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_read_hover_stream(),
             op_get_proximity_stream(),
             op_read_proximity_stream(),
+            op_get_world_access_stream(),
+            op_read_world_access_stream(),
+            op_set_world_password(),
             op_get_profile_changed_stream(),
             op_read_profile_changed_stream(),
             op_get_scene_loading_ui_stream(),
@@ -509,6 +512,25 @@ pub async fn op_read_proximity_stream(
     rid: u32,
 ) -> Result<Option<ProximityEvent>, deno_core::anyhow::Error> {
     dcl::js::system_api::op_read_proximity_stream(state, rid).await
+}
+
+#[op2(async)]
+pub async fn op_get_world_access_stream(state: Rc<RefCell<OpState>>) -> u32 {
+    dcl::js::system_api::op_get_world_access_stream(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_read_world_access_stream(
+    state: Rc<RefCell<OpState>>,
+    rid: u32,
+) -> Result<Option<WorldAccessEvent>, deno_core::anyhow::Error> {
+    dcl::js::system_api::op_read_world_access_stream(state, rid).await
+}
+
+#[op2]
+pub fn op_set_world_password(state: Rc<RefCell<OpState>>, #[string] password: Option<String>) {
+    dcl::js::system_api::op_set_world_password(state, password);
 }
 
 #[op2(async)]

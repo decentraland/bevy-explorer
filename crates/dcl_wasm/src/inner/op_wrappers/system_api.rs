@@ -393,6 +393,30 @@ pub async fn op_read_hover_stream(state: &WorkerContext, rid: u32) -> Result<JsV
 }
 
 #[wasm_bindgen]
+pub async fn op_get_world_access_stream(state: &WorkerContext) -> u32 {
+    dcl::js::system_api::op_get_world_access_stream(state.rc()).await
+}
+
+#[wasm_bindgen]
+pub async fn op_read_world_access_stream(
+    state: &WorkerContext,
+    rid: u32,
+) -> Result<JsValue, WasmError> {
+    dcl::js::system_api::op_read_world_access_stream(state.rc(), rid)
+        .await
+        .map(|v| {
+            v.serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+                .unwrap()
+        })
+        .map_err(WasmError::from)
+}
+
+#[wasm_bindgen]
+pub fn op_set_world_password(state: &WorkerContext, password: Option<String>) {
+    dcl::js::system_api::op_set_world_password(state.rc(), password);
+}
+
+#[wasm_bindgen]
 pub async fn op_get_proximity_stream(state: &WorkerContext) -> u32 {
     dcl::js::system_api::op_get_proximity_stream(state.rc()).await
 }

@@ -57,13 +57,17 @@ use bevy_console::{ConsoleCommand, PrintConsoleLine};
 use common::{
     rpc::{RpcResultReceiver, RpcResultSender},
     sets::RealmLifecycle,
-    structs::{AppConfig, CommsConfig, CurrentRealm, PreviewMode, ServerConfiguration, WorldHold},
+    structs::{
+        server_mode, AppConfig, CommsConfig, CurrentRealm, PreviewMode, ServerConfiguration,
+        WorldHold,
+    },
     util::TaskCompat,
 };
 use ipfs_path::IpfsAsset;
 use platform::AsyncRwLock;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
+use wallet::Wallet;
 
 use console::{DoAddConsoleCommand, PendingConsoleResponses};
 
@@ -72,6 +76,8 @@ use platform::ReqwestBuilderExt;
 
 #[cfg(feature = "ipfs_debug")]
 use crate::ipfs_debug::{IpfsDebug, IpfsDebugReceiver, IpfsDebugStatus};
+pub mod world_access;
+use world_access::{WorldCommsSecret, WorldPasswordPrompter};
 
 use common::util::JoinRelativeExt;
 
@@ -555,6 +561,7 @@ impl Plugin for IpfsIoPlugin {
         );
 
         app.add_event::<ChangeRealmEvent>();
+        app.init_resource::<WorldCommsSecret>();
         app.init_resource::<CurrentRealm>();
         app.add_systems(
             PostUpdate,
@@ -655,7 +662,8 @@ pub struct InFlightRealmChange {
     id: u64,
     realm: String,
     report: bool,
-    result: RpcResultReceiver<Result<(), String>>,
+    /// On success, the password the world was entered with (see [`world_access`])
+    result: RpcResultReceiver<Result<Option<String>, String>>,
 }
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
@@ -670,6 +678,9 @@ pub fn change_realm(
     mut in_flight: Local<Vec<InFlightRealmChange>>,
     mut issued: Local<u64>,
     world_hold: Option<Res<WorldHold>>,
+    wallet: Option<Res<Wallet>>,
+    prompter: Option<Res<WorldPasswordPrompter>>,
+    mut world_secret: ResMut<WorldCommsSecret>,
     mut commands: Commands,
 ) {
     // Polled before the realm watch: a change's result is sent after its realm config, so a
@@ -687,10 +698,14 @@ pub fn change_realm(
         if result.is_err() && change.id == latest {
             *target = RealmInitialLocation::None;
         }
-        released |= result.is_ok();
+        if let Ok(secret) = &result {
+            // set with the realm, before the comms login the new realm starts
+            world_secret.0 = secret.clone();
+            released = true;
+        }
         if change.report {
             print.write(PrintConsoleLine::new(match result {
-                Ok(()) => format!("Realm set to `{}`", change.realm),
+                Ok(_) => format!("Realm set to `{}`", change.realm),
                 Err(e) => format!("Failed to set realm `{}`: {e}", change.realm),
             }));
         }
@@ -769,13 +784,37 @@ pub fn change_realm(
                 report: request.report,
                 result: rx,
             });
+            // A world is entered only once it says the player may (see world_access). Not on a
+            // server (it hosts, it never enters) and not without an identity (nothing to check
+            // against, and no comms to be kept out of).
+            let world = world_access::world_name(&new_realm)
+                .filter(|_| !server_mode())
+                .zip(wallet.as_deref().filter(|w| w.address().is_some()).cloned());
+            let prompter = prompter.as_deref().cloned();
+            let client = ipfs.client();
             IoTaskPool::get()
                 .spawn_compat(async move {
-                    let result = ipfs
-                        .set_realm(new_realm, content_server_override)
-                        .await
-                        .map_err(|e| e.to_string());
-                    response.send(result.clone());
+                    let result = async {
+                        let secret = match &world {
+                            Some((world, wallet)) => {
+                                world_access::check_world_access(
+                                    &new_realm,
+                                    world,
+                                    wallet,
+                                    &client,
+                                    prompter.as_ref(),
+                                )
+                                .await?
+                            }
+                            None => None,
+                        };
+                        ipfs.set_realm(new_realm, content_server_override)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        Ok(secret)
+                    }
+                    .await;
+                    response.send(result.clone().map(|_| ()));
                     sx.send(result);
                 })
                 .detach();

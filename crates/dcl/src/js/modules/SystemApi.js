@@ -447,6 +447,29 @@ module.exports.getHoverStream = async function() {
   return streamGenerator();
 }
 
+// world password prompts as a stream (see ipfs::world_access)
+// type WorldAccessEvent =
+//   | { type: "passwordRequest", world: string, error: string | null }
+//   | { type: "cancelled" }
+module.exports.getWorldAccessStream = async function() {
+  const rid = await Deno.core.ops.op_get_world_access_stream();
+
+  async function* streamGenerator() {
+    while (true) {
+      const next = await Deno.core.ops.op_read_world_access_stream(rid);
+      if (next === null) break;
+      yield next;
+    }
+  }
+
+  return streamGenerator();
+}
+
+// answer the password prompt; password null = the player gave up
+module.exports.setWorldPassword = function(body) {
+    Deno.core.ops.op_set_world_password(body.password ?? null);
+}
+
 // get proximity events as a stream
 // type ProximityEvent = {
 //   entered: bool,

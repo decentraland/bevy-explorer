@@ -410,6 +410,32 @@ pub struct FriendConnectivityEvent {
     pub status: String,
 }
 
+/// The engine needs a password to enter a world (see `ipfs::world_access`); answered with
+/// `SetWorldPassword`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(export)]
+pub struct WorldPasswordRequest {
+    /// The world's name, e.g. `my-world.dcl.eth`
+    pub world: String,
+    /// Why the previous answer was refused (a wrong password, too many attempts), to show with
+    /// the prompt; absent on the first ask
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
+#[derive(ts_rs::TS)]
+#[ts(export)]
+pub enum WorldAccessEvent {
+    #[serde(rename = "passwordRequest")]
+    PasswordRequest(WorldPasswordRequest),
+    /// The prompt no longer needs an answer: the realm change it was for is over
+    #[serde(rename = "cancelled")]
+    Cancelled,
+}
+
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, ts_rs::TS)]
 pub enum PermissionValue {
     Allow,

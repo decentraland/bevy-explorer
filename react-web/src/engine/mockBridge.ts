@@ -557,6 +557,11 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       }
     })
 
+    // ?worldpw=1 → fire a sample world password prompt so the dialog is exercisable in the mock; a
+    // wrong answer (anything but "open-sesame") re-asks with the reason, as the engine does.
+    if (new URLSearchParams(location.search).get('worldpw') === '1') {
+      setTimeout(() => reply({ kind: 'worldPasswordRequest', world: 'secret-garden.dcl.eth' }), 3000)
+    }
     // ?perm=1 → fire a sample scene permission prompt so the dialog is exercisable in the mock.
     if (new URLSearchParams(location.search).get('perm') === '1') {
       setTimeout(
@@ -803,6 +808,12 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     }
     if (msg.kind === 'changeRealm') {
       travelResult(msg.realm, msg.travelId)
+      return
+    }
+    if (msg.kind === 'worldPasswordResolve') {
+      if (msg.password != null && msg.password !== 'open-sesame') {
+        reply({ kind: 'worldPasswordRequest', world: 'secret-garden.dcl.eth', error: 'Incorrect password' })
+      }
       return
     }
     // no engine to apply the decision in, and no editor in mock mode
