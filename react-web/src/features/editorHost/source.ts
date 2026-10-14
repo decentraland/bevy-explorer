@@ -21,7 +21,7 @@ export interface EditorRelease {
 }
 
 const REGISTRY = 'https://registry.npmjs.org'
-const CDN = 'https://cdn.jsdelivr.net/npm'
+const CDN = 'https://unpkg.com'
 // the registry's answer builds a url: only a version gets in
 const VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/
 

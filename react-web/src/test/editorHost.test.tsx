@@ -73,7 +73,7 @@ describe('editor host', () => {
     })
     const source = await editorSource('?baseDomain=decentraland.org', 'decentraland.zone', PAGE_DIR, 'decentraland.org')
     expect(asked).toEqual(['https://registry.npmjs.org/@dcl-regenesislabs/web-editor/latest'])
-    expect(source).toMatchObject({ base: 'https://cdn.jsdelivr.net/npm/@dcl-regenesislabs/web-editor@0.2.0-ci.commit-abc1234/', editorJsIntegrity: null, editorSceneEntity: null })
+    expect(source).toMatchObject({ base: 'https://unpkg.com/@dcl-regenesislabs/web-editor@0.2.0-ci.commit-abc1234/', editorJsIntegrity: null, editorSceneEntity: null })
     // the registry's answer builds a url: nothing but a version gets in
     version = '../../evil.example/'
     await expect(editorSource('', 'decentraland.zone', PAGE_DIR, 'decentraland.org')).rejects.toThrow(/names no version/)
