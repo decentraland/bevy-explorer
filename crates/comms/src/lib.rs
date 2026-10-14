@@ -525,6 +525,7 @@ pub struct SetCurrentScene {
 
 #[derive(Serialize, Deserialize)]
 pub struct GatekeeperResponse {
+    #[serde(alias = "fixedAdapter")]
     adapter: String,
 }
 
@@ -601,6 +602,8 @@ fn connect_scene_room(
     adapter_override: Res<SceneRoomAdapterOverride>,
     preview_mode: Res<common::structs::PreviewMode>,
     contexts: Query<Entity, With<global_crdt::GlobalCrdtState>>,
+    current_realm: Res<CurrentRealm>,
+    world_secret: Res<ipfs::world_access::WorldCommsSecret>,
 ) {
     if disabled.0 {
         // orchestrated servers receive pre-minted adapters over the control channel and
@@ -651,27 +654,40 @@ fn connect_scene_room(
         } else {
             let wallet = wallet.clone();
             let preview = ev.scene_id.starts_with("b64-");
-            let url = match (common::structs::server_mode(), preview) {
-                (true, true) => preview_server_gatekeeper_url(),
-                (true, false) => server_gatekeeper_url(),
-                (false, true) => preview_gatekeeper_url(),
-                (false, false) => gatekeeper_url(),
+            // A world's scene rooms come from the worlds server itself, which applies the
+            // world's access rule and takes the password the realm was entered with.
+            let world = (!common::structs::server_mode() && !preview)
+                .then(|| ipfs::world_access::world_name(&current_realm.about_url))
+                .flatten();
+            let url = match (&world, common::structs::server_mode(), preview) {
+                (Some(world), _, _) => format!(
+                    "{}/worlds/{world}/scenes/{}/comms",
+                    common::base_domain::service(Service::WorldsServer),
+                    ev.scene_id
+                ),
+                (None, true, true) => preview_server_gatekeeper_url(),
+                (None, true, false) => server_gatekeeper_url(),
+                (None, false, true) => preview_gatekeeper_url(),
+                (None, false, false) => gatekeeper_url(),
             };
             let uri = Uri::try_from(url).unwrap();
             let client = ipfs.ipfs().client();
             // The authoritative-server gatekeeper endpoint validates the full comms-handshake
             // metadata (intent/signer/realm) that the client `get-scene-adapter` path omits;
             // signing the bare SetCurrentScene there returns 401. Mirror hammurabi's payload.
-            let meta = if common::structs::server_mode() {
-                serde_json::json!({
+            let meta = if common::structs::server_mode() || world.is_some() {
+                let mut meta = serde_json::json!({
                     "intent": "dcl:explorer:comms-handshake",
                     "signer": "dcl:explorer",
                     "isGuest": wallet.is_guest(),
                     "realm": { "serverName": ev.realm_name },
                     "realmName": ev.realm_name,
                     "sceneId": ev.scene_id,
-                })
-                .to_string()
+                });
+                if let Some(secret) = world_secret.0.as_ref().filter(|_| world.is_some()) {
+                    meta["secret"] = serde_json::json!(secret);
+                }
+                meta.to_string()
             } else {
                 serde_json::to_string(&ev).unwrap()
             };

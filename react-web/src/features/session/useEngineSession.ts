@@ -59,6 +59,7 @@ import type {
   OutfitsMetadata,
   PermissionLevelChoice,
   PermissionRequestMessage,
+  WorldPasswordRequestMessage,
   ProximityTip,
   Profile,
   ProfileEdit,
@@ -355,6 +356,13 @@ export interface PermissionsState {
   resolve: (id: number, allow: boolean, level: PermissionLevelChoice) => void
 }
 
+export interface WorldPasswordState {
+  /** The engine's open password prompt for the world being travelled to, if any. */
+  pending: WorldPasswordRequestMessage | null
+  /** Answer the prompt: the password, or null to give up (the travel is refused). */
+  resolve: (password: string | null) => void
+}
+
 export type ChatLine = ChatMessage & {
   id: number
   ts: number
@@ -598,6 +606,8 @@ export interface EngineSession {
   create: { open: boolean; toggle: () => void; show: (open: boolean) => void }
   /** Scene permission prompts (e.g. ChangeRealm) awaiting an Allow/Deny. */
   permissions: PermissionsState
+  /** The password prompt for a password-protected world being travelled to. */
+  worldPassword: WorldPasswordState
   editor: EditorHostState
   mic: { enabled: boolean; available: boolean; toggle: () => void }
   /** Trigger a sidebar nav action in the scene (open menu/popup, emotes, mic). */
@@ -852,6 +862,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [permissionQueue, setPermissionQueue] = useState<PermissionRequestMessage[]>([])
+  const [worldPassword, setWorldPassword] = useState<WorldPasswordRequestMessage | null>(null)
   const chatId = useRef(0)
   // The speed to restore when Time progression is turned back on (the last running speed seen).
   const skyboxDaySpeed = useRef(SKYBOX_DAY_SPEED)
@@ -1234,6 +1245,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'permissionWithdrawn':
           setPermissionQueue((q) => q.filter((r) => r.id !== msg.id))
+          break
+        case 'worldPasswordRequest':
+          setWorldPassword(msg)
+          break
+        case 'worldPasswordWithdrawn':
+          setWorldPassword(null)
           break
       }
     })
@@ -1708,6 +1725,13 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     },
     []
   )
+  const resolveWorldPassword = useCallback((password: string | null) => {
+    setWorldPassword((p) => {
+      if (p == null) return p
+      driverRef.current?.send({ kind: 'worldPasswordResolve', password })
+      return null
+    })
+  }, [])
   // Runs the login captured at Jump In, once the engine is up.
   const runPendingLogin = useCallback((driver: NonNullable<typeof driverRef.current>): void => {
     const login = pendingLogin.current
@@ -2769,6 +2793,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       remove: removeGalleryPhoto
     },
     permissions: { pending: permissionQueue, resolve: resolvePermission },
+    worldPassword: { pending: worldPassword, resolve: resolveWorldPassword },
     editor: { mode: editorMode, setMode: setEditorMode },
     mic: { enabled: mic.enabled, available: mic.available, toggle: toggleMic },
     nav,

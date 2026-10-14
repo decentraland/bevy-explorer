@@ -175,6 +175,16 @@ test.describe('visual — mock HUD', () => {
     await expect(page).toHaveScreenshot('passport.png')
   })
 
+  // World password dialog — ?worldpw=1 fires a sample prompt shortly after entering world.
+  test('world password dialog', async ({ page }) => {
+    await page.goto('/app.html?mock=1&worldpw=1')
+    await page.getByRole('button', { name: /EXPLORE AS GUEST/i }).click()
+    await jumpInFromLobby(page)
+    await page.getByRole('dialog', { name: 'World password' }).waitFor()
+    await settle(page)
+    await expect(page).toHaveScreenshot('world-password-dialog.png')
+  })
+
   // Permission dialog — ?perm=1 fires a sample scene permission request shortly after entering world.
   test('permission dialog', async ({ page }) => {
     await page.goto('/app.html?mock=1&perm=1')

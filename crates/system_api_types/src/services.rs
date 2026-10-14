@@ -37,6 +37,8 @@ pub enum Service {
     EthereumRpc,
     /// Social service websocket (friends)
     SocialRpc,
+    /// Social api (http): communities
+    SocialApi,
     /// OpenSea api (NftShape metadata)
     Opensea,
     /// Reels (camera reel photos) — HUD only
@@ -77,6 +79,7 @@ impl Service {
             Service::Storage => ("https", "storage", ""),
             Service::EthereumRpc => ("wss", "rpc", ""),
             Service::SocialRpc => ("wss", "rpc-social-service-ea", ""),
+            Service::SocialApi => ("https", "social-api", ""),
             Service::Opensea => ("https", "opensea", ""),
             Service::Reels => ("https", "reels", ""),
             Service::MapApi => ("https", "api", ""),
@@ -100,6 +103,7 @@ impl Service {
             Service::Storage => "storage",
             Service::EthereumRpc => "ethereum_rpc",
             Service::SocialRpc => "social_rpc",
+            Service::SocialApi => "social_api",
             Service::Opensea => "opensea",
             Service::Reels => "reels",
             Service::MapApi => "map_api",
@@ -196,6 +200,10 @@ pub struct ServiceOverrides {
     #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub social_rpc: Option<String>,
 
+    /// Social api (communities); absent = `https://social-api.<base>`
+    #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
+    pub social_api: Option<String>,
+
     /// OpenSea api; absent = `https://opensea.<base>`
     #[arg(long, value_name = "url", help_heading = HELP_HEADING)]
     pub opensea: Option<String>,
@@ -229,6 +237,7 @@ impl ServiceOverrides {
             Service::Storage => &self.storage,
             Service::EthereumRpc => &self.ethereum_rpc,
             Service::SocialRpc => &self.social_rpc,
+            Service::SocialApi => &self.social_api,
             Service::Opensea => &self.opensea,
             Service::Reels => &self.reels,
             Service::MapApi => &self.map_api,

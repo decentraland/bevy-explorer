@@ -34,6 +34,7 @@ import { registerSystemAction } from './domains/systemAction'
 import { registerBindings } from './domains/bindings'
 import { registerAvatarPointer } from './domains/avatarPointer'
 import { registerPermissions } from './domains/permissions'
+import { registerWorldAccess } from './domains/worldAccess'
 import { registerEditor } from './domains/editor'
 import { initNametags } from './domains/nametags'
 
@@ -67,6 +68,7 @@ export function main(): void {
     registerBindings(ctx)
     registerAvatarPointer(ctx)
     registerPermissions(ctx)
+    registerWorldAccess(ctx)
     registerEditor(ctx)
     registerAvatarPreview(ctx)
     registerMinimap(ctx)

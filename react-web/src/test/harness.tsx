@@ -213,6 +213,7 @@ export function fakeSession(): EngineSession {
     shop: { open: false, toggle: vi.fn() },
     gallery: { list: [], current: 0, max: 0, loaded: false, open: false, toggle: vi.fn(), metas: {}, loadPhoto: vi.fn(), remove: vi.fn() },
     permissions: { pending: [], resolve: vi.fn() },
+    worldPassword: { pending: null, resolve: vi.fn() },
     create: { open: false, toggle: vi.fn(), show: vi.fn() },
     editor: { mode: 'off', setMode: vi.fn() },
     mic: { enabled: false, available: true, toggle: vi.fn() },

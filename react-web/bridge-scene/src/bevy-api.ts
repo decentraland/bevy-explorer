@@ -28,7 +28,8 @@ import type {
   SetAvatarData,
   SetSinglePermission,
   Vector3,
-  WelcomeState
+  WelcomeState,
+  WorldAccessEvent
 } from '../../src/engine/generated'
 
 // --- raw social-service shapes (BevyApi.social.*), generated from the Rust structs ---
@@ -156,6 +157,11 @@ export type BevyApiInterface = {
   getAvatarModifiers: () => Promise<AvatarModifierState[]>
   getPermissionRequestStream: () => Promise<AsyncIterable<PermissionRequestRaw>>
   setSinglePermission: (body: SetSinglePermission) => void
+  /** Password prompts for a world being entered (and their withdrawal). Optional: absent on
+   *  runtimes whose SystemApi predates it. */
+  getWorldAccessStream?: () => Promise<AsyncIterable<WorldAccessEvent>>
+  /** Answer a password prompt; `password: null` = the player gave up. */
+  setWorldPassword?: (body: { password: string | null }) => void
   setPermanentPermission: (body: SetPermanentPermissionBody) => void
   /** Live scenes, for resolving a permission request's scene name (hash → title) and the current
    *  scene to reload — `/reload` uses `parcels`/`isSuper` to target the scene the player stands in,

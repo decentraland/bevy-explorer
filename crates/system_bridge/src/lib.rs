@@ -1,5 +1,6 @@
 pub mod agent_commands;
 pub mod settings;
+pub mod world_access;
 
 use std::sync::Arc;
 
@@ -36,8 +37,10 @@ impl Plugin for SystemBridgePlugin {
                 handle_home_scene,
                 handle_satellite_view,
                 handle_exit,
+                world_access::handle_world_access,
             ),
         );
+        world_access::install_prompter(app);
 
         if self.bare {
             return;
@@ -146,6 +149,10 @@ pub enum SystemApi {
         PermissionLevel,
         RpcResultSender<Vec<PermanentPermissionItem>>,
     ),
+    /// Prompts for the password of a world being entered (see `ipfs::world_access`).
+    GetWorldAccessStream(RpcStreamSender<WorldAccessEvent>),
+    /// Answers the password prompt: the password, or `None` when the player gives up.
+    SetWorldPassword(Option<world_access::WorldPassword>),
     SetInteractableArea(Vec4),
     GetMicState(RpcResultSender<MicState>),
     SetMicEnabled(bool),

@@ -30,6 +30,7 @@ import { Pointer } from './features/pointer/Pointer'
 import { openPassport } from './features/profile/Passport'
 import { openWorldVisit } from './components/WorldVisitModal'
 import { openPermissionDialog } from './features/permissions/PermissionDialog'
+import { openWorldPasswordDialog } from './features/worldAccess/WorldPasswordDialog'
 import { PopupHost, ToastHost, showDialog } from './design'
 import { SessionProvider } from './features/session/SessionContext'
 import { isNativeHud } from './lib/bootMode'
@@ -230,6 +231,16 @@ function Hud(): React.JSX.Element {
     return openPermissionDialog(front, session.permissions.resolve)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-open only when the front request changes
   }, [permFrontId])
+
+  // A password-protected world being travelled to: the engine holds the travel until the prompt is
+  // answered. Escape / scrim-click gives up (the travel is refused). Re-opens when the engine re-asks
+  // after a refused answer (now with the reason).
+  const worldPasswordPrompt = session.worldPassword.pending
+  useEffect(() => {
+    if (worldPasswordPrompt == null) return
+    return openWorldPasswordDialog(worldPasswordPrompt, session.worldPassword.resolve)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-open only when the prompt changes
+  }, [worldPasswordPrompt])
 
   // A refused in-world travel (destination missing/unreachable): the player stays put and is told why.
   const travelError = session.travelError

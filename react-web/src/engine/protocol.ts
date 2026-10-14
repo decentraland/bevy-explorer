@@ -211,6 +211,7 @@ export type PageToScene =
   | ChangeRealmRequest
   | MinimapConfigRequest
   | PermissionResolveRequest
+  | WorldPasswordResolveRequest
   | EditorSceneRequest
   | EngineViewportRequest
   | InteractableAreaMessage
@@ -878,6 +879,30 @@ export interface PermissionWithdrawnMessage {
   id: number
 }
 
+/** The engine needs a password to enter the world the player is travelling to (scene → page).
+ *  Shown as the password dialog; answered with worldPasswordResolve. Re-sent with an `error` when
+ *  an answer was refused (wrong password, too many attempts). There is only ever one open prompt:
+ *  a new one replaces it. */
+export interface WorldPasswordRequestMessage {
+  kind: 'worldPasswordRequest'
+  /** The world's name, e.g. 'my-world.dcl.eth'. */
+  world: string
+  /** Why the previous answer was refused; absent on the first ask. */
+  error?: string
+}
+
+/** The engine no longer needs the password prompt answered (its realm change is over). */
+export interface WorldPasswordWithdrawnMessage {
+  kind: 'worldPasswordWithdrawn'
+}
+
+/** The player's answer to the world password prompt (page → scene → SystemApi): the password, or
+ *  null when they gave up. */
+export interface WorldPasswordResolveRequest {
+  kind: 'worldPasswordResolve'
+  password: string | null
+}
+
 /** Which scope an Allow/Deny applies to. `once` = just this request; the rest persist a rule. */
 export type PermissionLevelChoice = 'once' | 'scene' | 'realm' | 'global'
 
@@ -1513,6 +1538,8 @@ export type SceneToPage =
   | GalleryPhotoMessage
   | PermissionRequestMessage
   | PermissionWithdrawnMessage
+  | WorldPasswordRequestMessage
+  | WorldPasswordWithdrawnMessage
   | EditorSceneResultMessage
 
 // ---- envelope --------------------------------------------------------------

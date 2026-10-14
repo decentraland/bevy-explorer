@@ -34,6 +34,7 @@ const INTERNAL_PARAMS = [
   'simhover',
   'previousLogin',
   'perm',
+  'worldpw',
   // dev only (lib/systemScene.ts)
   ...(import.meta.env.PROD ? [] : ['bridgePort'])
 ]

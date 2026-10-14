@@ -8,6 +8,7 @@ use common::{
     util::{TaskCompat, TaskExt},
 };
 use http::Uri;
+use ipfs::world_access::WorldCommsSecret;
 use wallet::{
     signed_login::{signed_login, SignedLoginResponse},
     SignedLoginMeta, Wallet,
@@ -36,6 +37,7 @@ pub fn start_signed_login(
     mut signed_login_events: Local<EventCursor<StartSignedLogin>>,
     current_realm: Res<CurrentRealm>,
     wallet: Res<Wallet>,
+    world_secret: Res<WorldCommsSecret>,
     mut task: Local<Option<(Entity, Task<Result<SignedLoginResponse, anyhow::Error>>)>>,
     mut manager: AdapterManager,
 ) {
@@ -56,7 +58,8 @@ pub fn start_signed_login(
             return;
         };
 
-        let meta = SignedLoginMeta::new(wallet.is_guest(), origin);
+        let meta =
+            SignedLoginMeta::new(wallet.is_guest(), origin).with_secret(world_secret.0.clone());
         *task = Some((
             context,
             IoTaskPool::get().spawn_compat(signed_login(uri, wallet, meta)),

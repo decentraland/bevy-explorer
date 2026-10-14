@@ -258,6 +258,9 @@ pub struct SignedLoginMeta {
     pub signer: String,
     is_guest: bool,
     origin: String,
+    /// A password-protected world's password
+    #[serde(skip_serializing_if = "Option::is_none")]
+    secret: Option<String>,
 }
 
 impl SignedLoginMeta {
@@ -269,7 +272,13 @@ impl SignedLoginMeta {
             signer: "dcl:explorer".to_owned(),
             is_guest,
             origin: format!("{}://{}", origin.scheme.unwrap(), origin.authority.unwrap()),
+            secret: None,
         }
+    }
+
+    pub fn with_secret(mut self, secret: Option<String>) -> Self {
+        self.secret = secret;
+        self
     }
 }
 
