@@ -66,6 +66,7 @@ its scene room and presence partition on it.
 | `GET <realm>content/contents/<entity id>` | the entity JSON (the engine loads the scene entity this way) |
 | `GET <realm>content/contents/<hash>` | the stored bytes, 404 when missing |
 | `GET <realm>scene.json` | `entity.metadata` (asked for by the engine's presence service on a local realm) |
+| `HEAD` of any route above | the `GET` answer without its body (clients probe reachability this way) |
 | anything else, incl. `GET <realm>scenes` | 404 |
 
 The engine resolves wearables and emotes through its realm's `entities/active` too, by urn. Those
