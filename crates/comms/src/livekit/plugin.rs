@@ -1,7 +1,7 @@
 use bevy::{ecs::relationship::Relationship, prelude::*};
 use common::{
     debug_panic,
-    rpc::{RpcCall, RpcCallEvent},
+    rpc::{RpcCall, RpcCallEvent, RpcOrigin},
 };
 use dcl_component::proto_components::kernel::apis::{
     VideoTrackSourceType, VideoTracksActiveStreamsData, VideoTracksActiveStreamsResponse,
@@ -201,10 +201,17 @@ fn respond_to_rpc_calls(
         With<Video>,
     >,
 ) {
-    for RpcCallEvent { origin: _, call } in rpc_calls.read() {
+    for RpcCallEvent { origin, call } in rpc_calls.read() {
         #[expect(clippy::single_match, reason = "may be expanded later")]
         match call {
             RpcCall::ActiveVideoStreams { response } => {
+                #[expect(unused)]
+                let RpcOrigin::Scene { entity, hash } = origin
+                else {
+                    response.send(VideoTracksActiveStreamsResponse { streams: vec![] });
+                    continue;
+                };
+
                 let mut streams = vec![];
                 for (track, published_by, source, has_active_streamer) in tracks {
                     let Ok(participant) = participants.get(published_by.get()) else {
