@@ -16,7 +16,6 @@ mod test;
 #[cfg(feature = "transport_debug")]
 mod transport_debug;
 pub mod websocket_room;
-pub mod world_access;
 
 use std::marker::PhantomData;
 
@@ -116,13 +115,11 @@ impl Plugin for CommsPlugin {
         // inserted; the driver (native ENet thread / wasm no-op) is selected at compile time.
         app.add_plugins(pulse::plugin::PulsePlugin);
 
-        world_access::install_gate(app);
         app.add_systems(
             Update,
             (
                 process_realm_change.run_if(not(resource_exists::<WorldHold>)),
                 connect_scene_room,
-                world_access::answer_realm_gate,
             ),
         );
 
