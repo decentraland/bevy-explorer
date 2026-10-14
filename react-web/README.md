@@ -143,8 +143,8 @@ A production build has no editor at all (none of its code ships) until a package
 `RELEASED_EDITOR` in `src/features/editorHost/config.ts` names the npm package and the dist-tag the
 page follows (`@dcl-regenesislabs/web-editor@latest`) and the deployment hostnames that offer
 Create (loopback always does). When Create opens, the page asks the npm registry which version the
-tag names (the registry is not cached; jsDelivr caches a tag for days) and loads that version's
-immutable directory from jsDelivr: `editor.js`, then the editor scene named by `scene/about` and
+tag names (the registry is not cached; the CDN caches a tag for days) and loads that version's
+immutable directory from unpkg: `editor.js`, then the editor scene named by `scene/about` and
 the content files it lists, each checked against its hash before it is spawned
 (`host/editorScene.ts`). So a release is a publish of the editor's `packages/web/dist` on that tag
 (the editor's `web-package` workflow, or `npm dist-tag add <package>@<version> latest`), with no
