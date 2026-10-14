@@ -51,6 +51,9 @@ export interface DclEditorHostV1 {
   engineConsole: (line: string) => Promise<string>
   identity: () => { address: string | null; isGuest: boolean }
   setMode: (mode: 'edit' | 'play' | 'off') => void
+  /** The screen the editor's own panels leave to the scene, in CSS px from each window edge. While the
+   *  editor is on screen the engine reports it to scenes as their interactable area. */
+  setSceneInset: (area: SceneInset) => void
   /** Travel the running engine to `<pageDir>preview/<projectId>` at parcel `x,y`. */
   openPreview: (projectId: string, position: string) => Promise<void>
   /** Spawn the package's own scene (`<editorBase>scene`, checked against the pin and served by
@@ -75,6 +78,13 @@ export interface DclEditorHostV1 {
   openCreatePage: () => void
   /** Unmount the editor, kill its scene, restore the HUD and the clock, and travel back. */
   exit: () => void
+}
+
+export interface SceneInset {
+  left: number
+  top: number
+  right: number
+  bottom: number
 }
 
 export interface ServerLogLine {
@@ -104,6 +114,7 @@ export interface EditorHostDeps {
   /** The player's answer to "sign removing this scene from `request.world` as `wallet`?". */
   confirmUndeploy: (request: UndeployRequest, wallet: string, server: string, signal?: AbortSignal) => Promise<boolean>
   setMode: (mode: EditorHudMode) => void
+  setInteractableArea: (area: SceneInset) => void
   showCreatePage: (open: boolean) => void
   travel: (realm: string, parcel?: { x: number; y: number }) => Promise<void>
   scene: (action: 'spawn' | 'kill', source: string, hash: string) => Promise<void>
@@ -369,6 +380,12 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
     setMode(mode) {
       if (mode !== 'off') readClock()
       deps.setMode(mode)
+    },
+    setSceneInset(area) {
+      const edges = [area?.left, area?.top, area?.right, area?.bottom]
+      if (!edges.every((edge) => typeof edge === 'number' && Number.isFinite(edge) && edge >= 0)) return
+      const [left, top, right, bottom] = edges.map((edge) => Math.round(edge as number))
+      deps.setInteractableArea({ left, top, right, bottom })
     },
     async openPreview(projectId, position) {
       const parcel = PARCEL.exec(position)

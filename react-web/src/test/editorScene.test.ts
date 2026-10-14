@@ -45,6 +45,7 @@ describe('editor scene', () => {
       confirmDeployment: async () => false,
       confirmUndeploy: async () => false,
       setMode: vi.fn(),
+      setInteractableArea: vi.fn(),
       showCreatePage: vi.fn(),
       travel: async () => {},
       scene

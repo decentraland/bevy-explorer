@@ -73,6 +73,7 @@ export function useEditorHost(entrySearch: string, session: EngineSession): Edit
             confirmDeployment,
             confirmUndeploy,
             setMode: (mode) => latest.current.editor.setMode(mode),
+            setInteractableArea: (area) => latest.current.setInteractableArea(area),
             showCreatePage: (open) => latest.current.create.show(open),
             travel: bridgeTravel,
             scene: bridgeScene

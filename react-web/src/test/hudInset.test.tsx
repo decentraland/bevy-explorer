@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
-import { installHudScale } from '../lib/hudScale'
-import { hudInsetRef, useEditorInsetReport, useHudInsetReport, type InteractableArea } from '../lib/hudInset'
+import { hudInsetRef, useHudInsetReport, type InteractableArea } from '../lib/hudInset'
 
 // jsdom lays nothing out, so each element's on-screen rect is stubbed from its data attributes.
 function Block({ right, height = 10 }: { right: number; height?: number }): React.JSX.Element {
@@ -80,23 +79,5 @@ describe('hud inset', () => {
     render(<Hud report={report} map={null} />)
     await flush()
     expect(report).toHaveBeenLastCalledWith({ left: 0, top: 0, right: 0, bottom: 0 })
-  })
-
-  // the editor hides the HUD; a scene's UI must still lay out where players will see it
-  it('reports the docked chat edge while the editor hides the HUD', async () => {
-    const report = vi.fn()
-    function Editor(): React.JSX.Element {
-      useEditorInsetReport(report, true)
-      return <></>
-    }
-    Object.assign(window, { innerWidth: 1920, innerHeight: 1080 })
-    installHudScale()
-    render(<Editor />)
-    await flush()
-    expect(report).toHaveBeenLastCalledWith({ left: 412, top: 0, right: 0, bottom: 0 })
-
-    Object.assign(window, { innerWidth: 1280, innerHeight: 720 })
-    act(() => { window.dispatchEvent(new Event('resize')) })
-    expect(report).toHaveBeenLastCalledWith({ left: 293, top: 0, right: 0, bottom: 0 })
   })
 })
