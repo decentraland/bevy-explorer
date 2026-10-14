@@ -1,5 +1,6 @@
 pub mod adaption_layer_helper;
 pub mod comms;
+pub mod comms_api;
 pub mod engine;
 pub mod ethereum_controller;
 pub mod events;

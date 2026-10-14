@@ -80,6 +80,7 @@ fn gen_sdk_components() -> Result<()> {
         .collect::<Vec<_>>();
 
     sources.push("src/proto/decentraland/sdk/development/local_development.proto".into());
+    sources.push("src/proto/decentraland/kernel/apis/comms_api.proto".into());
     sources.push("src/proto/decentraland/kernel/comms/rfc5/ws_comms.proto".into());
     sources.push("src/proto/decentraland/kernel/comms/rfc4/comms.proto".into());
     sources.push("src/proto/decentraland/kernel/comms/v3/archipelago.proto".into());
@@ -118,6 +119,8 @@ fn gen_sdk_components() -> Result<()> {
         "UpdateScene",
         "UpdateModel",
         "UpdateModelType",
+        "VideoTracksActiveStreamsResponse",
+        "VideoTracksActiveStreamsData",
     ];
 
     for component in serde_components {

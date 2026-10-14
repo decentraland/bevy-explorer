@@ -40,6 +40,10 @@ pub mod kernel {
             include!(concat!(env!("OUT_DIR"), "/decentraland.kernel.comms.v3.rs"));
         }
     }
+    #[allow(clippy::all)]
+    pub mod apis {
+        include!(concat!(env!("OUT_DIR"), "/decentraland.kernel.apis.rs"));
+    }
 }
 
 #[allow(clippy::all)]

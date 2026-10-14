@@ -27,6 +27,7 @@ pub mod user_identity;
 
 pub mod adaption_layer_helper;
 pub mod comms;
+pub mod comms_api;
 pub mod ethereum_controller;
 pub mod events;
 pub mod fetch;

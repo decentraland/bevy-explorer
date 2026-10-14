@@ -1,5 +1,12 @@
 use bevy::prelude::*;
-use common::debug_panic;
+use common::{
+    debug_panic,
+    rpc::{RpcCall, RpcCallEvent, RpcOrigin},
+};
+use dcl_component::proto_components::kernel::apis::{
+    VideoTrackSourceType, VideoTracksActiveStreamsData, VideoTracksActiveStreamsResponse,
+};
+use livestream_manager::ActiveTransmitter;
 use tokio::{sync::mpsc, task::JoinHandle};
 #[cfg(not(target_arch = "wasm32"))]
 use {
@@ -16,12 +23,18 @@ use crate::livekit::room_debug::RoomDebugPlugin;
 use crate::{
     global_crdt::NetworkUpdate,
     livekit::{
-        mic::MicPlugin, participant::plugin::LivekitParticipantPlugin,
-        room::plugin::LivekitRoomPlugin, runtime::LivekitRuntimePlugin,
-        track::plugin::LivekitTrackPlugin, ConnectionAvailability, LivekitChannelControl,
-        LivekitNetworkMessage, LivekitRuntime, LivekitTransport, StartLivekit,
+        mic::MicPlugin,
+        participant::{plugin::LivekitParticipantPlugin, HostingParticipants, LivekitParticipant},
+        room::plugin::LivekitRoomPlugin,
+        runtime::LivekitRuntimePlugin,
+        track::{
+            plugin::LivekitTrackPlugin, Camera as LivekitSourceCamera, LivekitTrack, Publishing,
+            ScreenshareVideo as LivekitSourceScreenshare, Video,
+        },
+        ConnectionAvailability, LivekitChannelControl, LivekitNetworkMessage, LivekitRuntime,
+        LivekitTransport, StartLivekit,
     },
-    Transport, TransportType,
+    SceneRoom, Transport, TransportType,
 };
 
 pub struct LivekitPlugin;
@@ -67,6 +80,8 @@ impl Plugin for LivekitPlugin {
         }
 
         app.add_event::<StartLivekit>();
+
+        app.add_systems(Update, respond_to_rpc_calls);
 
         #[cfg(feature = "room_debug")]
         app.add_plugins(RoomDebugPlugin);
@@ -170,4 +185,74 @@ fn respond_to_audio_settings_change(
     livekit_audio_manager
         .main_track()
         .set_volume(audio_settings.scene() as f64, Tween::default());
+}
+
+#[expect(clippy::type_complexity, reason = "Queries are complex")]
+fn respond_to_rpc_calls(
+    mut rpc_calls: EventReader<RpcCallEvent>,
+    participants: Query<(&LivekitParticipant, &Publishing)>,
+    tracks: Query<
+        (
+            &LivekitTrack,
+            AnyOf<(&LivekitSourceCamera, &LivekitSourceScreenshare)>,
+            Has<ActiveTransmitter>,
+        ),
+        With<Video>,
+    >,
+    scene_rooms: Query<(&HostingParticipants, &SceneRoom)>,
+) {
+    for RpcCallEvent { origin, call } in rpc_calls.read() {
+        #[expect(clippy::single_match, reason = "may be expanded later")]
+        match call {
+            RpcCall::ActiveVideoStreams { response } => {
+                let RpcOrigin::Scene { entity: _, hash } = origin else {
+                    response.send(VideoTracksActiveStreamsResponse { streams: vec![] });
+                    continue;
+                };
+                let Some((hosting_participants, _)) = scene_rooms
+                    .iter()
+                    .find(|(_, scene_room)| scene_room.0.as_str() == &**hash)
+                else {
+                    debug!("No mapping between RpcCall origin and a transport.");
+                    continue;
+                };
+
+                let mut streams = vec![];
+                for (participant, publishing) in
+                    participants.iter_many(hosting_participants.collection())
+                {
+                    for (track, source, has_active_streamer) in
+                        tracks.iter_many(publishing.collection())
+                    {
+                        let identity = participant.identity().0;
+                        let track_sid = format!("livekit-video://{}/{}", identity, track.sid());
+
+                        if has_active_streamer {
+                            streams.push(VideoTracksActiveStreamsData {
+                                identity: participant.identity().0.clone(),
+                                track_sid: "livekit-video://current-stream".to_owned(),
+                                source_type: match source {
+                                    (Some(_), _) => VideoTrackSourceType::VtstCamera as i32,
+                                    (_, Some(_)) => VideoTrackSourceType::VtstScreenShare as i32,
+                                    _ => VideoTrackSourceType::VtstUnknown as i32,
+                                },
+                            });
+                        }
+
+                        streams.push(VideoTracksActiveStreamsData {
+                            identity: participant.identity().0,
+                            track_sid,
+                            source_type: match source {
+                                (Some(_), _) => VideoTrackSourceType::VtstCamera as i32,
+                                (_, Some(_)) => VideoTrackSourceType::VtstScreenShare as i32,
+                                _ => VideoTrackSourceType::VtstUnknown as i32,
+                            },
+                        });
+                    }
+                }
+                response.send(VideoTracksActiveStreamsResponse { streams });
+            }
+            _ => (),
+        }
+    }
 }

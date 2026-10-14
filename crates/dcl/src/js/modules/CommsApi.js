@@ -2,7 +2,7 @@
 // wired to the transport, but scenes must get the documented shapes back rather than
 // undefined (which throws on the caller's `.streams`/`.messages` access).
 module.exports.getActiveVideoStreams = async function (body) {
-    return { streams: [] }
+    return await Deno.core.ops.op_get_active_video_streams()
 }
 
 module.exports.subscribeToTopic = async function (body) {
