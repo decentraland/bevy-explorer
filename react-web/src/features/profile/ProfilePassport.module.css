@@ -221,9 +221,6 @@
 .badgeCard:hover {
   background: var(--list-row-hover);
 }
-.picked {
-  border-color: var(--brand);
-}
 .badgeName {
   font-size: var(--fs-xs);
   font-weight: 700;
@@ -309,6 +306,10 @@
   background: none;
   cursor: pointer;
   display: flex;
+}
+/* The selected card or tier; after both, since .tierBtn's border shorthand would reset it. */
+.picked {
+  border-color: var(--brand);
 }
 .badgeNext {
   margin-top: 0.75rem;
