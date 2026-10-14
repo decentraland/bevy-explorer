@@ -4,7 +4,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BackpackModal } from '../features/backpack/BackpackModal'
 import modalStyles from '../features/backpack/BackpackModal.module.css'
 import { LobbyHome } from '../features/lobby/LobbyHome'
-import { fetchHomePlace } from '../features/lobby/lobbyApi'
+import { fetchHomePlace, fetchRecents } from '../features/lobby/lobbyApi'
+import type { DiscoverPlace } from '../features/places/placesApi'
+import { receiveProfile, resetProfileStore, setProfileRequester } from '../features/session/profileStore'
 import { SessionProvider } from '../features/session/SessionContext'
 import { fakeSession } from './harness'
 
@@ -56,6 +58,22 @@ describe('lobby controls', () => {
     await waitFor(() => expect(fetchHomePlace).toHaveBeenCalledWith({ realm: 'my-home.dcl.eth', parcel: '12,-7' }))
     await waitFor(() => expect(screen.getByRole('button', { name: /jump in/i })).toBeEnabled())
     expect(screen.getByText('my-home.dcl.eth')).toBeInTheDocument()
+  })
+
+  it("names a recent place's creator from the owner's profile when the place carries no name", async () => {
+    resetProfileStore()
+    const owner = '0xb8c4df381c6c305758f806c3aa71f37aabbcbd92'
+    setProfileRequester((address) => receiveProfile(address, { address, name: 'boedo', hasClaimedName: true, isGuest: false }))
+    const recent: DiscoverPlace = { id: 'w', title: 'My Scene', description: '', image: '', positions: [], owner, world: true, world_name: 'tortilla.dcl.eth' }
+    vi.mocked(fetchRecents).mockResolvedValueOnce([recent])
+    const session = fakeSession()
+    render(
+      <SessionProvider value={session}>
+        <LobbyHome onPick={session.pickDestination} setEngineViewport={session.setEngineViewport} />
+      </SessionProvider>
+    )
+    expect(await screen.findByText('boedo')).toBeInTheDocument()
+    expect(screen.queryByText(owner)).not.toBeInTheDocument()
   })
 
   it('leaves the avatar cutout outside both overlay hit regions and keeps Close clickable', async () => {

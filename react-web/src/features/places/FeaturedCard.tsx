@@ -4,6 +4,7 @@
 
 import { useState } from 'react'
 import { placeCoords, placeCreator, type DiscoverPlace } from './placesApi'
+import { useCreatorName } from './useCreatorName'
 import styles from './FeaturedCard.module.css'
 
 function hueOf(id: string): number {
@@ -40,7 +41,7 @@ function JumpInGlyph(): React.JSX.Element {
 export function FeaturedCard({ place, onClick }: { place: DiscoverPlace; onClick: () => void }): React.JSX.Element {
   const [failed, setFailed] = useState(false)
   const coords = placeCoords(place)
-  const creator = placeCreator(place)
+  const creator = useCreatorName(placeCreator(place)) ?? ''
   const isWorld = place.world === true
   const showImg = !!place.image && !failed
   const initial = (creator || place.title || '?').trim().charAt(0).toUpperCase()

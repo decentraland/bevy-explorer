@@ -59,6 +59,10 @@ export function userColor(address: string, name: string, claimed?: boolean, cust
   return resolveNameColor(name, address, claimed ?? looksClaimed(name), custom)
 }
 
+export function isAddress(s: string): boolean {
+  return ADDRESS_RE.test(s)
+}
+
 export function shortAddr(s: string): string {
   return ADDRESS_RE.test(s) ? `${s.slice(0, 6)}…${s.slice(-4)}` : s
 }
