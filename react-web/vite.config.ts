@@ -122,6 +122,15 @@ function editorPackage(): Plugin[] {
   return [serveStatic('/editor/', dist)]
 }
 
+// Dev-only: a web export of the Decentraland mobile explorer (GODOT_WEB_DIR) under /godot/, so it
+// is same-origin with the page and reads the editor's preview realm from the service worker.
+function godotExplorer(): Plugin[] {
+  const dir = process.env.GODOT_WEB_DIR
+  if (!dir) return []
+  if (!existsSync(join(dir, 'index.html'))) console.warn(`[godot] ${dir}/index.html is missing: export the web build`)
+  return [serveStatic('/godot/', dir)]
+}
+
 // Apply the cross-origin-isolation headers the engine needs to every response EXCEPT the
 // proxied auth dapp (/auth). The auth site is a normal web page that signs in with popups /
 // OAuth redirects, which `Cross-Origin-Opener-Policy: same-origin` would break — and it does
@@ -180,7 +189,8 @@ export default defineConfig(({ command, mode }) => ({
     // Our headless super-user bridge scene (exported deployable). Pointed at by
     // the engine's systemScene so it loads as the trusted --system-scene scene.
     serveStatic('/bridge-scene/static/', './bridge-scene/static'),
-    ...editorPackage()
+    ...editorPackage(),
+    ...godotExplorer()
   ],
   build: {
     // The app IS the production page: build straight into the npm-published deploy/web tree,
