@@ -152,7 +152,7 @@ pub enum SystemApi {
     /// Prompts for the password of a world being entered (see `ipfs::world_access`).
     GetWorldAccessStream(RpcStreamSender<WorldAccessEvent>),
     /// Answers the password prompt: the password, or `None` when the player gives up.
-    SetWorldPassword(Option<String>),
+    SetWorldPassword(Option<world_access::WorldPassword>),
     SetInteractableArea(Vec4),
     GetMicState(RpcResultSender<MicState>),
     SetMicEnabled(bool),

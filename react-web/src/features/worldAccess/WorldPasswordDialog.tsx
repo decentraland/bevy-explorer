@@ -79,7 +79,9 @@ export function WorldPasswordDialog({
 }
 
 /** Open a world password prompt as a popup; returns the close handle. Escape / scrim-click give up
- *  (the travel is refused). Resolves exactly once. */
+ *  (the travel is refused). Resolves at most once, and not at all when closed through the handle:
+ *  the owner closing it (a newer prompt replacing this one, or the engine withdrawing it) is not an
+ *  answer. */
 export function openWorldPasswordDialog(
   request: WorldPasswordRequestMessage,
   resolve: (password: string | null) => void
@@ -90,7 +92,7 @@ export function openWorldPasswordDialog(
     settled = true
     resolve(password)
   }
-  return openPopup(
+  const close = openPopup(
     (close) => (
       <WorldPasswordDialog
         request={request}
@@ -102,4 +104,8 @@ export function openWorldPasswordDialog(
     ),
     { onClose: () => done(null) }
   )
+  return () => {
+    settled = true
+    close()
+  }
 }

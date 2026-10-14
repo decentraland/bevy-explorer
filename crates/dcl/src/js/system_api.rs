@@ -729,7 +729,9 @@ pub fn op_set_world_password(state: Rc<RefCell<impl State>>, password: Option<St
     state
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
-        .send(SystemApi::SetWorldPassword(password))
+        .send(SystemApi::SetWorldPassword(
+            password.map(system_bridge::world_access::WorldPassword),
+        ))
         .unwrap();
 }
 

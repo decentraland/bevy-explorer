@@ -597,7 +597,7 @@ impl Plugin for IpfsIoPlugin {
             IoTaskPool::get()
                 .spawn_compat(async move {
                     // a failure is published by set_realm itself (no realm to stay in at boot)
-                    let _ = ipfs.set_realm(realm, content_server_override).await;
+                    let _ = ipfs.set_realm(realm, content_server_override, None).await;
                 })
                 .detach();
         }
@@ -662,8 +662,7 @@ pub struct InFlightRealmChange {
     id: u64,
     realm: String,
     report: bool,
-    /// On success, the password the world was entered with (see [`world_access`])
-    result: RpcResultReceiver<Result<Option<String>, String>>,
+    result: RpcResultReceiver<Result<(), String>>,
 }
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
@@ -677,6 +676,8 @@ pub fn change_realm(
     mut target: ResMut<RealmInitialLocation>,
     mut in_flight: Local<Vec<InFlightRealmChange>>,
     mut issued: Local<u64>,
+    // the latest issued change's id, watched by the earlier ones so they stand down
+    mut latest_issued: Local<Option<tokio::sync::watch::Sender<u64>>>,
     world_hold: Option<Res<WorldHold>>,
     wallet: Option<Res<Wallet>>,
     prompter: Option<Res<WorldPasswordPrompter>>,
@@ -698,9 +699,7 @@ pub fn change_realm(
         if result.is_err() && change.id == latest {
             *target = RealmInitialLocation::None;
         }
-        if let Ok(secret) = &result {
-            // set with the realm, before the comms login the new realm starts
-            world_secret.0 = secret.clone();
+        if result.is_ok() {
             released = true;
         }
         if change.report {
@@ -721,6 +720,7 @@ pub fn change_realm(
                     address: realm,
                     about,
                     connected,
+                    secret,
                 }) = &*realm_change.borrow_and_update()
                 {
                     let mut config = about.configurations.clone().unwrap_or_default();
@@ -744,6 +744,8 @@ pub fn change_realm(
                             .map(|c| c.public_url.clone())
                             .unwrap_or_default(),
                     };
+                    // with the realm, before the comms login it starts
+                    world_secret.0 = secret.clone();
                 }
             }
         }
@@ -769,7 +771,7 @@ pub fn change_realm(
             for superseded in requests {
                 superseded
                     .response
-                    .send(Err("superseded by a later realm change".to_owned()));
+                    .send(Err(world_access::SUPERSEDED.to_owned()));
             }
 
             let ipfs = ipfs.clone();
@@ -778,6 +780,13 @@ pub fn change_realm(
             let response = request.response.clone();
             let (sx, rx) = RpcResultSender::channel();
             *issued += 1;
+            let latest_issued =
+                latest_issued.get_or_insert_with(|| tokio::sync::watch::channel(0).0);
+            latest_issued.send_replace(*issued);
+            let superseded = world_access::Superseded {
+                latest: latest_issued.subscribe(),
+                id: *issued,
+            };
             in_flight.push(InFlightRealmChange {
                 id: *issued,
                 realm: request.new_realm.clone(),
@@ -790,10 +799,18 @@ pub fn change_realm(
             let world = world_access::world_name(&new_realm)
                 .filter(|_| !server_mode())
                 .zip(wallet.as_deref().filter(|w| w.address().is_some()).cloned());
+            // re-entering the current world: its password is known
+            let known_secret = world
+                .as_ref()
+                .filter(|(world, _)| {
+                    world_access::world_name(&current_realm.address).as_ref() == Some(world)
+                })
+                .and_then(|_| world_secret.0.clone());
             let prompter = prompter.as_deref().cloned();
             let client = ipfs.client();
             IoTaskPool::get()
                 .spawn_compat(async move {
+                    let mut superseded = superseded;
                     let result = async {
                         let secret = match &world {
                             Some((world, wallet)) => {
@@ -801,20 +818,24 @@ pub fn change_realm(
                                     &new_realm,
                                     world,
                                     wallet,
+                                    known_secret,
                                     &client,
                                     prompter.as_ref(),
+                                    &mut superseded,
                                 )
                                 .await?
                             }
                             None => None,
                         };
-                        ipfs.set_realm(new_realm, content_server_override)
+                        if superseded.is_superseded() {
+                            return Err(world_access::SUPERSEDED.to_owned());
+                        }
+                        ipfs.set_realm(new_realm, content_server_override, secret)
                             .await
-                            .map_err(|e| e.to_string())?;
-                        Ok(secret)
+                            .map_err(|e| e.to_string())
                     }
                     .await;
-                    response.send(result.clone().map(|_| ()));
+                    response.send(result.clone());
                     sx.send(result);
                 })
                 .detach();
@@ -867,6 +888,8 @@ pub struct RealmConfig {
     pub about: ServerAbout,
     /// whether we actually connected; false when realm resolution failed
     pub connected: bool,
+    /// The password the realm (a world) was entered with, for its signed comms login
+    pub secret: Option<String>,
 }
 
 pub struct IpfsIo {
@@ -1011,9 +1034,10 @@ impl IpfsIo {
         &self,
         new_realm: String,
         content_server_override: Option<String>,
+        secret: Option<String>,
     ) -> Result<(), anyhow::Error> {
         let res = self
-            .set_realm_inner(new_realm.clone(), content_server_override)
+            .set_realm_inner(new_realm.clone(), content_server_override, secret)
             .await;
         if let Err(e) = &res {
             error!("failed to set realm: {e}");
@@ -1024,6 +1048,7 @@ impl IpfsIo {
                         address: new_realm,
                         about: Default::default(),
                         connected: false,
+                        secret: None,
                     }))
                     .expect("channel closed");
             }
@@ -1041,6 +1066,7 @@ impl IpfsIo {
                 address: "manual value".to_owned(),
                 about,
                 connected: true,
+                secret: None,
             }))
             .expect("channel closed");
     }
@@ -1061,6 +1087,7 @@ impl IpfsIo {
         &self,
         new_realm: String,
         content_server_override: Option<String>,
+        secret: Option<String>,
     ) -> Result<(), anyhow::Error> {
         let mut retries = 0;
         let mut about;
@@ -1129,6 +1156,7 @@ impl IpfsIo {
                 address: write.base_url.clone(),
                 about,
                 connected: true,
+                secret,
             }))
             .expect("channel closed");
         Ok(())

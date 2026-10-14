@@ -2,7 +2,8 @@ import { describe, it, expect, vi } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderSession, enterAsGuest } from './harness'
-import { WorldPasswordDialog } from '../features/worldAccess/WorldPasswordDialog'
+import { WorldPasswordDialog, openWorldPasswordDialog } from '../features/worldAccess/WorldPasswordDialog'
+import { closeTopPopup, resetPopups } from '../design'
 import type { WorldPasswordRequestMessage } from '../engine/protocol'
 
 const REQ: WorldPasswordRequestMessage = { kind: 'worldPasswordRequest', world: 'secret-garden.dcl.eth' }
@@ -65,6 +66,24 @@ describe('world access domain', () => {
     h.driver.emit({ kind: 'worldPasswordWithdrawn' })
     expect(h.session().worldPassword.pending).toBeNull()
     expect(h.driver.last('worldPasswordResolve')).toBeUndefined()
+  })
+})
+
+describe('openWorldPasswordDialog', () => {
+  it('closing through the handle is not an answer', () => {
+    resetPopups()
+    const resolve = vi.fn()
+    const close = openWorldPasswordDialog(REQ, resolve)
+    close()
+    expect(resolve).not.toHaveBeenCalled()
+  })
+
+  it('Escape gives up', () => {
+    resetPopups()
+    const resolve = vi.fn()
+    openWorldPasswordDialog(REQ, resolve)
+    closeTopPopup()
+    expect(resolve).toHaveBeenCalledWith(null)
   })
 })
 

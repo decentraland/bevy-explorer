@@ -1,13 +1,26 @@
 //! Relays the engine's world password prompt (`ipfs::world_access`) to the HUD as a stream and
 //! the HUD's answer back.
 
+use std::fmt;
+
 use bevy::prelude::*;
 use common::rpc::RpcStreamSender;
 use ipfs::world_access::{WorldPasswordPrompt, WorldPasswordPrompter};
+use serde::{Deserialize, Serialize};
 use system_api_types::{WorldAccessEvent, WorldPasswordRequest};
 use tokio::sync::mpsc;
 
 use crate::SystemApi;
+
+/// A password on its way to the engine. Its `Debug` hides it: system api events are logged.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct WorldPassword(pub String);
+
+impl fmt::Debug for WorldPassword {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("WorldPassword(<redacted>)")
+    }
+}
 
 #[derive(Resource)]
 pub struct WorldPasswordPrompts {
@@ -50,7 +63,9 @@ pub fn handle_world_access(
             }
             SystemApi::SetWorldPassword(password) => match prompts.pending.take() {
                 Some(prompt) => {
-                    let _ = prompt.answer.send(password.clone());
+                    let _ = prompt
+                        .answer
+                        .send(password.as_ref().map(|password| password.0.clone()));
                 }
                 None => warn!("no world password prompt to answer"),
             },

@@ -12,8 +12,28 @@ use bevy::prelude::*;
 use common::base_domain::{self, Service};
 use http::Uri;
 use serde::Deserialize;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 use wallet::{sign_request, SignedLoginMeta, Wallet};
+
+pub const SUPERSEDED: &str = "superseded by a later realm change";
+
+/// Whether a later realm change has been issued since the one this belongs to, which then stands
+/// down rather than finish behind it.
+pub struct Superseded {
+    pub latest: watch::Receiver<u64>,
+    pub id: u64,
+}
+
+impl Superseded {
+    pub fn is_superseded(&self) -> bool {
+        *self.latest.borrow() != self.id
+    }
+
+    /// Resolves once superseded (or once nothing issues changes any more)
+    pub async fn wait(&mut self) {
+        let _ = self.latest.wait_for(|latest| *latest != self.id).await;
+    }
+}
 
 /// The world's name when `realm` (a realm url, see `map_realm_name`) is a world on the configured
 /// worlds server.
@@ -63,12 +83,12 @@ struct Permissions {
 
 #[derive(Deserialize, Default)]
 struct AccessPermission {
-    #[serde(rename = "type")]
+    #[serde(rename = "type", default)]
     ty: String,
     #[serde(default)]
-    wallets: Vec<String>,
+    wallets: Option<Vec<String>>,
     #[serde(default)]
-    communities: Vec<String>,
+    communities: Option<Vec<String>>,
 }
 
 /// `GET /v2/communities/<id>`, the local user's role in it.
@@ -88,14 +108,17 @@ struct ErrorBody {
     error: String,
 }
 
-/// Whether the local user may enter `world`, and with what password. `Err` is the reason they
-/// may not, in words for the player.
+/// Whether the local user may enter `world`, and with what password. `known_secret` is a password
+/// that got them in before, tried before asking. `Err` is the reason they may not, in words for
+/// the player.
 pub async fn check_world_access(
     realm: &str,
     world: &str,
     wallet: &Wallet,
+    known_secret: Option<String>,
     client: &reqwest::Client,
     prompter: Option<&WorldPasswordPrompter>,
+    superseded: &mut Superseded,
 ) -> Result<Option<String>, String> {
     let worlds = base_domain::service(Service::WorldsServer);
     let permissions = client
@@ -116,18 +139,19 @@ pub async fn check_world_access(
     let is_owner = address.eq_ignore_ascii_case(&permissions.owner);
     let access = permissions.permissions.access.unwrap_or_default();
 
-    match access.ty.as_str() {
+    match access.ty.to_ascii_lowercase().as_str() {
         "" | "unrestricted" => Ok(None),
         "allow-list" => {
             if is_owner
                 || access
                     .wallets
                     .iter()
+                    .flatten()
                     .any(|wallet| wallet.eq_ignore_ascii_case(&address))
             {
                 return Ok(None);
             }
-            for community in &access.communities {
+            for community in access.communities.iter().flatten() {
                 if is_community_member(community, wallet, client).await {
                     return Ok(None);
                 }
@@ -137,6 +161,14 @@ pub async fn check_world_access(
         "shared-secret" => {
             if is_owner {
                 return Ok(None);
+            }
+            if let Some(password) = known_secret {
+                if validate_password(realm, world, &password, wallet, client)
+                    .await
+                    .is_ok()
+                {
+                    return Ok(Some(password));
+                }
             }
             let Some(prompter) = prompter else {
                 return Err(
@@ -152,7 +184,11 @@ pub async fn check_world_access(
                     answer,
                 };
                 let password = match prompter.0.send(prompt) {
-                    Ok(()) => answered.await.ok().flatten(),
+                    Ok(()) => tokio::select! {
+                        answer = answered => answer.ok().flatten(),
+                        // drops the prompt unanswered, which withdraws it from the HUD
+                        _ = superseded.wait() => return Err(SUPERSEDED.to_owned()),
+                    },
                     Err(_) => None,
                 };
                 let Some(password) = password else {
@@ -242,7 +278,25 @@ async fn validate_password(
 
 #[cfg(test)]
 mod tests {
-    use super::world_name;
+    use super::{world_name, WorldPermissions};
+
+    #[test]
+    fn permissions_tolerate_sparse_records() {
+        let record: WorldPermissions = serde_json::from_str(
+            r#"{"owner":"0xab","permissions":{"access":{"type":"Allow-List","wallets":null}}}"#,
+        )
+        .unwrap();
+        let access = record.permissions.access.unwrap();
+        assert_eq!(access.ty, "Allow-List");
+        assert!(access.wallets.is_none() && access.communities.is_none());
+
+        let record: WorldPermissions =
+            serde_json::from_str(r#"{"permissions":{"access":{}}}"#).unwrap();
+        assert_eq!(record.permissions.access.unwrap().ty, "");
+
+        let record: WorldPermissions = serde_json::from_str(r#"{}"#).unwrap();
+        assert!(record.permissions.access.is_none());
+    }
 
     #[test]
     fn names_a_world_on_the_worlds_server() {
