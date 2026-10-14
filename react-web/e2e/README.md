@@ -80,19 +80,19 @@ npm run test:visual:update     # refresh baselines (then eyeball the PNGs before
 ## Preview-realm gate (real engine, own config)
 
 `preview-realm.gate.spec.ts` builds the starter scene **in the page** with the scene editor's
-`@dcl-editor/web-build`, publishes it to the service worker's preview realm
+`@dcl-editor/scene-compiler`, publishes it to the service worker's preview realm
 (`../../deploy/web/PREVIEW_REALM.md`), boots the engine into that realm, then edits the source,
 rebuilds, and sends `/reload <entityId>`. It passes when the engine reads the entity again and the
 scene logs the new version marker. No server holds the scene; the worker's own request log is the
 evidence, printed at the end of the run.
 
 ```bash
-# a dcl-editor checkout, after `npm run build -w @dcl-editor/web-build`
+# a dcl-editor checkout, after `npm run build -w @dcl-editor/scene-compiler`
 WEB_EDITOR_DIR=/path/to/dcl-editor npx playwright test --config playwright.gate.config.ts preview-realm
 ```
 
 It starts its own Vite server on `GATE_PORT` (`e2e/vite.gate.config.ts`: the app's config plus the
-web-build files under `/web-build/`) and a bridge scene of its own on `GATE_BRIDGE_PORT` (never
+scene-compiler files under `/scene-compiler/`) and a bridge scene of its own on `GATE_BRIDGE_PORT` (never
 reused, so a dev server's :8100 is left alone); every spec loads the page with `?bridgePort=`
 pointing at it (`e2e/gate.ts`).
 `npm run test:e2e` skips it.

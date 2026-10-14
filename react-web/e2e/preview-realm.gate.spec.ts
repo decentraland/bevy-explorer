@@ -1,4 +1,4 @@
-// The preview-realm gate: a scene built IN THIS PAGE (the editor's web-build) is served by the
+// The preview-realm gate: a scene built IN THIS PAGE (the editor's scene-compiler) is served by the
 // service worker's preview realm (deploy/web/PREVIEW_REALM.md), the real engine runs it, and after
 // an edit + rebuild + '/reload <entityId>' the engine fetches the entity again and runs the new
 // bundle. Nothing serves the scene but the service worker. Run: see playwright.gate.config.ts.
@@ -23,7 +23,7 @@ interface SceneBuilder {
     options: { production: boolean }
   ): Promise<{ ok: boolean; outputs: Map<string, Uint8Array>; diagnostics: { message: string }[]; ms: number }>
 }
-interface WebBuild {
+interface SceneCompiler {
   createSceneBuilder(urls: { workerUrl: string; wasmUrl: string; snapshotUrl: string }): SceneBuilder
   previewRealmUrl(pageDir: string, projectId: string): string
   publishPreview(input: {
@@ -36,7 +36,7 @@ interface WebBuild {
     machineId: string
   }): Promise<{ realmUrl: string; entityId: string }>
 }
-type GateWindow = Window & { __webBuild?: WebBuild; __gateBuilder?: SceneBuilder }
+type GateWindow = Window & { __sceneCompiler?: SceneCompiler; __gateBuilder?: SceneBuilder }
 
 interface PreviewRequest {
   t: number
@@ -92,12 +92,12 @@ async function previewRequests(worker: Worker): Promise<PreviewRequest[]> {
   return log
 }
 
-async function loadWebBuild(page: Page): Promise<void> {
+async function loadSceneCompiler(page: Page): Promise<void> {
   await page.addScriptTag({
     type: 'module',
-    content: "import * as webBuild from '/web-build/index.js'; window.__webBuild = webBuild"
+    content: "import * as sceneCompiler from '/scene-compiler/index.js'; window.__sceneCompiler = sceneCompiler"
   })
-  await page.waitForFunction(() => (window as GateWindow).__webBuild != null)
+  await page.waitForFunction(() => (window as GateWindow).__sceneCompiler != null)
 }
 
 interface Built {
@@ -113,13 +113,13 @@ async function build(page: Page, files: Record<string, string>, publish: { machi
   return page.evaluate(
     async ({ files, projectId, publish }) => {
       const w = window as GateWindow
-      const webBuild = w.__webBuild!
+      const sceneCompiler = w.__sceneCompiler!
       const pageDir = new URL(location.pathname.replace(/\/?$/, '/'), location.href).href
       const start = performance.now()
-      w.__gateBuilder ??= webBuild.createSceneBuilder({
-        workerUrl: `${pageDir}web-build/worker.js`,
-        wasmUrl: `${pageDir}web-build/esbuild.wasm`,
-        snapshotUrl: `${pageDir}web-build/sdk-snapshot.json`
+      w.__gateBuilder ??= sceneCompiler.createSceneBuilder({
+        workerUrl: `${pageDir}scene-compiler/worker.js`,
+        wasmUrl: `${pageDir}scene-compiler/esbuild.wasm`,
+        snapshotUrl: `${pageDir}scene-compiler/sdk-snapshot.json`
       })
       const { sdkVersion } = await w.__gateBuilder.ready
       const ready = performance.now()
@@ -130,8 +130,8 @@ async function build(page: Page, files: Record<string, string>, publish: { machi
 
       let published: Built['published'] = null
       if (publish) {
-        const realmUrl = webBuild.previewRealmUrl(pageDir, projectId)
-        const { entityId } = await webBuild.publishPreview({
+        const realmUrl = sceneCompiler.previewRealmUrl(pageDir, projectId)
+        const { entityId } = await sceneCompiler.publishPreview({
           realmUrl,
           projectId,
           files: project,
@@ -178,7 +178,7 @@ test('a scene built in the browser runs from the preview realm and hot-reloads',
   await page.waitForLoadState('load')
   const worker = await previewWorker(context)
   await recordPreviewRequests(worker)
-  await loadWebBuild(page)
+  await loadSceneCompiler(page)
   // per run, as a creator's id would be: the engine keys the scene's room on the entity id
   const machineId = `gate${Date.now().toString(36)}`
   const first = await build(page, sceneFiles(1), { machineId })
@@ -204,7 +204,7 @@ test('a scene built in the browser runs from the preview realm and hot-reloads',
     .catch(() => false)
 
   // 3. Edit, rebuild in the engine's page, rewrite the store, reload the one scene.
-  await loadWebBuild(page)
+  await loadSceneCompiler(page)
   const warm = await build(page, sceneFiles(1), null)
   const second = await build(page, sceneFiles(2), { machineId })
   const bundleV2 = second.published!.bundleHash

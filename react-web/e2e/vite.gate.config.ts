@@ -1,14 +1,14 @@
 // Dev server for the gates (playwright.gate.config.ts): the app's own config plus the editor's
-// in-browser build tool, served same-origin under /web-build/, and a one-scene realm to start in.
+// in-browser build tool, served same-origin under /scene-compiler/, and a one-scene realm to start in.
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { defineConfig, mergeConfig, type Plugin } from 'vite'
 import base, { serveStatic } from '../vite.config.ts'
 import { GATE_PORTS } from './ports.ts'
 
-const dist = join(process.env.WEB_EDITOR_DIR ?? '', 'packages/web-build/dist')
+const dist = join(process.env.WEB_EDITOR_DIR ?? '', 'packages/scene-compiler/dist')
 if (!existsSync(join(dist, 'index.js'))) {
-  throw new Error(`WEB_EDITOR_DIR must be a dcl-editor checkout with web-build built (no ${dist}/index.js)`)
+  throw new Error(`WEB_EDITOR_DIR must be a dcl-editor checkout with scene-compiler built (no ${dist}/index.js)`)
 }
 
 const HOME = '/gate-home/'
@@ -80,6 +80,6 @@ export default defineConfig((env) =>
   mergeConfig(base(env), {
     // its own dep cache, per page port: this server can run next to the everyday dev server and another gate run
     cacheDir: `.vite/gate-${GATE_PORTS.page}`,
-    plugins: [serveStatic('/web-build/', dist), homeRealm()]
+    plugins: [serveStatic('/scene-compiler/', dist), homeRealm()]
   })
 )
