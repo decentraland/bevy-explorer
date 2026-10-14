@@ -52,10 +52,11 @@ const badgeLabel = (badge: Badge): string => (badge.tier != null ? `${badge.name
 // unity-explorer's badge date: month and year ("Oct. 2026").
 const monthYear = (ms: number): string => `${new Date(ms).toLocaleDateString('en-US', { month: 'short' })}. ${new Date(ms).getFullYear()}`
 
-function BadgeIcon({ badge }: { badge: Badge }): React.JSX.Element {
+// The badge picture in a circle: the 56px tile by default, `className` for the other sizes.
+function BadgeIcon({ image, alt, className = '' }: { image?: string; alt: string; className?: string }): React.JSX.Element {
   return (
-    <div className={styles.badge}>
-      {badge.image ? <img src={badge.image} alt={badge.name} /> : <span className={styles.badgePlaceholder} />}
+    <div className={`${styles.badge} ${className}`}>
+      {image ? <img src={image} alt={alt} /> : <span className={styles.badgePlaceholder} />}
     </div>
   )
 }
@@ -64,7 +65,7 @@ function BadgeIcon({ badge }: { badge: Badge }): React.JSX.Element {
 function BadgeTile({ badge }: { badge: Badge }): React.JSX.Element {
   return (
     <Tooltip label={badgeLabel(badge)} side="top">
-      <BadgeIcon badge={badge} />
+      <BadgeIcon image={badge.image} alt={badge.name} />
     </Tooltip>
   )
 }
@@ -89,7 +90,7 @@ function BadgeCard({ badge, isSelf, selected, onSelect }: { badge: Badge; isSelf
   const foot =
     isSelf && badge.progress != null ? (
       <>
-        {badge.tiers != null && <span className={styles.badgeNextTier}>NEXT TIER</span>}
+        {badge.tiers != null && <span className={styles.badgeLabel}>NEXT TIER</span>}
         <BadgeProgress {...badge.progress} />
       </>
     ) : badge.unlockedAt != null ? (
@@ -100,11 +101,11 @@ function BadgeCard({ badge, isSelf, selected, onSelect }: { badge: Badge; isSelf
   return (
     <button
       type="button"
-      className={`${styles.badgeCard} ${selected ? styles.badgeCardSelected : ''} ${badge.locked ? styles.badgeLocked : ''}`}
+      className={`${styles.badgeCard} ${selected ? styles.picked : ''} ${badge.locked ? styles.badgeLocked : ''}`}
       aria-pressed={selected}
       onClick={() => onSelect(badge.id)}
     >
-      <BadgeIcon badge={badge} />
+      <BadgeIcon image={badge.image} alt={badge.name} />
       <div className={styles.badgeName}>{badgeLabel(badge)}</div>
       <div className={styles.badgeFoot}>{foot}</div>
     </button>
@@ -126,9 +127,7 @@ function BadgeDetail({ badge, tierId, isSelf, onSelectTier }: { badge: Badge; ti
   const nextTier = badge.tiers?.find((t) => t.unlockedAt == null)
   return (
     <div className={styles.badgeDetail}>
-      <div className={`${styles.badgeHero} ${locked ? styles.badgeLocked : ''}`}>
-        {image ? <img src={image} alt={name} /> : <span className={styles.badgePlaceholder} />}
-      </div>
+      <BadgeIcon image={image} alt={name} className={`${styles.badgeHero} ${locked ? styles.badgeLocked : ''}`} />
       <h2 className={styles.badgeDetailName}>{name}</h2>
       <div className={styles.badgeDetailDate}>{unlockedAt != null ? `Unlocked: ${monthYear(unlockedAt)}` : 'Locked'}</div>
       {description && <p className={styles.badgeDetailDesc}>{description}</p>}
@@ -138,12 +137,12 @@ function BadgeDetail({ badge, tierId, isSelf, onSelectTier }: { badge: Badge; ti
             <button
               key={t.id}
               type="button"
-              className={`${styles.tierBtn} ${t.id === tier?.id ? styles.tierBtnSelected : ''} ${t.unlockedAt == null ? styles.badgeLocked : ''}`}
+              className={`${styles.tierBtn} ${t.id === tier?.id ? styles.picked : ''} ${t.unlockedAt == null ? styles.badgeLocked : ''}`}
               aria-pressed={t.id === tier?.id}
               aria-label={`${badge.name} ${t.name}`}
               onClick={() => onSelectTier(t.id)}
             >
-              {t.image ? <img src={t.image} alt="" /> : <span className={styles.badgePlaceholder} />}
+              <BadgeIcon image={t.image} alt="" className={styles.badgeSm} />
             </button>
           ))}
         </div>
@@ -152,7 +151,7 @@ function BadgeDetail({ badge, tierId, isSelf, onSelectTier }: { badge: Badge; ti
         <div className={styles.badgeNext}>
           {nextTier != null && (
             <>
-              <div className={styles.badgeNextTitle}>NEXT TIER: {nextTier.name}</div>
+              <div className={styles.badgeLabel}>NEXT TIER: {nextTier.name}</div>
               <div className={styles.badgeNextDesc}>{nextTier.description}</div>
             </>
           )}

@@ -221,7 +221,7 @@
 .badgeCard:hover {
   background: var(--list-row-hover);
 }
-.badgeCardSelected {
+.picked {
   border-color: var(--brand);
 }
 .badgeName {
@@ -242,7 +242,7 @@
   font-size: var(--fs-2xs);
   color: var(--ink-6);
 }
-.badgeNextTier {
+.badgeLabel {
   font-weight: 700;
   letter-spacing: 0.06em;
 }
@@ -270,8 +270,6 @@
   background: var(--brand);
 }
 .badgeBarValue {
-  font-size: var(--fs-2xs);
-  color: var(--ink-6);
   white-space: nowrap;
 }
 
@@ -284,26 +282,6 @@
   flex-direction: column;
   gap: 0.4rem;
   overflow-y: auto;
-}
-.badgeHero {
-  align-self: center;
-  width: 70%;
-  max-width: 240px;
-  aspect-ratio: 1;
-  margin-bottom: 0.5rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.badgeHero img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-/* The hero's height comes from its aspect ratio, which a percentage height can't resolve against. */
-.badgeHero .badgePlaceholder {
-  height: auto;
-  aspect-ratio: 1;
 }
 .badgeDetailName {
   margin: 0;
@@ -325,36 +303,20 @@
   margin-top: 0.4rem;
 }
 .tierBtn {
-  width: 40px;
-  height: 40px;
   padding: 2px;
   border: 2px solid transparent;
   border-radius: 50%;
-  background: var(--white-10);
+  background: none;
   cursor: pointer;
   display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.tierBtn img {
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  object-fit: cover;
-}
-.tierBtnSelected {
-  border-color: var(--brand);
 }
 .badgeNext {
   margin-top: 0.75rem;
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-}
-.badgeNextTitle {
   font-size: var(--fs-xs);
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  color: var(--ink-6);
 }
 .badgeNextDesc {
   font-size: var(--fs-xs);
@@ -377,9 +339,26 @@
 }
 .badgePlaceholder {
   width: 60%;
-  height: 60%;
+  aspect-ratio: 1;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.15);
+}
+/* Size modifiers for .badge; after it so they win the cascade. */
+.badgeSm {
+  width: 36px;
+  height: 36px;
+}
+.badgeHero {
+  align-self: center;
+  width: 70%;
+  max-width: 240px;
+  height: auto;
+  aspect-ratio: 1;
+  margin-bottom: 0.5rem;
+  background: none;
+}
+.badgeHero img {
+  object-fit: contain;
 }
 
 /* minmax(0, 1fr): a plain 1fr track's min size is the item's min-content, and the card's
