@@ -804,7 +804,7 @@ pub fn change_realm(
             let known_secret = world
                 .as_ref()
                 .filter(|(world, _)| {
-                    world_access::world_name(&current_realm.address).as_ref() == Some(world)
+                    world_access::world_name(&current_realm.about_url).as_ref() == Some(world)
                 })
                 .and_then(|_| world_secret.0.clone());
             let prompter = prompter.as_deref().cloned();

@@ -60,7 +60,7 @@ pub struct WorldCommsSecret(pub Option<String>);
 #[derive(Deserialize, Default)]
 struct WorldPermissions {
     #[serde(default)]
-    owner: String,
+    owner: Option<String>,
     #[serde(default)]
     permissions: Permissions,
 }
@@ -125,18 +125,24 @@ pub async fn check_world_access(
         .address()
         .map(|address| format!("{address:#x}"))
         .unwrap_or_default();
-    let is_owner = address.eq_ignore_ascii_case(&permissions.owner);
+    // the name's owner is let in whatever the rule, as the worlds server does
+    if permissions
+        .owner
+        .as_deref()
+        .is_some_and(|owner| owner.eq_ignore_ascii_case(&address))
+    {
+        return Ok(None);
+    }
     let access = permissions.permissions.access.unwrap_or_default();
 
     match access.ty.to_ascii_lowercase().as_str() {
         "" | "unrestricted" => Ok(None),
         "allow-list" => {
-            if is_owner
-                || access
-                    .wallets
-                    .iter()
-                    .flatten()
-                    .any(|wallet| wallet.eq_ignore_ascii_case(&address))
+            if access
+                .wallets
+                .iter()
+                .flatten()
+                .any(|wallet| wallet.eq_ignore_ascii_case(&address))
             {
                 return Ok(None);
             }
@@ -148,9 +154,6 @@ pub async fn check_world_access(
             Err("you are not on this world's access list".to_owned())
         }
         "shared-secret" => {
-            if is_owner {
-                return Ok(None);
-            }
             if let Some(password) = known_secret {
                 if validate_password(realm, world, &password, wallet, client)
                     .await
@@ -280,7 +283,8 @@ mod tests {
         assert!(access.wallets.is_none() && access.communities.is_none());
 
         let record: WorldPermissions =
-            serde_json::from_str(r#"{"permissions":{"access":{}}}"#).unwrap();
+            serde_json::from_str(r#"{"owner":null,"permissions":{"access":{}}}"#).unwrap();
+        assert!(record.owner.is_none());
         assert_eq!(record.permissions.access.unwrap().ty, "");
 
         let record: WorldPermissions = serde_json::from_str(r#"{}"#).unwrap();
@@ -295,6 +299,11 @@ mod tests {
         );
         assert_eq!(
             world_name("https://worlds-content-server.decentraland.org/world/boedo.dcl.eth/"),
+            Some("boedo.dcl.eth".to_owned())
+        );
+        // the current realm is known by its about url
+        assert_eq!(
+            world_name("https://worlds-content-server.decentraland.org/world/boedo.dcl.eth/about"),
             Some("boedo.dcl.eth".to_owned())
         );
     }

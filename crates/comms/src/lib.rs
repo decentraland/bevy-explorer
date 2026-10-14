@@ -657,7 +657,7 @@ fn connect_scene_room(
             // A world's scene rooms come from the worlds server itself, which applies the
             // world's access rule and takes the password the realm was entered with.
             let world = (!common::structs::server_mode() && !preview)
-                .then(|| ipfs::world_access::world_name(&current_realm.address))
+                .then(|| ipfs::world_access::world_name(&current_realm.about_url))
                 .flatten();
             let url = match (&world, common::structs::server_mode(), preview) {
                 (Some(world), _, _) => format!(
