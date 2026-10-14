@@ -88,12 +88,15 @@ export function PlacesBrowser({
   )
   const showHighlights = section === 'all' && category === 'all' && search.trim() === '' && !loading && !error
   // The discover grid shows everything not already surfaced in a highlight section above it.
+  // A search or My places shows everything it returns: hiding is for the unfiltered browse only.
+  const filtered = search.trim() !== '' || section !== 'all'
   const mainList = useMemo(() => {
+    if (filtered) return list
     const kept = list.filter((p) => !isHiddenPlace(p))
     if (!showHighlights) return kept
     const featuredIds = new Set(featured.map((p) => p.id))
     return kept.filter((p) => !liveIds.has(p.id) && !featuredIds.has(p.id))
-  }, [list, showHighlights, liveIds, featured])
+  }, [list, filtered, showHighlights, liveIds, featured])
 
   // Live Now is a fixed 4-up row: auto-fill would take the column count from the viewport (3 at
   // 1440px, 7 at 2560px).
@@ -145,7 +148,7 @@ export function PlacesBrowser({
           <BrowseLoading />
         ) : error ? (
           <EmptyState variant="inline" tone="error" title="Couldn't load places" subtitle={error} />
-        ) : list.length === 0 ? (
+        ) : mainList.length === 0 ? (
           <EmptyState
             variant="inline"
             icon={section === 'favourites' ? <Heart size={34} /> : <Pin size={34} />}
