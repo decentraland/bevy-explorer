@@ -139,7 +139,7 @@ async fn scene_ipc_in(
                 let response_sx = dcl_deno::spawn_scene(
                     new_scene_info.initial_crdt_store,
                     new_scene_info.scene_context,
-                    ipfs::SceneJsFile(Arc::new(new_scene_info.scene_js)),
+                    common::structs::SceneJsFile(Arc::new(new_scene_info.scene_js)),
                     new_scene_info.crdt_component_interfaces,
                     SceneResponseSender::new(
                         SceneId(bevy::ecs::entity::Entity::from_bits(id)),

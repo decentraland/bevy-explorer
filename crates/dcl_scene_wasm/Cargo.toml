@@ -12,7 +12,6 @@ crate-type = ["cdylib"]
 common = { workspace = true }
 dcl = { workspace = true }
 dcl_wasm = { workspace = true }
-ipfs = { workspace = true }
 system_bridge = { workspace = true }
 bevy = { workspace = true, features = ["web-worker", "webgpu"] }
 tokio = { workspace = true }

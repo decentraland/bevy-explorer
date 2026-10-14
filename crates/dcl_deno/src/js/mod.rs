@@ -23,7 +23,7 @@ use platform::project_directories;
 use system_bridge::SystemApi;
 use tokio::{sync::mpsc::UnboundedReceiver, time::timeout};
 
-use ipfs::SceneJsFile;
+use common::structs::SceneJsFile;
 
 #[cfg(feature = "inspect")]
 use crate::js::inspector::InspectorServer;
@@ -623,9 +623,9 @@ fn op_error(state: Rc<RefCell<OpState>>, #[string] message: String) {
 mod tests {
     use std::sync::Arc;
 
+    use common::structs::SceneJsFile;
     use dcl::{interface::crdt_context::CrdtContext, SceneId};
     use deno_core::ascii_str;
-    use ipfs::SceneJsFile;
 
     use super::create_runtime;
 

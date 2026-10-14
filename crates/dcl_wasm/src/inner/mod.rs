@@ -7,6 +7,7 @@ pub mod relay_proto;
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use bevy::{log::tracing::span::EnteredSpan, tasks::IoTaskPool};
+use common::structs::SceneJsFile;
 use common::{rpc::CancellationToken, structs::GlobalCrdtStateUpdate};
 use dcl::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},
@@ -16,7 +17,6 @@ use dcl::{
     RendererResponse, SceneElapsedTime,
 };
 use gotham_state::GothamState;
-use ipfs::SceneJsFile;
 use once_cell::sync::OnceCell;
 use system_bridge::SystemApi;
 use tokio::sync::{

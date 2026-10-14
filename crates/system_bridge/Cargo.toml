@@ -18,7 +18,6 @@ bevy_console = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
-ipfs = { workspace = true }
 serde_json = { workspace = true }
 dcl_component = { workspace = true }
 platform = { workspace = true }

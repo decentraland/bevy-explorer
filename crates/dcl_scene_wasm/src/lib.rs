@@ -86,7 +86,7 @@ fn init_scene(init: RelayInit) -> bool {
         initial_crdt_store,
         scene_context,
         thread_rx,
-        scene_js: ipfs::SceneJsFile(Arc::new(scene_js)),
+        scene_js: common::structs::SceneJsFile(Arc::new(scene_js)),
         crdt_component_interfaces,
         // the relay attaches the scene's id on the engine side; the tag here is dropped
         renderer_sender: SceneResponseSender::new(SceneId::DUMMY, renderer_sender),

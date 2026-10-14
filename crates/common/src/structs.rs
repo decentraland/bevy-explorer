@@ -2022,3 +2022,7 @@ pub struct DmPrivacyOf {
     pub address: String,
     pub privacy: DmPrivacy,
 }
+
+/// A scene's javascript, as loaded from its content
+#[derive(Asset, Debug, Clone, TypePath)]
+pub struct SceneJsFile(pub Arc<String>);
