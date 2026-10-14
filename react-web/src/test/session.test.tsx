@@ -387,6 +387,12 @@ describe('embedded auto-boot (?guest=1 / ?systemScene=)', () => {
     await waitFor(() => expect(h.session().phase).toBe('world'))
   })
 
+  it('an editor link drives a guest past the lobby into the world', async () => {
+    window.history.replaceState(null, '', '/?guest=1&editor=my-scene')
+    const h = renderSession({ userId: null })
+    await waitFor(() => expect(h.session().phase).toBe('entering'))
+  })
+
   it('?systemScene= boots straight in with no React login at all (the scene owns it)', async () => {
     window.history.replaceState(null, '', '/?systemScene=http://localhost:8100')
     const h = renderSession({ userId: null })

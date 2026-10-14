@@ -30,6 +30,7 @@ import { openProfileCard } from '../profileCard/ProfileCard'
 import { formatConsoleReply, parseChatCommand } from '../chat/chatCommands'
 import { PARCEL_METERS, isGenesisSatelliteView } from '../map/atlas'
 import { EDITOR_BUILD } from '../editorHost/config'
+import { editorEntry } from '../editorHost/source'
 import { hudActsOn, type EditorHudMode } from '../editorHost/hudMode'
 import type {
   AvatarColorTarget,
@@ -1936,6 +1937,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       // A hidden HUD renders no picker — land at Genesis 0,0 so the boot doesn't strand on an
       // invisible screen (parity with the picker's "skip").
       if (boot.current.hideHud) return { kind: 'parcel', x: 0, y: 0 }
+      // An editor link (?editor[=<projectId>]) opens the editor once in-world: land rather than wait in the lobby.
+      if (editorEntry(location.search).open) return { kind: 'parcel', x: 0, y: 0 }
       return null
     })()
   )
