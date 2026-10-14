@@ -67,7 +67,6 @@ use ipfs_path::IpfsAsset;
 use platform::AsyncRwLock;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
-use wallet::Wallet;
 
 use console::{DoAddConsoleCommand, PendingConsoleResponses};
 
@@ -77,7 +76,7 @@ use platform::ReqwestBuilderExt;
 #[cfg(feature = "ipfs_debug")]
 use crate::ipfs_debug::{IpfsDebug, IpfsDebugReceiver, IpfsDebugStatus};
 pub mod world_access;
-use world_access::{WorldCommsSecret, WorldPasswordPrompter};
+use world_access::{RealmGate, WorldCommsSecret};
 
 use common::util::JoinRelativeExt;
 
@@ -679,8 +678,7 @@ pub fn change_realm(
     // the latest issued change's id, watched by the earlier ones so they stand down
     mut latest_issued: Local<Option<tokio::sync::watch::Sender<u64>>>,
     world_hold: Option<Res<WorldHold>>,
-    wallet: Option<Res<Wallet>>,
-    prompter: Option<Res<WorldPasswordPrompter>>,
+    gate: Option<Res<RealmGate>>,
     mut world_secret: ResMut<WorldCommsSecret>,
     mut commands: Commands,
 ) {
@@ -793,12 +791,11 @@ pub fn change_realm(
                 report: request.report,
                 result: rx,
             });
-            // A world is entered only once it says the player may (see world_access). Not on a
-            // server (it hosts, it never enters) and not without an identity (nothing to check
-            // against, and no comms to be kept out of).
+            // A world is entered only once the gate says the player may (see world_access). Not
+            // on a server (it hosts, it never enters).
             let world = world_access::world_name(&new_realm)
                 .filter(|_| !server_mode())
-                .zip(wallet.as_deref().filter(|w| w.address().is_some()).cloned());
+                .zip(gate.as_deref().cloned());
             // re-entering the current world: its password is known
             let known_secret = world
                 .as_ref()
@@ -806,24 +803,24 @@ pub fn change_realm(
                     world_access::world_name(&current_realm.address).as_ref() == Some(world)
                 })
                 .and_then(|_| world_secret.0.clone());
-            let prompter = prompter.as_deref().cloned();
-            let client = ipfs.client();
             IoTaskPool::get()
                 .spawn_compat(async move {
-                    let mut superseded = superseded;
                     let result = async {
-                        let secret = match &world {
-                            Some((world, wallet)) => {
-                                world_access::check_world_access(
-                                    &new_realm,
+                        let secret = match world {
+                            Some((world, gate)) => {
+                                let (answer, answered) = tokio::sync::oneshot::channel();
+                                let request = world_access::RealmGateRequest {
+                                    realm: new_realm.clone(),
                                     world,
-                                    wallet,
                                     known_secret,
-                                    &client,
-                                    prompter.as_ref(),
-                                    &mut superseded,
-                                )
-                                .await?
+                                    superseded: superseded.clone(),
+                                    answer,
+                                };
+                                const UNANSWERED: &str = "couldn't check who may enter";
+                                gate.0.send(request).map_err(|_| UNANSWERED.to_owned())?;
+                                answered
+                                    .await
+                                    .unwrap_or_else(|_| Err(UNANSWERED.to_owned()))?
                             }
                             None => None,
                         };
