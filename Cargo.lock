@@ -1960,27 +1960,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bevy_hanabi"
-version = "0.16.0"
-source = "git+https://github.com/robtfm/bevy_hanabi?branch=0.16-dcl#01c02483c7475edbd2772fd491ae34aa598ad418"
-dependencies = [
- "anyhow",
- "bevy",
- "bitflags 2.13.1",
- "bytemuck",
- "copyless",
- "fixedbitset 0.5.7",
- "naga",
- "naga_oil",
- "rand 0.8.8",
- "rand_pcg",
- "ron",
- "serde",
- "thiserror 2.0.18",
- "wgpu",
-]
-
-[[package]]
 name = "bevy_image"
 version = "0.16.1"
 source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6cb2411933c7a4aafa2c0ed86107b631d583d97a"
@@ -3750,12 +3729,6 @@ dependencies = [
  "time",
  "url",
 ]
-
-[[package]]
-name = "copyless"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2df960f5d869b2dd8532793fde43eb5427cceb126c929747a26823ab0eeb536"
 
 [[package]]
 name = "copypwasmta"
@@ -9134,9 +9107,9 @@ name = "particle_system"
 version = "0.1.0"
 dependencies = [
  "bevy",
- "bevy_hanabi",
  "common",
  "dcl_component",
+ "rand 0.8.8",
  "scene_runner",
 ]
 
@@ -9954,15 +9927,6 @@ checksum = "32cb0b9bc82b0a0876c2dd994a7e7a2683d3e7390ca40e6886785ef0c7e3ee31"
 dependencies = [
  "num-traits",
  "rand 0.8.8",
-]
-
-[[package]]
-name = "rand_pcg"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59cad018caf63deb318e5a4586d99a24424a364f40f1e5778c29aca23f4fc73e"
-dependencies = [
- "rand_core 0.6.4",
 ]
 
 [[package]]
