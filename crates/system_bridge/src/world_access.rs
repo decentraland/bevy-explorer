@@ -5,7 +5,7 @@ use std::fmt;
 
 use bevy::prelude::*;
 use common::rpc::RpcStreamSender;
-use ipfs::world_access::{WorldPasswordPrompt, WorldPasswordPrompter};
+use common::structs::{WorldPasswordPrompt, WorldPasswordPrompter};
 use serde::{Deserialize, Serialize};
 use system_api_types::{WorldAccessEvent, WorldPasswordRequest};
 use tokio::sync::mpsc;

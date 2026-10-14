@@ -9,10 +9,13 @@
 use std::time::Duration;
 
 use bevy::prelude::*;
-use common::base_domain::{self, Service};
+use common::{
+    base_domain::{self, Service},
+    structs::{WorldPasswordPrompt, WorldPasswordPrompter},
+};
 use http::Uri;
 use serde::Deserialize;
-use tokio::sync::{mpsc, oneshot, watch};
+use tokio::sync::{oneshot, watch};
 use wallet::{sign_request, SignedLoginMeta, Wallet};
 
 pub const SUPERSEDED: &str = "superseded by a later realm change";
@@ -47,20 +50,6 @@ pub fn world_name(realm: &str) -> Option<String> {
         .filter(|name| !name.is_empty())?;
     Some(name.to_owned())
 }
-
-/// A password the HUD must ask for; answered with the password, or `None` when the player gives
-/// up. Dropped unanswered when the realm change no longer needs it.
-pub struct WorldPasswordPrompt {
-    pub world: String,
-    /// Why the previous answer was refused; `None` on the first ask
-    pub error: Option<String>,
-    pub answer: oneshot::Sender<Option<String>>,
-}
-
-/// Where password prompts go, installed by whatever shows them (the system bridge). Without it a
-/// password-protected world can't be entered.
-#[derive(Resource, Clone)]
-pub struct WorldPasswordPrompter(pub mpsc::UnboundedSender<WorldPasswordPrompt>);
 
 /// The validated password of the world being entered, for its signed comms login; `None` on
 /// any other realm.

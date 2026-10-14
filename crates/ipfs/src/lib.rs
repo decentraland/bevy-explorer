@@ -77,7 +77,8 @@ use platform::ReqwestBuilderExt;
 #[cfg(feature = "ipfs_debug")]
 use crate::ipfs_debug::{IpfsDebug, IpfsDebugReceiver, IpfsDebugStatus};
 pub mod world_access;
-use world_access::{WorldCommsSecret, WorldPasswordPrompter};
+use common::structs::WorldPasswordPrompter;
+use world_access::WorldCommsSecret;
 
 use common::util::JoinRelativeExt;
 
