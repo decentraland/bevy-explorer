@@ -10,8 +10,6 @@
 struct TextSdfParams {
     outline_color: vec4<f32>,
     shadow_color: vec4<f32>,
-    // atlas pixels, +y up
-    shadow_offset: vec2<f32>,
     // atlas pixels, centred on the ink edge
     outline_width: f32,
     // atlas pixels added to the shadow's edge transition
@@ -21,7 +19,8 @@ struct TextSdfParams {
     flags: u32,
 }
 
-// which layers to draw (each effect is normally a mesh of its own, behind the face)
+// which layers to draw (each effect is normally a mesh of its own, drawn before the face; the
+// shadow's quads are offset by the shape, so it samples the same glyph as the face)
 const TEXT_SDF_FACE: u32 = 1u;
 const TEXT_SDF_OUTLINE: u32 = 2u;
 const TEXT_SDF_SHADOW: u32 = 4u;
@@ -95,8 +94,7 @@ fn text_sdf_base_color(raw_uv: vec2<f32>, vertex_color: vec4<f32>) -> vec4<f32> 
     }
 
     if (text_sdf.flags & TEXT_SDF_SHADOW) != 0u {
-        let shadow_uv = uv - vec2(text_sdf.shadow_offset.x, -text_sdf.shadow_offset.y) / dims;
-        let shadow_alpha = layer_alpha(shadow_uv, dx, dy, px, 0.0, text_sdf.shadow_softness);
+        let shadow_alpha = layer_alpha(uv, dx, dy, px, 0.0, text_sdf.shadow_softness);
         let shadow = text_sdf.shadow_color * vec4(1.0, 1.0, 1.0, shadow_alpha);
         color = over(color, shadow);
     }

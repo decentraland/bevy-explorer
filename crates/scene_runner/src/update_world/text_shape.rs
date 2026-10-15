@@ -150,7 +150,13 @@ impl Plugin for TextShapePlugin {
         );
         app.add_plugins(MaterialExtPlugin::<TextSdfMaterial>::default());
         app.init_resource::<GlyphAtlases>();
-        app.init_resource::<TextShapeMaterials>();
+        app.add_observer(
+            |trigger: Trigger<OnAdd, RendererSceneContext>, mut commands: Commands| {
+                commands
+                    .entity(trigger.target())
+                    .insert(TextShapeMaterials::default());
+            },
+        );
         app.init_resource::<SwashCache>();
         app.add_systems(
             Update,
@@ -197,28 +203,49 @@ pub struct RetryTextShape(u32);
 #[derive(Default, Resource, Deref, DerefMut)]
 pub struct UnrecognisedTags(HashSet<String>);
 
-/// Materials for text shape meshes: one per scene, atlas page, atlas generation and set of
-/// text effects.
-#[derive(Default, Resource)]
+/// A scene's materials for its text shape meshes: one per atlas page, atlas generation and
+/// set of text effects. Weak handles: the meshes hold the strong ones, so a material lives
+/// exactly as long as a shape draws with it, and is remade if asked for again after that.
+#[derive(Default, Component)]
 struct TextShapeMaterials(HashMap<MaterialKey, Handle<TextSdfMaterial>>);
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct MaterialKey {
-    scene: Entity,
     atlas: AtlasKey,
     generation: u32,
     page: Page,
     /// The effect parameters' bits.
-    effects: [u32; 13],
+    effects: [u32; 11],
+    depth_write: bool,
 }
 
 /// The scene-bound material drawing an atlas page (text_sdf.wgsl).
 pub type TextSdfMaterial = ExtendedMaterial<TextSdf>;
 
 #[derive(Asset, TypePath, Clone, AsBindGroup)]
+#[bind_group_data(TextSdfKey)]
 pub struct TextSdf {
     #[uniform(200)]
     pub params: TextSdfParams,
+    /// Opaque text is blended only for its anti-aliased edges: like an alpha-masked material
+    /// it writes depth, so a transparent quad sorted after it (a nametag) can't draw over it.
+    /// Translucent text is an ordinary transparent: writing depth would cut whatever is
+    /// behind it out of transparent surfaces sorted after it. Shadows never write: their
+    /// quads are offset copies of the face's on the same plane, which the face must win.
+    pub depth_write: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TextSdfKey {
+    depth_write: bool,
+}
+
+impl From<&TextSdf> for TextSdfKey {
+    fn from(material: &TextSdf) -> Self {
+        Self {
+            depth_write: material.depth_write,
+        }
+    }
 }
 
 impl MaterialExtension for TextSdf {
@@ -232,12 +259,11 @@ impl MaterialExtension for TextSdf {
         _: &MaterialExtensionPipeline,
         descriptor: &mut RenderPipelineDescriptor,
         _: &MeshVertexBufferLayoutRef,
-        _: MaterialExtensionKey<Self>,
+        key: MaterialExtensionKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
-        // text is blended for its soft edges but is otherwise solid: write depth so nearby
-        // geometry behind it can't draw over it (fully transparent fragments are discarded)
+        // fully transparent fragments are discarded, so only the ink and its edges write
         if let Some(depth) = descriptor.depth_stencil.as_mut() {
-            depth.depth_write_enabled = true;
+            depth.depth_write_enabled = key.bind_group_data.depth_write;
         }
         Ok(())
     }
@@ -253,17 +279,13 @@ mod decl {
     // temporary for ShaderType macro, remove in future
     #![allow(dead_code)]
 
-    use bevy::{
-        math::{Vec2, Vec4},
-        render::render_resource::ShaderType,
-    };
+    use bevy::{math::Vec4, render::render_resource::ShaderType};
 
     /// Text effects, in atlas pixels; see text_sdf_common.wgsl.
     #[derive(Clone, Copy, ShaderType)]
     pub struct TextSdfParams {
         pub outline_color: Vec4,
         pub shadow_color: Vec4,
-        pub shadow_offset: Vec2,
         pub outline_width: f32,
         pub shadow_softness: f32,
         pub spread: f32,
@@ -272,19 +294,60 @@ mod decl {
 }
 pub use decl::*;
 
-/// Which layers a material draws. Each effect is a mesh of its own at its own depth (shadow
-/// behind outline behind face), as neighbouring glyph quads overlap: a glyph's effect must
-/// never paint over its neighbour's face.
+/// Which layers a material draws. Each effect is a mesh of its own, drawn before the next
+/// (shadow, outline, face), as neighbouring glyph quads overlap: a glyph's effect must never
+/// paint over its neighbour's face.
 const TEXT_SDF_FACE: u32 = 1;
 const TEXT_SDF_OUTLINE: u32 = 2;
 const TEXT_SDF_SHADOW: u32 = 4;
 /// The page holds bitmaps (colour glyphs), not distance fields: no effects.
 const TEXT_SDF_BITMAP: u32 = 8;
 
-/// Depth between the layers, in meters.
+/// Depth between a layer's quads and its extras, in meters: the quads may write depth, so a
+/// bar must not share the glyphs' plane.
 const LAYER_Z: f32 = 0.001;
+/// Sort distance between the effect layers. The layers are coplanar and sorted by their shared
+/// translation, so this orders them, from either side: a positive bias draws later. In the
+/// units of the sort key (squared meters to the camera): well above f32 resolution at 100m,
+/// well below any separation that matters at 1m. Under 1 so the pipeline's depth bias (an
+/// integer) stays 0.
+const LAYER_BIAS: f32 = 0.1;
 
-impl TextSdfParams {
+/// A text shape's effects: the shader parameters and the shadow's offset. The offset moves
+/// the shadow layer's quads rather than its samples, so every sample stays within its glyph's
+/// atlas rect: a shadow is never cut at the quad's edge.
+struct TextEffects {
+    params: TextSdfParams,
+    /// In text pixels (y down).
+    shadow_offset: Vec2,
+}
+
+/// One mesh of a text shape: the parameters restricted to one effect, its quads' offset in
+/// text pixels, and its sort bias among the shape's layers.
+struct Layer {
+    params: TextSdfParams,
+    offset: Vec2,
+    depth_bias: f32,
+}
+
+impl Layer {
+    fn bitmap() -> Self {
+        Self {
+            params: TextSdfParams {
+                outline_color: Vec4::ZERO,
+                shadow_color: Vec4::ZERO,
+                outline_width: 0.0,
+                shadow_softness: 0.0,
+                spread: 0.0,
+                flags: TEXT_SDF_BITMAP,
+            },
+            offset: Vec2::ZERO,
+            depth_bias: 0.0,
+        }
+    }
+}
+
+impl TextEffects {
     /// As unity-explorer drives TextMeshPro: an outline when the width is positive, an underlay
     /// when the shadow is offset. Widths, offsets and blur are fractions of the distance range.
     fn from_text_shape(text_shape: &PbTextShape) -> Self {
@@ -298,15 +361,15 @@ impl TextSdfParams {
                     .to_f32_array(),
             )
         };
-        let mut params = Self {
+        let mut params = TextSdfParams {
             outline_color: Vec4::ZERO,
             shadow_color: Vec4::ZERO,
-            shadow_offset: Vec2::ZERO,
             outline_width: 0.0,
             shadow_softness: 0.0,
             spread,
             flags: TEXT_SDF_FACE,
         };
+        let mut shadow_offset = Vec2::ZERO;
 
         let outline_width = text_shape.outline_width.unwrap_or(0.0);
         if outline_width > 0.0 {
@@ -317,6 +380,7 @@ impl TextSdfParams {
             params.outline_color = color(text_shape.outline_color);
         }
 
+        // +y up
         let offset = Vec2::new(
             text_shape.shadow_offset_x.unwrap_or(0.0),
             text_shape.shadow_offset_y.unwrap_or(0.0),
@@ -327,55 +391,45 @@ impl TextSdfParams {
             // keep the shadow within the glyph's distance range, as TextMeshPro scales its
             // effects down to fit its padding
             let scale = spread / (offset.abs().max_element() + blur).max(1.0);
-            params.shadow_offset = offset * scale;
+            shadow_offset = Vec2::new(offset.x, -offset.y) * scale;
             params.shadow_softness = blur * scale;
             params.shadow_color = color(text_shape.shadow_color);
         }
 
-        params
-    }
-
-    /// The layers to draw, back to front, with their depth: the same parameters restricted to
-    /// one effect each.
-    fn layers(&self) -> impl Iterator<Item = (Self, f32)> + '_ {
-        [
-            (TEXT_SDF_SHADOW, -2.0 * LAYER_Z),
-            (TEXT_SDF_OUTLINE, -LAYER_Z),
-            (TEXT_SDF_FACE, 0.0),
-        ]
-        .into_iter()
-        .filter(|(flag, _)| self.flags & flag != 0)
-        .map(|(flag, z)| {
-            (
-                Self {
-                    flags: flag,
-                    ..*self
-                },
-                z,
-            )
-        })
-    }
-
-    fn bitmap() -> Self {
         Self {
-            outline_color: Vec4::ZERO,
-            shadow_color: Vec4::ZERO,
-            shadow_offset: Vec2::ZERO,
-            outline_width: 0.0,
-            shadow_softness: 0.0,
-            spread: 0.0,
-            flags: TEXT_SDF_BITMAP,
+            params,
+            shadow_offset,
         }
     }
 
-    fn key(&self) -> [u32; 13] {
-        let mut key = [0; 13];
+    /// The layers to draw, back to front.
+    fn layers(&self) -> impl Iterator<Item = Layer> + '_ {
+        [
+            (TEXT_SDF_SHADOW, -2.0 * LAYER_BIAS, self.shadow_offset),
+            (TEXT_SDF_OUTLINE, -LAYER_BIAS, Vec2::ZERO),
+            (TEXT_SDF_FACE, 0.0, Vec2::ZERO),
+        ]
+        .into_iter()
+        .filter(|(flag, ..)| self.params.flags & flag != 0)
+        .map(|(flag, depth_bias, offset)| Layer {
+            params: TextSdfParams {
+                flags: flag,
+                ..self.params
+            },
+            offset,
+            depth_bias,
+        })
+    }
+}
+
+impl TextSdfParams {
+    fn key(&self) -> [u32; 11] {
+        let mut key = [0; 11];
         for (slot, value) in key.iter_mut().zip(
             self.outline_color
                 .to_array()
                 .into_iter()
                 .chain(self.shadow_color.to_array())
-                .chain(self.shadow_offset.to_array())
                 .chain([self.outline_width, self.shadow_softness])
                 .map(f32::to_bits)
                 .chain([self.flags]),
@@ -723,10 +777,14 @@ impl GlyphAtlas {
         let old_data = |handle: &Handle<Image>| images.get(handle).unwrap().data.clone().unwrap();
         let old_sdf_data = old_data(&old_sdf);
         let old_color_data = old_color.as_ref().map(old_data);
-        for (key, slot) in old_glyphs {
-            if !in_use.contains(&key) {
-                continue;
-            }
+        // tallest first: shelves are height-quantised, so this packs at least as well as the
+        // old page did, whatever order the glyphs arrived in
+        let mut kept = old_glyphs
+            .into_iter()
+            .filter(|(key, _)| in_use.contains(key))
+            .collect::<Vec<_>>();
+        kept.sort_by_key(|(_, slot)| std::cmp::Reverse((slot.rect.height(), slot.rect.width())));
+        for (key, slot) in kept {
             let (page, old) = match slot.page {
                 Page::Sdf => (&mut self.sdf, &old_sdf_data),
                 Page::Color => (
@@ -1078,9 +1136,9 @@ fn layout_text(
     Ok(out)
 }
 
-/// Build a mesh of the quads, placed in meters with `to_world` (text px -> world xy) at depth
-/// `z` (plus each quad's own).
-fn quad_mesh(quads: &[TextQuad], to_world: impl Fn(Vec2) -> Vec2, z: f32) -> (Mesh, Aabb) {
+/// Build a mesh of the quads, moved by `offset` (text px) and placed in meters with `to_world`
+/// (text px -> world xy) at each quad's depth.
+fn quad_mesh(quads: &[TextQuad], offset: Vec2, to_world: impl Fn(Vec2) -> Vec2) -> (Mesh, Aabb) {
     let mut positions = Vec::with_capacity(quads.len() * 4);
     let mut uvs = Vec::with_capacity(quads.len() * 4);
     let mut colors = Vec::with_capacity(quads.len() * 4);
@@ -1090,28 +1148,29 @@ fn quad_mesh(quads: &[TextQuad], to_world: impl Fn(Vec2) -> Vec2, z: f32) -> (Me
 
     for quad in quads {
         let base = positions.len() as u32;
+        let (quad_min, quad_max) = (quad.min + offset, quad.max + offset);
         for (corner, uv) in [
             (
-                Vec2::new(quad.min.x, quad.min.y),
+                Vec2::new(quad_min.x, quad_min.y),
                 Vec2::new(quad.uv_min.x, quad.uv_min.y),
             ),
             (
-                Vec2::new(quad.max.x, quad.min.y),
+                Vec2::new(quad_max.x, quad_min.y),
                 Vec2::new(quad.uv_max.x, quad.uv_min.y),
             ),
             (
-                Vec2::new(quad.max.x, quad.max.y),
+                Vec2::new(quad_max.x, quad_max.y),
                 Vec2::new(quad.uv_max.x, quad.uv_max.y),
             ),
             (
-                Vec2::new(quad.min.x, quad.max.y),
+                Vec2::new(quad_min.x, quad_max.y),
                 Vec2::new(quad.uv_min.x, quad.uv_max.y),
             ),
         ] {
             let world = to_world(corner);
             min = min.min(world);
             max = max.max(world);
-            positions.push([world.x, world.y, z + quad.z]);
+            positions.push([world.x, world.y, quad.z]);
             uvs.push([uv.x, uv.y]);
             colors.push(quad.color.to_f32_array());
         }
@@ -1149,6 +1208,7 @@ fn update_text_shapes(
     >,
     all_meshes: Query<(Entity, &TextShapeMesh)>,
     scenes: Query<&RendererSceneContext>,
+    mut material_caches: Query<&mut TextShapeMaterials>,
     frame: Res<FrameCount>,
     mut unrecognized_tags: ResMut<UnrecognisedTags>,
     mut text_pipeline: ResMut<TextPipeline>,
@@ -1161,7 +1221,6 @@ fn update_text_shapes(
         ResMut<Assets<Mesh>>,
         ResMut<Assets<TextSdfMaterial>>,
     ),
-    mut material_cache: ResMut<TextShapeMaterials>,
     config: Res<AppConfig>,
 ) {
     // oldest waiting shapes first
@@ -1193,7 +1252,10 @@ fn update_text_shapes(
             commands.entity(ent).try_insert(RetryTextShape(frame.0));
         };
 
-        let Ok(scene) = scenes.get(scene_ent.root) else {
+        let (Ok(scene), Ok(mut material_cache)) = (
+            scenes.get(scene_ent.root),
+            material_caches.get_mut(scene_ent.root),
+        ) else {
             warn!("no scene!");
             continue;
         };
@@ -1228,7 +1290,12 @@ fn update_text_shapes(
             }
         }
 
-        if text_shape.0.text.is_empty() || text_shape.0.font_size.is_some_and(|size| size <= 0.0) {
+        if text_shape.0.text.is_empty()
+            || text_shape
+                .0
+                .font_size
+                .is_some_and(|size| size.is_nan() || size <= 0.0)
+        {
             clean_up_text_shape(&mut commands, ent, maybe_prior);
             continue;
         }
@@ -1305,6 +1372,13 @@ fn update_text_shapes(
             continue;
         }
 
+        let opaque = spans.iter().all(|(_, _, color, extras)| {
+            color.0.alpha() >= 1.0
+                && extras
+                    .and_then(|extras| extras.mark)
+                    .is_none_or(|mark| mark.alpha() >= 1.0)
+        });
+
         // With fontAutoSize the SDK font size is ignored; the font is sized to
         // fit the text block into the box (clamped), matching unity-explorer.
         // Otherwise the SDK font size drives the world scale directly.
@@ -1374,11 +1448,10 @@ fn update_text_shapes(
                     clean_up_text_shape(&mut commands, ent, maybe_prior);
                     continue;
                 }
+                // shapes of older generations are queued for re-layout with the same glyphs
                 let in_use = all_meshes
                     .iter()
-                    .filter(|(_, mesh)| {
-                        mesh.atlas == atlas_key && mesh.generation == atlas.generation
-                    })
+                    .filter(|(_, mesh)| mesh.atlas == atlas_key)
                     .flat_map(|(_, mesh)| mesh.glyphs.iter().copied())
                     .collect::<HashSet<_>>();
                 atlas.rebuild(&mut images, &in_use);
@@ -1414,56 +1487,60 @@ fn update_text_shapes(
             Vec2::new(origin.x + p.x, origin.y - p.y + add_y_pix) / pix_per_m
         };
 
-        let effects = TextSdfParams::from_text_shape(&text_shape.0);
+        let effects = TextEffects::from_text_shape(&text_shape.0);
         let layers = effects
             .layers()
-            .map(|(params, z)| (Page::Sdf, &laid_out.sdf_quads, params, z))
+            .map(|layer| (Page::Sdf, &laid_out.sdf_quads, layer))
             .chain(std::iter::once((
                 Page::Color,
                 &laid_out.color_quads,
-                TextSdfParams::bitmap(),
-                0.0,
+                Layer::bitmap(),
             )));
         let mut mesh_ents = Vec::new();
-        for (page, quads, params, z) in layers {
+        for (page, quads, layer) in layers {
             let Some(atlas_page) = atlas.page(page).filter(|_| !quads.is_empty()) else {
                 continue;
             };
+            let depth_write = opaque && layer.params.flags & TEXT_SDF_SHADOW == 0;
             let key = MaterialKey {
-                scene: scene_ent.root,
                 atlas: atlas_key.clone(),
                 generation: atlas.generation,
                 page,
-                effects: params.key(),
+                effects: layer.params.key(),
+                depth_write,
             };
-            let material = material_cache
+            let cached = material_cache
                 .0
-                .entry(key)
-                .or_insert_with(|| {
-                    let base = StandardMaterial {
-                        base_color: Color::WHITE,
-                        base_color_texture: Some(atlas_page.image.clone()),
-                        uv_transform: Affine2::from_scale(Vec2::splat(
-                            1.0 / atlas_page.size as f32,
-                        )),
-                        unlit: true,
-                        alpha_mode: AlphaMode::Blend,
-                        // readable mirrored from behind, as the reference renderer
-                        double_sided: true,
-                        cull_mode: None,
-                        ..Default::default()
-                    };
-                    materials.add(TextSdfMaterial {
-                        base: SceneMaterial {
-                            base,
-                            extension: SceneBound::new(&scene.scene_bounds, config.graphics.oob),
-                        },
-                        extension: TextSdf { params },
-                    })
-                })
-                .clone();
+                .get(&key)
+                .and_then(|weak| materials.get_strong_handle(weak.id()));
+            let material = cached.unwrap_or_else(|| {
+                let base = StandardMaterial {
+                    base_color: Color::WHITE,
+                    base_color_texture: Some(atlas_page.image.clone()),
+                    uv_transform: Affine2::from_scale(Vec2::splat(1.0 / atlas_page.size as f32)),
+                    unlit: true,
+                    alpha_mode: AlphaMode::Blend,
+                    depth_bias: layer.depth_bias,
+                    // readable mirrored from behind, as the reference renderer
+                    double_sided: true,
+                    cull_mode: None,
+                    ..Default::default()
+                };
+                let material = materials.add(TextSdfMaterial {
+                    base: SceneMaterial {
+                        base,
+                        extension: SceneBound::new(&scene.scene_bounds, config.graphics.oob),
+                    },
+                    extension: TextSdf {
+                        params: layer.params,
+                        depth_write,
+                    },
+                });
+                material_cache.0.insert(key, material.clone_weak());
+                material
+            });
 
-            let (mesh, aabb) = quad_mesh(quads, to_world, z);
+            let (mesh, aabb) = quad_mesh(quads, layer.offset, to_world);
             let mesh_ent = commands
                 .spawn((
                     Mesh3d(meshes.add(mesh)),
@@ -1505,13 +1582,17 @@ fn update_text_shapes(
             // writing the material also re-prepares its bind group against the new, larger
             // texture (same-size glyph additions reuse the texture and need no rebind)
             let scale = Affine2::from_scale(Vec2::splat(1.0 / atlas_page.size as f32));
-            for (mat_key, handle) in material_cache.0.iter() {
-                if mat_key.atlas != *key || mat_key.generation != generation || mat_key.page != page
-                {
-                    continue;
-                }
-                if let Some(material) = materials.get_mut(handle) {
-                    material.base.base.uv_transform = scale;
+            for material_cache in material_caches.iter() {
+                for (mat_key, handle) in material_cache.0.iter() {
+                    if mat_key.atlas != *key
+                        || mat_key.generation != generation
+                        || mat_key.page != page
+                    {
+                        continue;
+                    }
+                    if let Some(material) = materials.get_mut(handle) {
+                        material.base.base.uv_transform = scale;
+                    }
                 }
             }
             atlas_page.resized = false;
@@ -1530,8 +1611,8 @@ fn update_text_shapes(
     }
 
     // scene families' atlases die with their scene (the built-in ones live on); forget the
-    // materials of dead scenes, dead atlases and old generations: meshes still using them
-    // keep them (and the old texture) alive
+    // materials of dead atlases and old generations: meshes still using them keep them (and
+    // the old texture) alive
     atlases.0.retain(|key, atlas| match key {
         AtlasKey::Builtin(_) => true,
         AtlasKey::Scene(family) => {
@@ -1547,13 +1628,15 @@ fn update_text_shapes(
             keep
         }
     });
-    material_cache.0.retain(|key, _| {
-        scenes.contains(key.scene)
-            && atlases
-                .0
-                .get(&key.atlas)
-                .is_some_and(|atlas| atlas.generation == key.generation)
-    });
+    for mut material_cache in material_caches.iter_mut() {
+        material_cache.0.retain(|key, handle| {
+            materials.contains(handle.id())
+                && atlases
+                    .0
+                    .get(&key.atlas)
+                    .is_some_and(|atlas| atlas.generation == key.generation)
+        });
+    }
 
     debug!("built: {built}, deferred: {deferred}");
 }
