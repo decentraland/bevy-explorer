@@ -163,17 +163,23 @@ fn manage_islands(
 
         let mut event_data = None;
         senders.retain_mut(|sender| {
-            let message = event_data.get_or_insert_with(|| {
-                let server = current_realm.config.realm_name.as_deref().unwrap_or_default();
-                let room = &island.name;
-                json!({
-                    "serverName": server,
-                    "room": room,
-                    "displayName": format!("{server}-{room}"),
-                    "domain": current_realm.address.strip_suffix("/content").unwrap_or(&current_realm.address),
+            let message = event_data
+                .get_or_insert_with(|| {
+                    let server = current_realm
+                        .config
+                        .realm_name
+                        .as_deref()
+                        .unwrap_or_default();
+                    let room = &island.name;
+                    json!({
+                        "serverName": server,
+                        "room": room,
+                        "displayName": format!("{server}-{room}"),
+                        "domain": current_realm.address,
+                    })
+                    .to_string()
                 })
-                .to_string()
-            }).clone();
+                .clone();
             let _ = sender.send(message);
             !sender.is_closed()
         });
