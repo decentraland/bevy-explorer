@@ -123,15 +123,15 @@ pub fn ffmpeg_worker(
     match (video_context, audio_context) {
         (None, None) => Ok(()),
         (None, Some(mut ac)) => {
-            trace!("Processing stream with audio only");
+            debug!("Processing stream with audio only");
             process_streams(input_context, &mut [&mut ac], commands, audio_output)
         }
         (Some(mut vc), None) => {
-            trace!("Processing stream with video only");
+            debug!("Processing stream with video only");
             process_streams(input_context, &mut [&mut vc], commands, audio_output)
         }
         (Some(mut vc), Some(mut ac)) => {
-            trace!("Processing stream");
+            debug!("Processing stream");
             process_streams(
                 input_context,
                 &mut [&mut vc, &mut ac],
