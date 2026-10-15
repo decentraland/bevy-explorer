@@ -289,10 +289,10 @@ fn update_av_volume<T: AVPlayer>(
 #[expect(clippy::type_complexity)]
 fn player_position_added<T: AVPlayer>(
     trigger: Trigger<OnInsert, T::Position>,
-    mut av_players: Query<(&T::Position, Option<&AVSinks<T>>, Has<Stream>)>,
+    av_players: Query<(&T::Position, Option<&AVSinks<T>>, Has<Stream>)>,
 ) {
     let entity = trigger.target();
-    let (position, maybe_sinks, has_stream) = av_players.get_mut(entity).unwrap_or_else(|e| {
+    let (position, maybe_sinks, has_stream) = av_players.get(entity).unwrap_or_else(|e| {
         panic!(
             "player_position_added::<{}> query failed: {e}",
             disqualified::ShortName::of::<T>()
