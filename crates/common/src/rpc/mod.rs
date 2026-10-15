@@ -357,6 +357,7 @@ pub struct ReadFileResponse {
 pub struct EntityDefinitionResponse {
     pub collection: HashMap<String, String>,
     pub metadata: Option<String>,
+    /// contents prefix: a file's url is `{base_url}{hash}`
     pub base_url: String,
 }
 

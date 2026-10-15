@@ -92,7 +92,7 @@ pub async fn scene_information(
                 .map(|(file, hash)| ContentFileEntry { file, hash })
                 .collect(),
             metadata_json: definition.metadata.unwrap_or_default(),
-            base_url: format!("{}/contents/", definition.base_url),
+            base_url: definition.base_url,
         })
         .ok_or_else(|| anyhow!("Scene hash not found?!"))
 }

@@ -886,6 +886,22 @@ pub struct IpfsContext {
     num_slots: usize,
 }
 
+impl IpfsContext {
+    /// The prefix an entity's content hashes are fetched under (`{prefix}{hash}`): the
+    /// `baseUrl` its urn carried, else the realm's contents endpoint.
+    fn contents_base_url(&self, hash: &str) -> Option<String> {
+        self.modifiers
+            .get(hash)
+            .and_then(|m| m.base_url.clone())
+            .or_else(|| {
+                self.about
+                    .as_ref()
+                    .and_then(ServerAbout::content_url)
+                    .map(|url| format!("{url}/contents/"))
+            })
+    }
+}
+
 fn clean_cache(mut exit: EventReader<AppExit>, config: Res<AppConfig>, ipfas: IpfsAssetServer) {
     if exit.read().last().is_some() {
         ipfas.ipfs().trim_cache(config.cache_bytes);
@@ -1395,13 +1411,7 @@ impl IpfsIo {
         let context = self.context.read().await;
         Some((
             context.entities.get(hash)?.clone(),
-            context
-                .modifiers
-                .get(hash)
-                .and_then(|m| m.base_url.as_deref())
-                .or_else(|| context.about.as_ref().and_then(ServerAbout::content_url))
-                .map(ToOwned::to_owned)
-                .unwrap_or_default(),
+            context.contents_base_url(hash).unwrap_or_default(),
         ))
     }
 
@@ -2373,7 +2383,41 @@ fn b64_split_at_key<'a>(decoded: &'a str, key: &str) -> Option<(&'a str, &'a str
 
 #[cfg(test)]
 mod tests {
-    use super::{b64_split_at_key, ContentMap, EndpointConfig, ServerAbout};
+    use super::{
+        b64_split_at_key, ContentMap, EndpointConfig, IpfsContext, IpfsModifier, ServerAbout,
+    };
+
+    #[test]
+    fn contents_base_url_is_the_urn_prefix_else_the_realms_contents_endpoint() {
+        let mut context = IpfsContext {
+            about: Some(ServerAbout {
+                content: Some(EndpointConfig {
+                    healthy: true,
+                    public_url: "https://peer-ap1.decentraland.org/content".to_owned(),
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        // a pointer-loaded scene has no modifier
+        assert_eq!(
+            context.contents_base_url("bafypointer").as_deref(),
+            Some("https://peer-ap1.decentraland.org/content/contents/")
+        );
+        // a urn-loaded scene's modifier is already the full contents prefix
+        context.modifiers.insert(
+            "bafyworld".to_owned(),
+            IpfsModifier {
+                base_url: Some(
+                    "https://worlds-content-server.decentraland.org/contents/".to_owned(),
+                ),
+            },
+        );
+        assert_eq!(
+            context.contents_base_url("bafyworld").as_deref(),
+            Some("https://worlds-content-server.decentraland.org/contents/")
+        );
+    }
 
     #[test]
     fn trim_public_urls_drops_the_abouts_trailing_slash() {
