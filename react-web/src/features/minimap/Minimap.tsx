@@ -138,7 +138,7 @@ export const Minimap = memo(function Minimap({
       const meters = zoomRef.current
       const pxPerParcel = (MAP_SIZE / meters) * PARCEL_METERS
       const scale = pxPerParcel / BASE_PX_PER_PARCEL
-      const here = atlasPx(p.x, p.z, BASE_PX_PER_PARCEL)
+      const here = atlasPx(p.x - PARCEL_METERS / 2, p.z - PARCEL_METERS / 2, BASE_PX_PER_PARCEL)
       // Map rotation is the negation of the heading we're aligning to: CSS rotates clockwise,
       // and turning right must swing the world left. `north` pins it at 0.
       const mapYaw = rotation === 'north' ? 0 : -p.camYaw
