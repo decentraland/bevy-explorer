@@ -170,7 +170,7 @@ fn manage_islands(
                     "serverName": server,
                     "room": room,
                     "displayName": format!("{server}-{room}"),
-                    "domain": current_realm.address.strip_suffix("/content").unwrap_or(&current_realm.address),
+                    "domain": current_realm.address,
                 })
                 .to_string()
             }).clone();

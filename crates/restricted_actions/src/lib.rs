@@ -809,10 +809,11 @@ pub async fn lookup_portable(
         return Err(format!("status: {}", about.status()));
     }
 
-    let about = about
+    let mut about = about
         .json::<ServerAbout>()
         .await
         .map_err(|e| e.to_string())?;
+    about.trim_public_urls();
     let Some(config) = about.configurations else {
         return Err("No configurations on server/about".to_owned());
     };

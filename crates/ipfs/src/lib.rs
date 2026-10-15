@@ -452,6 +452,16 @@ impl ServerAbout {
     pub fn content_url(&self) -> Option<&str> {
         self.content.as_ref().map(|c| c.public_url.as_str())
     }
+
+    /// Catalysts serve `content` and `lambdas` `publicUrl`s with a trailing slash; every
+    /// consumer joins with `format!("{url}/…")`, and the rate limiter in front of the
+    /// catalysts treats the resulting `/content//contents/` as its own path.
+    pub fn trim_public_urls(&mut self) {
+        for endpoint in [&mut self.content, &mut self.lambdas].into_iter().flatten() {
+            let trimmed = endpoint.public_url.trim_end_matches('/').len();
+            endpoint.public_url.truncate(trimmed);
+        }
+    }
 }
 
 impl Default for ServerAbout {
@@ -1144,10 +1154,10 @@ impl IpfsIo {
         if let (Some(cs), Some(content)) = (&content_server_override, about.content.as_mut()) {
             content.public_url = format!("{cs}/content/");
         }
-        let base_url = content_server_override
-            .as_deref()
-            .or_else(|| about.content_url())
-            .map(|c| c.strip_suffix("/content/").unwrap_or(c));
+        about.trim_public_urls();
+        let base_url = about
+            .content_url()
+            .map(|c| c.strip_suffix("/content").unwrap_or(c));
         write.base_url = base_url.unwrap_or(&final_url).to_owned();
         write.about_url = final_url.clone();
         write.about = Some(about.clone());
@@ -2363,7 +2373,31 @@ fn b64_split_at_key<'a>(decoded: &'a str, key: &str) -> Option<(&'a str, &'a str
 
 #[cfg(test)]
 mod tests {
-    use super::{b64_split_at_key, ContentMap};
+    use super::{b64_split_at_key, ContentMap, EndpointConfig, ServerAbout};
+
+    #[test]
+    fn trim_public_urls_drops_the_abouts_trailing_slash() {
+        let mut about = ServerAbout {
+            content: Some(EndpointConfig {
+                healthy: true,
+                public_url: "https://peer-ap1.decentraland.org/content/".to_owned(),
+            }),
+            lambdas: Some(EndpointConfig {
+                healthy: true,
+                public_url: "https://peer-ap1.decentraland.org/lambdas/".to_owned(),
+            }),
+            ..Default::default()
+        };
+        about.trim_public_urls();
+        assert_eq!(
+            about.content_url(),
+            Some("https://peer-ap1.decentraland.org/content")
+        );
+        assert_eq!(
+            about.lambdas.unwrap().public_url,
+            "https://peer-ap1.decentraland.org/lambdas"
+        );
+    }
 
     #[test]
     fn splits_unix_path() {
