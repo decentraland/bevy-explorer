@@ -218,6 +218,8 @@ image = "0.25"
 ttf-parser = { version = "0.21", default-features = false }
 opener = { version = "0.8", git = "https://github.com/robtfm/opener" }
 chrono = { version = "0.4.31", features = ["serde"] }
+# bevy_text's version; the explorer keys its glyph atlas on cosmic's glyph cache keys
+cosmic-text = "0.13.2"
 bevy_dui = { git = "https://github.com/robtfm/bevy_dui", branch = "0.16" }
 bevy_ecss = { git = "https://github.com/robtfm/bevy_ecss", branch = "0.16" }
 bevy_kira_audio = { git = "https://github.com/robtfm/bevy_kira_audio", branch = "0.16-2", features = [

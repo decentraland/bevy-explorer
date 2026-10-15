@@ -10826,6 +10826,7 @@ dependencies = [
  "common",
  "comms",
  "console 0.1.0",
+ "cosmic-text",
  "crc",
  "dcl",
  "dcl_component",
