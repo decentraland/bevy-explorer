@@ -230,23 +230,22 @@ fn player_config_added<T: AVPlayer>(
     let AVSinks {
         #[cfg(feature = "ffmpeg")]
             audio: _,
-        video,
+        video: _,
         command_sender,
         sent_volume: _,
+        rate,
         _phantom,
     } = sinks.as_mut();
 
-    if let Some(video_sink) = video {
-        if config.playing() && has_should_be_playing {
-            command_sender.send(AVCommand::Play).report();
-        } else {
-            command_sender.send(AVCommand::Pause).report();
-        }
-        command_sender
-            .send(AVCommand::Repeat(config.r#loop()))
-            .report();
-        video_sink.rate = Some(config.playback_rate() as f64);
+    if config.playing() && has_should_be_playing {
+        command_sender.send(AVCommand::Play).report();
+    } else {
+        command_sender.send(AVCommand::Pause).report();
     }
+    command_sender
+        .send(AVCommand::Repeat(config.r#loop()))
+        .report();
+    *rate = Some(config.playback_rate() as f64);
 }
 
 /// Where a player's volume is decided: its config, the user's scene-audio setting, and silence
@@ -269,6 +268,7 @@ fn update_av_volume<T: AVPlayer>(
                 audio: _,
             video: _,
             command_sender,
+            rate: _,
             sent_volume,
             _phantom,
         } = sinks.as_mut();
@@ -358,14 +358,22 @@ fn play_videos(
     frame: Res<FrameCount>,
 ) {
     for (mut video_player_sinks, container, mut output) in q.iter_mut() {
-        let Some(sink) = video_player_sinks.video.as_mut() else {
+        let AVSinks {
+            audio: _,
+            video: Some(video),
+            command_sender: _,
+            rate: sink_rate,
+            sent_volume: _,
+            _phantom,
+        } = video_player_sinks.as_mut()
+        else {
             continue;
         };
 
         let mut last_frame_received = None;
         let mut new_state = None;
         loop {
-            match sink.video_receiver.try_recv() {
+            match video.video_receiver.try_recv() {
                 Ok(VideoData::Info(VideoInfo {
                     width,
                     height,
@@ -373,7 +381,7 @@ fn play_videos(
                     length,
                 })) => {
                     debug!("resize");
-                    let image = images.get_mut(&sink.image).unwrap();
+                    let image = images.get_mut(&video.image).unwrap();
                     let target_extent = Extent3d {
                         width: width.max(16),
                         height: height.max(16),
@@ -384,14 +392,14 @@ fn play_videos(
                         image.data = None;
                         image.texture_descriptor.size = target_extent;
                         image.transfer_priority = RenderAssetTransferPriority::Immediate;
-                        sink.resized = true;
+                        video.resized = true;
                     }
-                    sink.length = Some(length);
-                    sink.rate = Some(rate);
+                    video.length = Some(length);
+                    *sink_rate = Some(rate);
                 }
                 Ok(VideoData::Frame(frame, time)) => {
                     last_frame_received = Some(frame);
-                    sink.current_time = time;
+                    video.current_time = time;
                 }
                 Ok(VideoData::State(state)) => new_state = Some(state),
                 Err(_) => break,
@@ -399,11 +407,11 @@ fn play_videos(
         }
 
         if let Some(frame) = last_frame_received {
-            trace!("set frame on {:?}", sink.image);
+            trace!("set frame on {:?}", video.image);
 
             // no pixels: the render world copied the frame into the gpu image itself
             if let Some(pixels) = frame.data() {
-                let image = images.get_mut(&sink.image).unwrap();
+                let image = images.get_mut(&video.image).unwrap();
 
                 match &mut image.data {
                     Some(data) => {
@@ -415,28 +423,28 @@ fn play_videos(
                     }
                 }
             }
-            if sink.resized {
-                sink.resized = false;
+            if video.resized {
+                video.resized = false;
                 output.set_changed();
             }
         }
 
         const VIDEO_REPORT_FREQUENCY: f64 = 1.0;
         if new_state.is_none()
-            && (sink.current_time > sink.last_reported_time + VIDEO_REPORT_FREQUENCY
-                || sink.current_time < sink.last_reported_time)
+            && (video.current_time > video.last_reported_time + VIDEO_REPORT_FREQUENCY
+                || video.current_time < video.last_reported_time)
         {
             new_state = Some(VideoState::VsPlaying);
         }
 
         if let Some(state) = new_state {
             if let Ok(mut context) = scenes.get_mut(container.root) {
-                trace!("send current time = {}", sink.current_time);
+                trace!("send current time = {}", video.current_time);
                 let event = PbVideoEvent {
                     timestamp: frame.0,
                     tick_number: context.tick_number,
-                    current_offset: sink.current_time as f32,
-                    video_length: sink.length.unwrap_or(-1.0) as f32,
+                    current_offset: video.current_time as f32,
+                    video_length: video.length.unwrap_or(-1.0) as f32,
                     state: state.into(),
                 };
                 context.update_crdt(
@@ -445,7 +453,7 @@ fn play_videos(
                     container.container_id,
                     &event,
                 );
-                sink.last_reported_time = sink.current_time;
+                video.last_reported_time = video.current_time;
             }
         }
     }

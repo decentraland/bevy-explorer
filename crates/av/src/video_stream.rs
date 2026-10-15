@@ -20,7 +20,6 @@ pub struct VideoSink {
     pub current_time: f64,
     pub last_reported_time: f64,
     pub length: Option<f64>,
-    pub rate: Option<f64>,
     /// The image changed size and the materials on it must rebind.
     pub resized: bool,
 }
@@ -38,7 +37,6 @@ impl VideoSink {
             current_time: -1.0,
             last_reported_time: -1.0,
             length: None,
-            rate: None,
             resized: false,
         }
     }
