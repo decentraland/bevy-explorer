@@ -158,9 +158,12 @@ impl Plugin for TextShapePlugin {
             },
         );
         app.init_resource::<SwashCache>();
+        // chained: the rebuild sees the shapes built this frame
         app.add_systems(
             Update,
-            update_text_shapes.in_set(SceneLoopSets::UpdateWorld),
+            (update_text_shapes, maintain_glyph_atlases)
+                .chain()
+                .in_set(SceneLoopSets::UpdateWorld),
         );
         app.add_observer(text_shape_removed);
 
@@ -197,8 +200,14 @@ pub struct TextShapeMesh {
     glyphs: Vec<CacheKey>,
 }
 
+/// Waiting to be built; oldest first.
 #[derive(Component)]
-pub struct RetryTextShape(u32);
+pub struct RetryTextShape {
+    since: u32,
+    /// The shape's glyphs didn't fit its atlas: the atlas's rebuild count at the time. If it
+    /// still doesn't fit after a rebuild, it is dropped.
+    atlas_full: Option<u32>,
+}
 
 #[derive(Default, Resource, Deref, DerefMut)]
 pub struct UnrecognisedTags(HashSet<String>);
@@ -705,6 +714,10 @@ pub struct GlyphAtlas {
     glyphs: HashMap<CacheKey, GlyphSlot>,
     /// Glyphs rastered this frame, and the time it took.
     rastered: (u32, Duration),
+    /// A shape didn't fit this frame: rebuild once the frame's shapes are in place.
+    rebuild_requested: bool,
+    /// Rebuild requests served (whether or not anything could be freed).
+    rebuilds: u32,
 }
 
 impl GlyphAtlas {
@@ -736,6 +749,8 @@ impl GlyphAtlas {
             generation: 0,
             glyphs: HashMap::default(),
             rastered: (0, Duration::ZERO),
+            rebuild_requested: false,
+            rebuilds: 0,
         };
         atlas.add_white(images);
         atlas
@@ -1206,7 +1221,6 @@ fn update_text_shapes(
         ),
         Or<(Changed<TextShape>, With<RetryTextShape>)>,
     >,
-    all_meshes: Query<(Entity, &TextShapeMesh)>,
     scenes: Query<&RendererSceneContext>,
     mut material_caches: Query<&mut TextShapeMaterials>,
     frame: Res<FrameCount>,
@@ -1226,7 +1240,7 @@ fn update_text_shapes(
     // oldest waiting shapes first
     let mut waiting = query
         .iter()
-        .filter_map(|(_, _, _, _, retry)| retry.map(|r| r.0))
+        .filter_map(|(_, _, _, _, retry)| retry.map(|r| r.since))
         .collect::<Vec<_>>();
     waiting.sort();
     let stop_at = waiting.get(MAX_BUILDS_PER_FRAME).copied();
@@ -1234,22 +1248,27 @@ fn update_text_shapes(
     let mut built = 0;
     let mut deferred = 0;
     let mut raster_budget = MAX_RASTERS_PER_FRAME;
-    let mut rebuilt = HashSet::<AtlasKey>::default();
 
     for (ent, scene_ent, text_shape, maybe_prior, maybe_retry) in query.iter() {
         let skip = built >= MAX_BUILDS_PER_FRAME
-            || stop_at.is_some_and(|stop_at| maybe_retry.is_none_or(|retry| retry.0 > stop_at));
+            || stop_at.is_some_and(|stop_at| maybe_retry.is_none_or(|retry| retry.since > stop_at));
 
         if skip {
             if maybe_retry.is_none() {
-                commands.entity(ent).try_insert(RetryTextShape(frame.0));
+                commands.entity(ent).try_insert(RetryTextShape {
+                    since: frame.0,
+                    atlas_full: None,
+                });
             }
             deferred += 1;
             continue;
         }
 
         let retry = |commands: &mut Commands| {
-            commands.entity(ent).try_insert(RetryTextShape(frame.0));
+            commands.entity(ent).try_insert(RetryTextShape {
+                since: frame.0,
+                atlas_full: None,
+            });
         };
 
         let (Ok(scene), Ok(mut material_cache)) = (
@@ -1442,21 +1461,21 @@ fn update_text_shapes(
                 continue;
             }
             Err(LayoutError::AtlasFull) => {
-                if rebuilt.contains(&atlas_key) {
-                    // still full after this frame's rebuild: more live glyphs than fit
+                let rebuilt_since = maybe_retry
+                    .and_then(|retry| retry.atlas_full)
+                    .is_some_and(|rebuilds| rebuilds < atlas.rebuilds);
+                if rebuilt_since {
+                    // still full after a rebuild: more live glyphs than fit
                     warn!("glyph atlas {atlas_key:?} full, textshape {ent:?} dropped");
                     clean_up_text_shape(&mut commands, ent, maybe_prior);
                     continue;
                 }
-                // shapes of older generations are queued for re-layout with the same glyphs
-                let in_use = all_meshes
-                    .iter()
-                    .filter(|(_, mesh)| mesh.atlas == atlas_key)
-                    .flat_map(|(_, mesh)| mesh.glyphs.iter().copied())
-                    .collect::<HashSet<_>>();
-                atlas.rebuild(&mut images, &in_use);
-                rebuilt.insert(atlas_key);
-                retry(&mut commands);
+                // rebuilt by maintain_glyph_atlases, once this frame's shapes are in place
+                atlas.rebuild_requested = true;
+                commands.entity(ent).try_insert(RetryTextShape {
+                    since: frame.0,
+                    atlas_full: Some(atlas.rebuilds),
+                });
                 continue;
             }
         };
@@ -1565,6 +1584,22 @@ fn update_text_shapes(
         debug!("[{}] textshape {ent:?}", frame.0);
     }
 
+    debug!("built: {built}, deferred: {deferred}");
+}
+
+/// After the frame's builds have been applied: rebuild the atlases that ran out of room from
+/// the glyphs every shape (including this frame's) draws, and tidy up.
+#[allow(clippy::too_many_arguments)]
+fn maintain_glyph_atlases(
+    mut commands: Commands,
+    shapes: Query<(Entity, &TextShapeMesh, Has<RetryTextShape>)>,
+    scenes: Query<&RendererSceneContext>,
+    mut material_caches: Query<&mut TextShapeMaterials>,
+    frame: Res<FrameCount>,
+    mut atlases: ResMut<GlyphAtlases>,
+    mut images: ResMut<Assets<Image>>,
+    mut materials: ResMut<Assets<TextSdfMaterial>>,
+) {
     for (key, atlas) in atlases.0.iter_mut() {
         if atlas.rastered.0 > 0 {
             debug!(
@@ -1573,6 +1608,37 @@ fn update_text_shapes(
             );
             atlas.rastered = (0, Duration::ZERO);
         }
+
+        if atlas.rebuild_requested {
+            atlas.rebuild_requested = false;
+            atlas.rebuilds += 1;
+            let in_use = shapes
+                .iter()
+                .filter(|(_, mesh, _)| mesh.atlas == *key)
+                .flat_map(|(_, mesh, _)| mesh.glyphs.iter().copied())
+                .collect::<HashSet<_>>();
+            // only inked glyphs take room
+            let freeable = atlas
+                .glyphs
+                .iter()
+                .any(|(glyph, slot)| !slot.rect.is_empty() && !in_use.contains(glyph));
+            if freeable {
+                atlas.rebuild(&mut images, &in_use);
+                // everything built against the old texture is stale; it keeps drawing from
+                // the old texture (via its old material) until it is rebuilt
+                for (ent, mesh, waiting) in shapes.iter() {
+                    if mesh.atlas == *key && mesh.generation != atlas.generation && !waiting {
+                        commands.entity(ent).try_insert(RetryTextShape {
+                            since: frame.0,
+                            atlas_full: None,
+                        });
+                    }
+                }
+            } else {
+                warn!("glyph atlas {key:?} full, every glyph in use");
+            }
+        }
+
         let generation = atlas.generation;
         for (page, atlas_page) in atlas.pages_mut() {
             if !atlas_page.resized {
@@ -1596,17 +1662,6 @@ fn update_text_shapes(
                 }
             }
             atlas_page.resized = false;
-        }
-    }
-
-    if !rebuilt.is_empty() {
-        // everything built against an old texture is stale; it keeps drawing from the old
-        // texture (via its old material) until it is rebuilt
-        for (ent, mesh) in all_meshes.iter() {
-            if rebuilt.contains(&mesh.atlas) && atlases.0[&mesh.atlas].generation != mesh.generation
-            {
-                commands.entity(ent).try_insert(RetryTextShape(frame.0));
-            }
         }
     }
 
@@ -1637,8 +1692,6 @@ fn update_text_shapes(
                     .is_some_and(|atlas| atlas.generation == key.generation)
         });
     }
-
-    debug!("built: {built}, deferred: {deferred}");
 }
 
 fn text_shape_removed(
