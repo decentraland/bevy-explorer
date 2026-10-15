@@ -29,8 +29,13 @@ fn fragment(
 #endif
 ) -> FragmentOutput {
 #ifdef MULTISAMPLED
-    return bound_fragment(in, is_front, sample_index);
+    var out = bound_fragment(in, is_front, sample_index);
 #else
-    return bound_fragment(in, is_front);
+    var out = bound_fragment(in, is_front);
 #endif
+#ifdef TRANSPARENT_FOCUS_OUTPUT
+    // the glyph's anti-aliased fringe focuses with the glyph, not with what's behind it
+    out.focus.a = 1.0;
+#endif
+    return out;
 }
