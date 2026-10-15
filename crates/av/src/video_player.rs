@@ -228,7 +228,8 @@ fn player_config_added<T: AVPlayer>(
     };
 
     let AVSinks {
-        audio: _,
+        #[cfg(feature = "ffmpeg")]
+            audio: _,
         video,
         command_sender,
         _phantom,
@@ -263,7 +264,8 @@ fn update_av_volume<T: AVPlayer>(
 
     for (scene, config, mut sinks) in av_players.iter_mut() {
         let AVSinks {
-            audio: _,
+            #[cfg(feature = "ffmpeg")]
+                audio: _,
             video,
             command_sender,
             _phantom,
