@@ -427,6 +427,9 @@ const CALIBRATION_FONT_SIZE: f32 = 20.0;
 const RASTER_FONT_SIZE: f32 = 64.0;
 /// Shapes laid out per frame; the rest wait their turn, oldest first.
 const MAX_BUILDS_PER_FRAME: usize = 64;
+/// Glyphs rastered per frame (across all atlases): a shape needing more waits for the next
+/// frame, keeping what it has, rather than hitching the frame.
+const MAX_RASTERS_PER_FRAME: usize = 32;
 
 /// Pixels per meter of text laid out at [`RASTER_FONT_SIZE`] for a given point size.
 fn pix_per_m(effective_pt: f32) -> f32 {
@@ -473,6 +476,18 @@ struct AtlasPage {
 
 /// The atlas can't fit the glyph: at the page's maximum size and no room.
 struct AtlasFull;
+
+enum RasterError {
+    AtlasFull,
+    /// This frame's raster budget is spent.
+    Budget,
+}
+
+impl From<AtlasFull> for RasterError {
+    fn from(_: AtlasFull) -> Self {
+        Self::AtlasFull
+    }
+}
 
 impl AtlasPage {
     /// Glyph rasters are separated by this much to keep bilinear sampling from bleeding.
@@ -735,18 +750,23 @@ impl GlyphAtlas {
         );
     }
 
-    /// The slot of a glyph, rastering it into the atlas if it isn't there yet. `None` for
-    /// glyphs with no ink (spaces).
+    /// The slot of a glyph, rastering it into the atlas if it isn't there yet (and `budget`
+    /// allows). `None` for glyphs with no ink (spaces).
     fn glyph(
         &mut self,
         physical: &PhysicalGlyph,
         images: &mut Assets<Image>,
         font_system: &mut CosmicFontSystem,
         swash_cache: &mut SwashCache,
-    ) -> Result<Option<GlyphSlot>, AtlasFull> {
+        budget: &mut usize,
+    ) -> Result<Option<GlyphSlot>, RasterError> {
         if let Some(slot) = self.glyphs.get(&physical.cache_key) {
             return Ok((!slot.rect.is_empty()).then_some(*slot));
         }
+        if *budget == 0 {
+            return Err(RasterError::Budget);
+        }
+        *budget -= 1;
 
         let start = Instant::now();
         let mut slot = GlyphSlot {
@@ -898,11 +918,21 @@ struct LaidOutText {
 enum LayoutError {
     Text(bevy::text::TextError),
     AtlasFull,
+    Budget,
 }
 
 impl From<bevy::text::TextError> for LayoutError {
     fn from(value: bevy::text::TextError) -> Self {
         Self::Text(value)
+    }
+}
+
+impl From<RasterError> for LayoutError {
+    fn from(value: RasterError) -> Self {
+        match value {
+            RasterError::AtlasFull => Self::AtlasFull,
+            RasterError::Budget => Self::Budget,
+        }
     }
 }
 
@@ -922,6 +952,7 @@ fn layout_text(
     swash_cache: &mut SwashCache,
     atlas: &mut GlyphAtlas,
     images: &mut Assets<Image>,
+    raster_budget: &mut usize,
 ) -> Result<LaidOutText, LayoutError> {
     let mut computed = ComputedTextBlock::default();
     let mut update = |width: Option<f32>, computed: &mut ComputedTextBlock| {
@@ -1017,10 +1048,10 @@ fn layout_text(
             glyph.y_offset = 0.0;
             let physical = glyph.physical((0.0, 0.0), 1.0);
 
-            let slot = match atlas.glyph(&physical, images, font_system, swash_cache) {
-                Ok(Some(slot)) => slot,
-                Ok(None) => continue,
-                Err(AtlasFull) => return Err(LayoutError::AtlasFull),
+            let Some(slot) =
+                atlas.glyph(&physical, images, font_system, swash_cache, raster_budget)?
+            else {
+                continue;
             };
             out.glyphs.push(physical.cache_key);
 
@@ -1143,6 +1174,7 @@ fn update_text_shapes(
 
     let mut built = 0;
     let mut deferred = 0;
+    let mut raster_budget = MAX_RASTERS_PER_FRAME;
     let mut rebuilt = HashSet::<AtlasKey>::default();
 
     for (ent, scene_ent, text_shape, maybe_prior, maybe_retry) in query.iter() {
@@ -1322,10 +1354,16 @@ fn update_text_shapes(
             &mut swash_cache,
             atlas,
             &mut images,
+            &mut raster_budget,
         ) {
             Ok(laid_out) => laid_out,
             Err(LayoutError::Text(e)) => {
                 debug!("textshape {ent:?} layout failed, retrying: {e}");
+                retry(&mut commands);
+                continue;
+            }
+            Err(LayoutError::Budget) => {
+                // the glyphs rastered so far are kept; finish next frame
                 retry(&mut commands);
                 continue;
             }
