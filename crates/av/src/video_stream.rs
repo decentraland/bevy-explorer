@@ -23,8 +23,6 @@ pub struct VideoSink {
     pub rate: Option<f64>,
     /// The image changed size and the materials on it must rebind.
     pub resized: bool,
-    /// The last volume sent, to send only changes.
-    pub sent_volume: Option<f32>,
 }
 
 impl VideoSink {
@@ -42,7 +40,6 @@ impl VideoSink {
             length: None,
             rate: None,
             resized: false,
-            sent_volume: None,
         }
     }
 }
@@ -99,6 +96,7 @@ pub fn av_sinks<T: AVPlayer>(
         audio,
         video: T::has_video().then_some(VideoSink::new(source, video_receiver, image)),
         command_sender,
+        sent_volume: None,
         _phantom: Default::default(),
     }
 }
@@ -172,6 +170,7 @@ pub fn noop_sinks<T: AVPlayer>(source: String, image: Handle<Image>) -> AVSinks<
         audio,
         video: Some(VideoSink::new(source, video_receiver, image)),
         command_sender,
+        sent_volume: None,
         _phantom: Default::default(),
     }
 }

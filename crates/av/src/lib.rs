@@ -109,6 +109,8 @@ pub struct AVSinks<T: AVPlayer> {
     pub audio: Option<AudioSink>,
     pub video: Option<VideoSink>,
     pub command_sender: tokio::sync::mpsc::UnboundedSender<AVCommand>,
+    /// The last volume sent, to send only changes.
+    pub sent_volume: Option<f32>,
     pub _phantom: PhantomData<T>,
 }
 

@@ -232,6 +232,7 @@ fn player_config_added<T: AVPlayer>(
             audio: _,
         video,
         command_sender,
+        sent_volume: _,
         _phantom,
     } = sinks.as_mut();
 
@@ -266,21 +267,19 @@ fn update_av_volume<T: AVPlayer>(
         let AVSinks {
             #[cfg(feature = "ffmpeg")]
                 audio: _,
-            video,
+            video: _,
             command_sender,
+            sent_volume,
             _phantom,
         } = sinks.as_mut();
 
-        let Some(video_sink) = video else {
-            continue;
-        };
         let volume = if containing_scenes.contains(&scene.root) {
             config.volume() * audio_settings.scene()
         } else {
             0.0
         };
-        if video_sink.sent_volume != Some(volume) {
-            video_sink.sent_volume = Some(volume);
+        if sent_volume != &Some(volume) {
+            *sent_volume = Some(volume);
             command_sender.send(AVCommand::Volume(volume)).report();
         }
     }
