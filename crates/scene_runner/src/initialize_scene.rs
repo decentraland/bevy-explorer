@@ -1157,7 +1157,13 @@ pub fn process_realm_change(
         );
 
         if let Some(ref mut segment_config) = segment_config {
-            segment_config.update_realm(current_realm.address.clone());
+            // the realm root the about was fetched from, trailing slash kept: godot sends
+            // the same value, and it is what tells a world apart from its catalyst
+            let realm = current_realm
+                .about_url
+                .strip_suffix("about")
+                .unwrap_or(&current_realm.about_url);
+            segment_config.update_realm(realm.to_owned());
         }
     }
 }
