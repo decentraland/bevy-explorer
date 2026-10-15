@@ -117,8 +117,12 @@ use bevy::{
     ui::{update::update_clipping_system, widget::text_system, UiSystem},
 };
 use boimp::bake::ImposterBakeMaterialExtension;
-use common::{sets::SceneLoopSets, structs::AppConfig, util::TryPushChildrenEx};
-use cosmic_text::{CacheKey, PhysicalGlyph, Placement, SwashContent};
+use common::{
+    sets::SceneLoopSets,
+    structs::{AppConfig, PrimaryUser},
+    util::TryPushChildrenEx,
+};
+use cosmic_text::{CacheKey, Placement, SwashContent};
 use dcl::interface::ComponentPosition;
 use dcl_component::{
     proto_components::{
@@ -132,7 +136,7 @@ use std::time::Duration;
 use ui_core::{FontName, WeightName, FONT_SIZE_SCALE};
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::{renderer_context::RendererSceneContext, SceneEntity};
+use crate::{renderer_context::RendererSceneContext, ContainingScene, SceneEntity};
 
 use super::{
     fonts::{FamilyKey, SceneFontServer, TextFontFamily},
@@ -189,15 +193,13 @@ impl From<PbTextShape> for TextShape {
     }
 }
 
-/// The glyph meshes drawn for a text shape (one per atlas page used), the component they were
-/// built from, and the atlas glyphs they sample (so an atlas rebuild knows what to keep).
+/// The glyph meshes drawn for a text shape (one per atlas page and effect layer), the layout
+/// they were built from, and the atlas generation they sample.
 #[derive(Component)]
 pub struct TextShapeMesh {
     meshes: Vec<Entity>,
-    source: PbTextShape,
-    atlas: AtlasKey,
+    layout: ShapeLayout,
     generation: u32,
-    glyphs: Vec<CacheKey>,
 }
 
 /// Waiting to be built; oldest first.
@@ -207,6 +209,17 @@ pub struct RetryTextShape {
     /// The shape's glyphs didn't fit its atlas: the atlas's rebuild count at the time. If it
     /// still doesn't fit after a rebuild, it is dropped.
     atlas_full: Option<u32>,
+    /// The layout of an interrupted build (out of raster budget, or atlas room).
+    layout: Option<ShapeLayout>,
+}
+
+/// A text shape's layout: what it was laid out from, and the result. Independent of the atlas,
+/// so it serves every build of the shape until its component changes.
+#[derive(Clone)]
+struct ShapeLayout {
+    source: PbTextShape,
+    atlas: AtlasKey,
+    text: LaidOutText,
 }
 
 #[derive(Default, Resource, Deref, DerefMut)]
@@ -488,7 +501,7 @@ const CALIBRATION_FONT_SIZE: f32 = 20.0;
 /// The font size text shapes are laid out and rastered at. The atlas is shared, so this only
 /// costs glyph memory once per face; the world scale compensates for it.
 const RASTER_FONT_SIZE: f32 = 64.0;
-/// Shapes laid out per frame; the rest wait their turn, oldest first.
+/// Shapes laid out per frame; the rest wait: the player's scenes first, then oldest first.
 const MAX_BUILDS_PER_FRAME: usize = 64;
 /// Glyphs rastered per frame (across all atlases): a shape needing more waits for the next
 /// frame, keeping what it has, rather than hitching the frame.
@@ -800,6 +813,11 @@ impl GlyphAtlas {
             .collect::<Vec<_>>();
         kept.sort_by_key(|(_, slot)| std::cmp::Reverse((slot.rect.height(), slot.rect.width())));
         for (key, slot) in kept {
+            if slot.rect.is_empty() {
+                // no ink: nothing to move
+                self.glyphs.insert(key, slot);
+                continue;
+            }
             let (page, old) = match slot.page {
                 Page::Sdf => (&mut self.sdf, &old_sdf_data),
                 Page::Color => (
@@ -827,13 +845,13 @@ impl GlyphAtlas {
     /// allows). `None` for glyphs with no ink (spaces).
     fn glyph(
         &mut self,
-        physical: &PhysicalGlyph,
+        key: CacheKey,
         images: &mut Assets<Image>,
         font_system: &mut CosmicFontSystem,
         swash_cache: &mut SwashCache,
         budget: &mut usize,
     ) -> Result<Option<GlyphSlot>, RasterError> {
-        if let Some(slot) = self.glyphs.get(&physical.cache_key) {
+        if let Some(slot) = self.glyphs.get(&key) {
             return Ok((!slot.rect.is_empty()).then_some(*slot));
         }
         if *budget == 0 {
@@ -849,7 +867,7 @@ impl GlyphAtlas {
         };
         let image = swash_cache
             .0
-            .get_image_uncached(&mut font_system.0, physical.cache_key)
+            .get_image_uncached(&mut font_system.0, key)
             .filter(|image| image.placement.width > 0 && image.placement.height > 0);
         if let Some(image) = image {
             let Placement {
@@ -888,7 +906,7 @@ impl GlyphAtlas {
             }
         }
         // missing glyphs and glyphs with no ink draw nothing
-        self.glyphs.insert(physical.cache_key, slot);
+        self.glyphs.insert(key, slot);
         self.rastered.0 += 1;
         self.rastered.1 += start.elapsed();
         Ok((!slot.rect.is_empty()).then_some(slot))
@@ -965,6 +983,7 @@ fn span_iter(
 
 /// An axis-aligned quad in text pixels (y down from the block's top left), with its atlas
 /// rect in pixels.
+#[derive(Clone)]
 struct TextQuad {
     min: Vec2,
     max: Vec2,
@@ -976,42 +995,33 @@ struct TextQuad {
     color: LinearRgba,
 }
 
-/// A laid out block: a quad per glyph and per extra (underline etc).
-#[derive(Default)]
+/// A laid out block in text pixels: a glyph per glyph and a quad per extra (underline etc),
+/// and what placing it in the world needs.
+#[derive(Clone)]
 struct LaidOutText {
-    /// Quads sampling the distance-field page: outline glyphs and extras.
-    sdf_quads: Vec<TextQuad>,
-    /// Quads sampling the bitmap page: colour glyphs.
-    color_quads: Vec<TextQuad>,
-    glyphs: Vec<CacheKey>,
+    glyphs: Vec<LaidOutGlyph>,
+    /// Untextured quads sampling the white block: marks and lines.
+    bars: Vec<TextQuad>,
     /// Width of the widest line and height of all the lines.
     size: Vec2,
+    /// The point size the block is scaled by.
+    effective_pt: f32,
+    /// Every colour (spans and marks) is fully opaque.
+    opaque: bool,
 }
 
-enum LayoutError {
-    Text(bevy::text::TextError),
-    AtlasFull,
-    Budget,
+/// A glyph of a laid out block: the pen position its raster is placed from (text pixels, y
+/// down), the raster, and the colour.
+#[derive(Clone)]
+struct LaidOutGlyph {
+    key: CacheKey,
+    pen: Vec2,
+    color: LinearRgba,
 }
 
-impl From<bevy::text::TextError> for LayoutError {
-    fn from(value: bevy::text::TextError) -> Self {
-        Self::Text(value)
-    }
-}
-
-impl From<RasterError> for LayoutError {
-    fn from(value: RasterError) -> Self {
-        match value {
-            RasterError::AtlasFull => Self::AtlasFull,
-            RasterError::Budget => Self::Budget,
-        }
-    }
-}
-
-/// Lay the spans out and gather a quad per glyph, rastering glyphs into the atlas as needed.
-/// `width` wraps (if `linebreak` allows it) and is the width lines are justified within;
-/// unbounded text is justified within its widest line.
+/// Lay the spans out: a glyph per glyph and a quad per extra. `width` wraps (if `linebreak`
+/// allows it) and is the width lines are justified within; unbounded text is justified within
+/// its widest line.
 #[allow(clippy::too_many_arguments)]
 fn layout_text(
     entity: Entity,
@@ -1019,14 +1029,12 @@ fn layout_text(
     justify: JustifyText,
     linebreak: LineBreak,
     width: Option<f32>,
+    effective_pt: f32,
+    opaque: bool,
     text_pipeline: &mut TextPipeline,
     fonts: &Assets<Font>,
     font_system: &mut CosmicFontSystem,
-    swash_cache: &mut SwashCache,
-    atlas: &mut GlyphAtlas,
-    images: &mut Assets<Image>,
-    raster_budget: &mut usize,
-) -> Result<LaidOutText, LayoutError> {
+) -> Result<LaidOutText, bevy::text::TextError> {
     let mut computed = ComputedTextBlock::default();
     let mut update = |width: Option<f32>, computed: &mut ComputedTextBlock| {
         text_pipeline.update_buffer(
@@ -1063,8 +1071,11 @@ fn layout_text(
     }
 
     let mut out = LaidOutText {
+        glyphs: Vec::new(),
+        bars: Vec::new(),
         size,
-        ..Default::default()
+        effective_pt,
+        opaque,
     };
 
     for run in computed.buffer().layout_runs() {
@@ -1105,7 +1116,7 @@ fn layout_text(
             match segment.as_mut() {
                 Some((seg_span, _, end)) if *seg_span == span => *end = glyph.x + glyph.w,
                 _ => {
-                    flush(segment.take(), &mut out.sdf_quads);
+                    flush(segment.take(), &mut out.bars);
                     segment = Some((span, glyph.x, glyph.x + glyph.w));
                 }
             }
@@ -1121,34 +1132,51 @@ fn layout_text(
             glyph.y_offset = 0.0;
             let physical = glyph.physical((0.0, 0.0), 1.0);
 
-            let Some(slot) =
-                atlas.glyph(&physical, images, font_system, swash_cache, raster_budget)?
-            else {
-                continue;
-            };
-            out.glyphs.push(physical.cache_key);
-
-            let min = Vec2::new(
-                physical.x as f32 + slot.offset.x as f32,
-                run.line_y.round() + physical.y as f32 - slot.offset.y as f32,
-            );
-            let quads = match slot.page {
-                Page::Sdf => &mut out.sdf_quads,
-                Page::Color => &mut out.color_quads,
-            };
-            quads.push(TextQuad {
-                min,
-                max: min + slot.rect.size().as_vec2(),
-                z: 0.0,
-                uv_min: slot.rect.min.as_vec2(),
-                uv_max: slot.rect.max.as_vec2(),
+            out.glyphs.push(LaidOutGlyph {
+                key: physical.cache_key,
+                pen: Vec2::new(physical.x as f32, run.line_y.round() + physical.y as f32),
                 color: color.0.to_linear(),
             });
         }
-        flush(segment.take(), &mut out.sdf_quads);
+        flush(segment.take(), &mut out.bars);
     }
 
     Ok(out)
+}
+
+/// The block's quads with their atlas rects: those sampling the distance-field page (glyphs
+/// and bars) and those sampling the bitmap page. Glyphs not in the atlas yet are rastered, as
+/// `budget` allows; an interrupted call keeps what it rastered.
+fn glyph_quads(
+    text: &LaidOutText,
+    atlas: &mut GlyphAtlas,
+    images: &mut Assets<Image>,
+    font_system: &mut CosmicFontSystem,
+    swash_cache: &mut SwashCache,
+    budget: &mut usize,
+) -> Result<(Vec<TextQuad>, Vec<TextQuad>), RasterError> {
+    let mut sdf_quads = text.bars.clone();
+    let mut color_quads = Vec::new();
+    for glyph in &text.glyphs {
+        let Some(slot) = atlas.glyph(glyph.key, images, font_system, swash_cache, budget)? else {
+            // no ink
+            continue;
+        };
+        let min = glyph.pen + Vec2::new(slot.offset.x as f32, -(slot.offset.y as f32));
+        let quads = match slot.page {
+            Page::Sdf => &mut sdf_quads,
+            Page::Color => &mut color_quads,
+        };
+        quads.push(TextQuad {
+            min,
+            max: min + slot.rect.size().as_vec2(),
+            z: 0.0,
+            uv_min: slot.rect.min.as_vec2(),
+            uv_max: slot.rect.max.as_vec2(),
+            color: glyph.color,
+        });
+    }
+    Ok((sdf_quads, color_quads))
 }
 
 /// Build a mesh of the quads, moved by `offset` (text px) and placed in meters with `to_world`
@@ -1223,6 +1251,8 @@ fn update_text_shapes(
     >,
     scenes: Query<&RendererSceneContext>,
     mut material_caches: Query<&mut TextShapeMaterials>,
+    player: Query<Entity, With<PrimaryUser>>,
+    containing_scene: ContainingScene,
     frame: Res<FrameCount>,
     mut unrecognized_tags: ResMut<UnrecognisedTags>,
     mut text_pipeline: ResMut<TextPipeline>,
@@ -1237,27 +1267,32 @@ fn update_text_shapes(
     ),
     config: Res<AppConfig>,
 ) {
-    // oldest waiting shapes first
-    let mut waiting = query
-        .iter()
-        .filter_map(|(_, _, _, _, retry)| retry.map(|r| r.since))
-        .collect::<Vec<_>>();
-    waiting.sort();
-    let stop_at = waiting.get(MAX_BUILDS_PER_FRAME).copied();
+    // the scenes the player is in first (they share the build slots and the raster budget
+    // with every other scene), then oldest waiting first
+    let current_scenes = player
+        .single()
+        .ok()
+        .map(|p| containing_scene.get(p))
+        .unwrap_or_default();
+    let mut candidates = query.iter().collect::<Vec<_>>();
+    candidates.sort_by_key(|(_, scene_ent, _, _, retry)| {
+        (
+            !current_scenes.contains(&scene_ent.root),
+            retry.map(|r| r.since).unwrap_or(frame.0),
+        )
+    });
 
     let mut built = 0;
     let mut deferred = 0;
     let mut raster_budget = MAX_RASTERS_PER_FRAME;
 
-    for (ent, scene_ent, text_shape, maybe_prior, maybe_retry) in query.iter() {
-        let skip = built >= MAX_BUILDS_PER_FRAME
-            || stop_at.is_some_and(|stop_at| maybe_retry.is_none_or(|retry| retry.since > stop_at));
-
-        if skip {
+    for (ent, scene_ent, text_shape, maybe_prior, maybe_retry) in candidates {
+        if built >= MAX_BUILDS_PER_FRAME {
             if maybe_retry.is_none() {
                 commands.entity(ent).try_insert(RetryTextShape {
                     since: frame.0,
                     atlas_full: None,
+                    layout: None,
                 });
             }
             deferred += 1;
@@ -1268,6 +1303,7 @@ fn update_text_shapes(
             commands.entity(ent).try_insert(RetryTextShape {
                 since: frame.0,
                 atlas_full: None,
+                layout: None,
             });
         };
 
@@ -1300,8 +1336,8 @@ fn update_text_shapes(
         let atlas = atlases.get_or_create(atlas_key.clone(), &mut images);
 
         if let Some(prior) = maybe_prior {
-            if prior.source == text_shape.0
-                && prior.atlas == atlas_key
+            if prior.layout.source == text_shape.0
+                && prior.layout.atlas == atlas_key
                 && prior.generation == atlas.generation
             {
                 commands.entity(ent).try_remove::<RetryTextShape>();
@@ -1353,114 +1389,153 @@ fn update_text_shapes(
             | TextAlignMode::TamBottomRight => (1.0, JustifyText::Right),
         };
 
-        // truncate very long text (used for both measuring and rendering)
-        let source = if text_shape.0.text.len() > 2048 {
-            warn!(
-                "textshape text truncated from {} to 2048 chars",
-                text_shape.0.text.len()
-            );
-            let end = text_shape
-                .0
-                .text
-                .as_str()
-                .char_indices()
-                .find(|(ix, _)| *ix >= 2048)
-                .map(|(ix, _)| ix)
-                .unwrap_or(text_shape.0.text.len());
-            &text_shape.0.text.as_str()[0..end]
-        } else {
-            text_shape.0.text.as_str()
-        };
+        // the layout doesn't depend on the atlas: reuse the last build's, or an interrupted
+        // build's, until the component changes
+        let reusable =
+            |layout: &&ShapeLayout| layout.source == text_shape.0 && layout.atlas == atlas_key;
+        let cached = maybe_prior
+            .map(|prior| &prior.layout)
+            .filter(reusable)
+            .or_else(|| {
+                maybe_retry
+                    .and_then(|retry| retry.layout.as_ref())
+                    .filter(reusable)
+            });
+        let layout = match cached {
+            Some(layout) => layout.clone(),
+            None => {
+                // truncate very long text (used for both measuring and rendering)
+                let source = if text_shape.0.text.len() > 2048 {
+                    warn!(
+                        "textshape text truncated from {} to 2048 chars",
+                        text_shape.0.text.len()
+                    );
+                    let end = text_shape
+                        .0
+                        .text
+                        .as_str()
+                        .char_indices()
+                        .find(|(ix, _)| *ix >= 2048)
+                        .map(|(ix, _)| ix)
+                        .unwrap_or(text_shape.0.text.len());
+                    &text_shape.0.text.as_str()[0..end]
+                } else {
+                    text_shape.0.text.as_str()
+                };
 
-        let (spans, _) = build_text_spans(
-            source,
-            RASTER_FONT_SIZE,
-            text_shape
-                .0
-                .text_color
-                .map(Color4DclToBevy::convert_srgba)
-                .unwrap_or(Color::WHITE),
-            &family,
-            &mut scene_fonts,
-            &mut unrecognized_tags,
-        );
+                let (spans, _) = build_text_spans(
+                    source,
+                    RASTER_FONT_SIZE,
+                    text_shape
+                        .0
+                        .text_color
+                        .map(Color4DclToBevy::convert_srgba)
+                        .unwrap_or(Color::WHITE),
+                    &family,
+                    &mut scene_fonts,
+                    &mut unrecognized_tags,
+                );
 
-        // building the spans may have requested more faces; wait for them
-        if !scene_fonts.family_ready(&family) {
-            retry(&mut commands);
-            continue;
-        }
-
-        let opaque = spans.iter().all(|(_, _, color, extras)| {
-            color.0.alpha() >= 1.0
-                && extras
-                    .and_then(|extras| extras.mark)
-                    .is_none_or(|mark| mark.alpha() >= 1.0)
-        });
-
-        // With fontAutoSize the SDK font size is ignored; the font is sized to
-        // fit the text block into the box (clamped), matching unity-explorer.
-        // Otherwise the SDK font size drives the world scale directly.
-        let effective_pt = if text_shape.0.font_auto_size() {
-            match auto_fit_point_size(
-                &text_shape.0,
-                &spans,
-                &mut text_pipeline,
-                &scene_fonts,
-                &mut font_system,
-                ent,
-            ) {
-                Some(pt) => pt,
-                None => {
-                    // required font not loaded yet; retry next frame
+                // building the spans may have requested more faces; wait for them
+                if !scene_fonts.family_ready(&family) {
                     retry(&mut commands);
                     continue;
                 }
+
+                let opaque = spans.iter().all(|(_, _, color, extras)| {
+                    color.0.alpha() >= 1.0
+                        && extras
+                            .and_then(|extras| extras.mark)
+                            .is_none_or(|mark| mark.alpha() >= 1.0)
+                });
+
+                // With fontAutoSize the SDK font size is ignored; the font is sized to
+                // fit the text block into the box (clamped), matching unity-explorer.
+                // Otherwise the SDK font size drives the world scale directly.
+                let effective_pt = if text_shape.0.font_auto_size() {
+                    match auto_fit_point_size(
+                        &text_shape.0,
+                        &spans,
+                        &mut text_pipeline,
+                        &scene_fonts,
+                        &mut font_system,
+                        ent,
+                    ) {
+                        Some(pt) => pt,
+                        None => {
+                            // required font not loaded yet; retry next frame
+                            retry(&mut commands);
+                            continue;
+                        }
+                    }
+                } else {
+                    text_shape.0.font_size.unwrap_or(10.0)
+                };
+
+                // when wrapping, the box is the sdk width (less the side padding for the lines)
+                let wrap_width = wrapping.then(|| {
+                    let pix_per_m = pix_per_m(effective_pt);
+                    (text_shape.0.width.unwrap_or(1.0) * pix_per_m
+                        - text_shape.0.padding_left() * pix_per_m
+                        - text_shape.0.padding_right() * pix_per_m)
+                        .max(1.0)
+                });
+
+                let text = match layout_text(
+                    ent,
+                    &spans,
+                    justify,
+                    if wrapping {
+                        LineBreak::WordOrCharacter
+                    } else {
+                        LineBreak::NoWrap
+                    },
+                    wrap_width,
+                    effective_pt,
+                    opaque,
+                    &mut text_pipeline,
+                    scene_fonts.assets(),
+                    &mut font_system,
+                ) {
+                    Ok(text) => text,
+                    Err(e) => {
+                        debug!("textshape {ent:?} layout failed, retrying: {e}");
+                        retry(&mut commands);
+                        continue;
+                    }
+                };
+                ShapeLayout {
+                    source: text_shape.0.clone(),
+                    atlas: atlas_key.clone(),
+                    text,
+                }
             }
-        } else {
-            text_shape.0.font_size.unwrap_or(10.0)
         };
 
-        let pix_per_m = pix_per_m(effective_pt);
+        let pix_per_m = pix_per_m(layout.text.effective_pt);
         let padding_left = text_shape.0.padding_left() * pix_per_m;
         let padding_right = text_shape.0.padding_right() * pix_per_m;
         let add_y_pix = (text_shape.0.padding_bottom() - text_shape.0.padding_top()) * pix_per_m;
 
-        // when wrapping, the box is the sdk width (less the side padding for the lines)
-        let wrap_width = wrapping.then(|| {
-            (text_shape.0.width.unwrap_or(1.0) * pix_per_m - padding_left - padding_right).max(1.0)
-        });
-
-        let laid_out = match layout_text(
-            ent,
-            &spans,
-            justify,
-            if wrapping {
-                LineBreak::WordOrCharacter
-            } else {
-                LineBreak::NoWrap
-            },
-            wrap_width,
-            &mut text_pipeline,
-            scene_fonts.assets(),
-            &mut font_system,
-            &mut swash_cache,
+        let (sdf_quads, color_quads) = match glyph_quads(
+            &layout.text,
             atlas,
             &mut images,
+            &mut font_system,
+            &mut swash_cache,
             &mut raster_budget,
         ) {
-            Ok(laid_out) => laid_out,
-            Err(LayoutError::Text(e)) => {
-                debug!("textshape {ent:?} layout failed, retrying: {e}");
-                retry(&mut commands);
+            Ok(quads) => quads,
+            Err(RasterError::Budget) => {
+                // the glyphs rastered so far are kept, and so is the layout; finish next frame
+                commands.entity(ent).try_insert(RetryTextShape {
+                    since: frame.0,
+                    atlas_full: None,
+                    layout: Some(layout),
+                });
                 continue;
             }
-            Err(LayoutError::Budget) => {
-                // the glyphs rastered so far are kept; finish next frame
-                retry(&mut commands);
-                continue;
-            }
-            Err(LayoutError::AtlasFull) => {
+            Err(RasterError::AtlasFull) => {
                 let rebuilt_since = maybe_retry
                     .and_then(|retry| retry.atlas_full)
                     .is_some_and(|rebuilds| rebuilds < atlas.rebuilds);
@@ -1475,6 +1550,7 @@ fn update_text_shapes(
                 commands.entity(ent).try_insert(RetryTextShape {
                     since: frame.0,
                     atlas_full: Some(atlas.rebuilds),
+                    layout: Some(layout),
                 });
                 continue;
             }
@@ -1484,7 +1560,7 @@ fn update_text_shapes(
         // wrapping the sdk box replaces the block: it is centred on the entity and the lines
         // are aligned within it (a fixed sdk height applies unless auto-sizing, which only
         // uses the box to pick the font size)
-        let block = laid_out.size + Vec2::new(padding_left + padding_right, 0.0);
+        let block = layout.text.size + Vec2::new(padding_left + padding_right, 0.0);
         let (box_size, anchor, inner_y) = if wrapping {
             let box_h = match text_shape.0.height {
                 Some(h) if !text_shape.0.font_auto_size() => h * pix_per_m,
@@ -1509,10 +1585,10 @@ fn update_text_shapes(
         let effects = TextEffects::from_text_shape(&text_shape.0);
         let layers = effects
             .layers()
-            .map(|layer| (Page::Sdf, &laid_out.sdf_quads, layer))
+            .map(|layer| (Page::Sdf, &sdf_quads, layer))
             .chain(std::iter::once((
                 Page::Color,
-                &laid_out.color_quads,
+                &color_quads,
                 Layer::bitmap(),
             )));
         let mut mesh_ents = Vec::new();
@@ -1520,7 +1596,7 @@ fn update_text_shapes(
             let Some(atlas_page) = atlas.page(page).filter(|_| !quads.is_empty()) else {
                 continue;
             };
-            let depth_write = opaque && layer.params.flags & TEXT_SDF_SHADOW == 0;
+            let depth_write = layout.text.opaque && layer.params.flags & TEXT_SDF_SHADOW == 0;
             let key = MaterialKey {
                 atlas: atlas_key.clone(),
                 generation: atlas.generation,
@@ -1575,10 +1651,8 @@ fn update_text_shapes(
         clean_up_text_shape(&mut commands, ent, maybe_prior);
         commands.entity(ent).try_insert(TextShapeMesh {
             meshes: mesh_ents,
-            source: text_shape.0.clone(),
-            atlas: atlas_key,
+            layout,
             generation: atlas.generation,
-            glyphs: laid_out.glyphs,
         });
 
         debug!("[{}] textshape {ent:?}", frame.0);
@@ -1593,6 +1667,7 @@ fn update_text_shapes(
 fn maintain_glyph_atlases(
     mut commands: Commands,
     shapes: Query<(Entity, &TextShapeMesh, Has<RetryTextShape>)>,
+    pending: Query<&RetryTextShape>,
     scenes: Query<&RendererSceneContext>,
     mut material_caches: Query<&mut TextShapeMaterials>,
     frame: Res<FrameCount>,
@@ -1612,10 +1687,13 @@ fn maintain_glyph_atlases(
         if atlas.rebuild_requested {
             atlas.rebuild_requested = false;
             atlas.rebuilds += 1;
+            // what is drawn, and what an interrupted build has rastered so far
             let in_use = shapes
                 .iter()
-                .filter(|(_, mesh, _)| mesh.atlas == *key)
-                .flat_map(|(_, mesh, _)| mesh.glyphs.iter().copied())
+                .map(|(_, mesh, _)| &mesh.layout)
+                .chain(pending.iter().filter_map(|retry| retry.layout.as_ref()))
+                .filter(|layout| layout.atlas == *key)
+                .flat_map(|layout| layout.text.glyphs.iter().map(|glyph| glyph.key))
                 .collect::<HashSet<_>>();
             // only inked glyphs take room
             let freeable = atlas
@@ -1627,10 +1705,12 @@ fn maintain_glyph_atlases(
                 // everything built against the old texture is stale; it keeps drawing from
                 // the old texture (via its old material) until it is rebuilt
                 for (ent, mesh, waiting) in shapes.iter() {
-                    if mesh.atlas == *key && mesh.generation != atlas.generation && !waiting {
+                    if mesh.layout.atlas == *key && mesh.generation != atlas.generation && !waiting
+                    {
                         commands.entity(ent).try_insert(RetryTextShape {
                             since: frame.0,
                             atlas_full: None,
+                            layout: None,
                         });
                     }
                 }
