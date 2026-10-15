@@ -446,7 +446,11 @@ pub struct EndpointConfig {
 /// themselves collapse the double slash, but the rate limiter in front of them does not and
 /// answers 429 to clients that keep sending it.
 pub fn endpoint_url(public_url: &str, path: &str) -> String {
-    format!("{}/{}", public_url.trim_end_matches('/'), path.trim_start_matches('/'))
+    format!(
+        "{}/{}",
+        public_url.trim_end_matches('/'),
+        path.trim_start_matches('/')
+    )
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -2382,7 +2386,10 @@ mod tests {
             "https://peer-ap1.decentraland.org/content/contents/"
         );
         assert_eq!(
-            endpoint_url("https://peer-ap1.decentraland.org/content/", "entities/active"),
+            endpoint_url(
+                "https://peer-ap1.decentraland.org/content/",
+                "entities/active"
+            ),
             "https://peer-ap1.decentraland.org/content/entities/active"
         );
     }
