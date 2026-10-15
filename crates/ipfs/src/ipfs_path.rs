@@ -45,7 +45,7 @@ use multihash_codetable::MultihashDigest;
 use bevy::log::error;
 use urn::Urn;
 
-use crate::ServerAbout;
+use crate::{endpoint_url, ServerAbout};
 
 use super::IpfsContext;
 
@@ -587,7 +587,7 @@ impl IpfsPath {
                     .about
                     .as_ref()
                     .and_then(ServerAbout::content_url)
-                    .map(|base_url| format!("{}{}", base_url, self.ipfs_type.base_url_extension()))
+                    .map(|base_url| endpoint_url(base_url, self.ipfs_type.base_url_extension()))
             })
             .ok_or_else(|| anyhow::anyhow!("base url not specified in asset path or context"))?;
 
@@ -795,6 +795,30 @@ mod tests {
     use super::{
         content_file_path, is_http_url, resolve_content_uri, ContentPathExt, IpfsPath, IpfsType,
     };
+    use crate::{EndpointConfig, IpfsContext, ServerAbout};
+
+    #[test]
+    fn realm_content_urls_do_not_double_the_slash() {
+        // the catalysts' `/about` serves `content.publicUrl` with a trailing slash
+        let context = IpfsContext {
+            about: Some(ServerAbout {
+                content: Some(EndpointConfig {
+                    healthy: true,
+                    public_url: "https://peer-ap1.decentraland.org/content/".to_owned(),
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let ipfs_path = IpfsPath::new(IpfsType::Entity {
+            hash: "bafyhash".to_owned(),
+            ext: "scene".to_owned(),
+        });
+        assert_eq!(
+            ipfs_path.to_url(&context).unwrap(),
+            "https://peer-ap1.decentraland.org/content/contents/bafyhash"
+        );
+    }
 
     #[test]
     fn content_paths_are_forced_relative() {

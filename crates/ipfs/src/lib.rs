@@ -409,7 +409,7 @@ impl IpfsAssetServer<'_, '_> {
             .borrow()
             .as_ref()
             .and_then(|c| c.about.content.as_ref())
-            .map(|content| format!("{}/entities/active", content.public_url))
+            .map(|content| endpoint_url(&content.public_url, "entities/active"))
     }
 
     pub fn ipfs(&self) -> &Arc<IpfsIo> {
@@ -438,6 +438,15 @@ impl IpfsAssetServer<'_, '_> {
 pub struct EndpointConfig {
     pub healthy: bool,
     pub public_url: String,
+}
+
+/// Joins `path` onto an endpoint's `publicUrl`. The catalysts' `/about` serves
+/// `content.publicUrl` with a trailing slash (`https://peer.decentraland.org/content/`), so a
+/// plain `format!("{public_url}/contents/")` asks for `/content//contents/`. The catalysts
+/// themselves collapse the double slash, but the rate limiter in front of them does not and
+/// answers 429 to clients that keep sending it.
+pub fn endpoint_url(public_url: &str, path: &str) -> String {
+    format!("{}/{}", public_url.trim_end_matches('/'), path.trim_start_matches('/'))
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -1284,7 +1293,7 @@ impl IpfsIo {
                 .and_then(|c| c.about.content.as_ref())
                 .map(|content| content.public_url.to_owned()),
         }
-        .map(|url| format!("{url}/entities/active"));
+        .map(|url| endpoint_url(&url, "entities/active"));
 
         match request {
             ActiveEntitiesRequest::Pointers(pointers) => {
@@ -1594,7 +1603,7 @@ impl IpfsIo {
             .borrow()
             .as_ref()
             .and_then(|c| c.about.content.as_ref())
-            .map(|content| format!("{}/contents/", content.public_url))
+            .map(|content| endpoint_url(&content.public_url, "contents/"))
     }
 
     pub fn entities_endpoint(&self) -> Option<String> {
@@ -1602,7 +1611,7 @@ impl IpfsIo {
             .borrow()
             .as_ref()
             .and_then(|c| c.about.content.as_ref())
-            .map(|content| format!("{}/entities/", content.public_url))
+            .map(|content| endpoint_url(&content.public_url, "entities/"))
     }
 
     async fn update_scene_urns(
@@ -2363,7 +2372,28 @@ fn b64_split_at_key<'a>(decoded: &'a str, key: &str) -> Option<(&'a str, &'a str
 
 #[cfg(test)]
 mod tests {
-    use super::{b64_split_at_key, ContentMap};
+    use super::{b64_split_at_key, endpoint_url, ContentMap};
+
+    #[test]
+    fn endpoint_url_keeps_a_single_slash_after_abouts_trailing_one() {
+        // every catalyst's `/about` ends `content.publicUrl` with a slash
+        assert_eq!(
+            endpoint_url("https://peer-ap1.decentraland.org/content/", "contents/"),
+            "https://peer-ap1.decentraland.org/content/contents/"
+        );
+        assert_eq!(
+            endpoint_url("https://peer-ap1.decentraland.org/content/", "entities/active"),
+            "https://peer-ap1.decentraland.org/content/entities/active"
+        );
+    }
+
+    #[test]
+    fn endpoint_url_joins_a_bare_public_url_too() {
+        assert_eq!(
+            endpoint_url("https://worlds.example/content", "entities/"),
+            "https://worlds.example/content/entities/"
+        );
+    }
 
     #[test]
     fn splits_unix_path() {
