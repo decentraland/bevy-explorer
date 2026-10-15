@@ -91,33 +91,44 @@ use bevy::{
     diagnostic::FrameCount,
     ecs::{relationship::RelatedSpawner, spawn::SpawnWith},
     math::Affine2,
-    pbr::NotShadowCaster,
-    platform::collections::{HashMap, HashSet},
+    pbr::{
+        ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline,
+        NotShadowCaster,
+    },
+    platform::{
+        collections::{HashMap, HashSet},
+        time::Instant,
+    },
     prelude::*,
     render::{
-        mesh::{Indices, PrimitiveTopology},
+        mesh::{Indices, MeshVertexBufferLayoutRef, PrimitiveTopology},
         primitives::Aabb,
         render_asset::RenderAssetUsages,
-        render_resource::{Extent3d, TextureDimension, TextureFormat},
+        render_resource::{
+            AsBindGroup, Extent3d, RenderPipelineDescriptor, ShaderRef,
+            SpecializedMeshPipelineError, TextureDimension, TextureFormat,
+        },
         view::VisibilitySystems,
     },
     text::{
-        ComputedTextBlock, CosmicBuffer, CosmicFontSystem, FontAtlasSet, FontSmoothing, LineBreak,
-        LineHeight, SwashCache, TextBounds, TextPipeline,
+        ComputedTextBlock, CosmicBuffer, CosmicFontSystem, LineBreak, LineHeight, SwashCache,
+        TextBounds, TextPipeline,
     },
     ui::{update::update_clipping_system, widget::text_system, UiSystem},
 };
+use boimp::bake::ImposterBakeMaterialExtension;
 use common::{sets::SceneLoopSets, structs::AppConfig, util::TryPushChildrenEx};
-use cosmic_text::{CacheKey, PhysicalGlyph};
+use cosmic_text::{CacheKey, PhysicalGlyph, Placement, SwashContent};
 use dcl::interface::ComponentPosition;
 use dcl_component::{
     proto_components::{
         sdk::components::{common::TextAlignMode, PbTextShape},
-        Color4DclToBevy,
+        Color3DclToBevy, Color4DclToBevy,
     },
     SceneComponentId,
 };
-use scene_material::{SceneBound, SceneMaterial};
+use scene_material::{MaterialExtPlugin, SceneBound, SceneMaterial};
+use std::time::Duration;
 use ui_core::{FontName, WeightName, FONT_SIZE_SCALE};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -125,6 +136,7 @@ use crate::{renderer_context::RendererSceneContext, SceneEntity};
 
 use super::{
     fonts::{FamilyKey, SceneFontServer, TextFontFamily},
+    glyph_sdf::sdf_from_mask,
     AddCrdtInterfaceExt,
 };
 
@@ -136,6 +148,7 @@ impl Plugin for TextShapePlugin {
             SceneComponentId::TEXT_SHAPE,
             ComponentPosition::EntityOnly,
         );
+        app.add_plugins(MaterialExtPlugin::<TextSdfMaterial>::default());
         app.init_resource::<GlyphAtlases>();
         app.init_resource::<TextShapeMaterials>();
         app.init_resource::<SwashCache>();
@@ -167,11 +180,11 @@ impl From<PbTextShape> for TextShape {
     }
 }
 
-/// The glyph mesh drawn for a text shape, the component it was built from, and the atlas
-/// glyphs it samples (so an atlas rebuild knows what to keep).
+/// The glyph meshes drawn for a text shape (one per atlas page used), the component they were
+/// built from, and the atlas glyphs they sample (so an atlas rebuild knows what to keep).
 #[derive(Component)]
 pub struct TextShapeMesh {
-    mesh: Entity,
+    meshes: Vec<Entity>,
     source: PbTextShape,
     atlas: AtlasKey,
     generation: u32,
@@ -184,9 +197,194 @@ pub struct RetryTextShape(u32);
 #[derive(Default, Resource, Deref, DerefMut)]
 pub struct UnrecognisedTags(HashSet<String>);
 
-/// Materials for text shape meshes, per scene, atlas and atlas generation.
+/// Materials for text shape meshes: one per scene, atlas page, atlas generation and set of
+/// text effects.
 #[derive(Default, Resource)]
-struct TextShapeMaterials(HashMap<(Entity, AtlasKey, u32), Handle<SceneMaterial>>);
+struct TextShapeMaterials(HashMap<MaterialKey, Handle<TextSdfMaterial>>);
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct MaterialKey {
+    scene: Entity,
+    atlas: AtlasKey,
+    generation: u32,
+    page: Page,
+    /// The effect parameters' bits.
+    effects: [u32; 13],
+}
+
+/// The scene-bound material drawing an atlas page (text_sdf.wgsl).
+pub type TextSdfMaterial = ExtendedMaterial<TextSdf>;
+
+#[derive(Asset, TypePath, Clone, AsBindGroup)]
+pub struct TextSdf {
+    #[uniform(200)]
+    pub params: TextSdfParams,
+}
+
+impl MaterialExtension for TextSdf {
+    type Base = SceneMaterial;
+
+    fn fragment_shader() -> ShaderRef {
+        "embedded://shaders/text_sdf.wgsl".into()
+    }
+
+    fn specialize(
+        _: &MaterialExtensionPipeline,
+        descriptor: &mut RenderPipelineDescriptor,
+        _: &MeshVertexBufferLayoutRef,
+        _: MaterialExtensionKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        // text is blended for its soft edges but is otherwise solid: write depth so nearby
+        // geometry behind it can't draw over it (fully transparent fragments are discarded)
+        if let Some(depth) = descriptor.depth_stencil.as_mut() {
+            depth.depth_write_enabled = true;
+        }
+        Ok(())
+    }
+}
+
+impl ImposterBakeMaterialExtension for TextSdf {
+    fn imposter_fragment_shader() -> ShaderRef {
+        "embedded://shaders/text_sdf_baker.wgsl".into()
+    }
+}
+
+mod decl {
+    // temporary for ShaderType macro, remove in future
+    #![allow(dead_code)]
+
+    use bevy::{
+        math::{Vec2, Vec4},
+        render::render_resource::ShaderType,
+    };
+
+    /// Text effects, in atlas pixels; see text_sdf_common.wgsl.
+    #[derive(Clone, Copy, ShaderType)]
+    pub struct TextSdfParams {
+        pub outline_color: Vec4,
+        pub shadow_color: Vec4,
+        pub shadow_offset: Vec2,
+        pub outline_width: f32,
+        pub shadow_softness: f32,
+        pub spread: f32,
+        pub flags: u32,
+    }
+}
+pub use decl::*;
+
+/// Which layers a material draws. Each effect is a mesh of its own at its own depth (shadow
+/// behind outline behind face), as neighbouring glyph quads overlap: a glyph's effect must
+/// never paint over its neighbour's face.
+const TEXT_SDF_FACE: u32 = 1;
+const TEXT_SDF_OUTLINE: u32 = 2;
+const TEXT_SDF_SHADOW: u32 = 4;
+/// The page holds bitmaps (colour glyphs), not distance fields: no effects.
+const TEXT_SDF_BITMAP: u32 = 8;
+
+/// Depth between the layers, in meters.
+const LAYER_Z: f32 = 0.001;
+
+impl TextSdfParams {
+    /// As unity-explorer drives TextMeshPro: an outline when the width is positive, an underlay
+    /// when the shadow is offset. Widths, offsets and blur are fractions of the distance range.
+    fn from_text_shape(text_shape: &PbTextShape) -> Self {
+        let spread = GlyphAtlas::SPREAD as f32;
+        let color = |color: Option<dcl_component::proto_components::common::Color3>| {
+            Vec4::from_array(
+                color
+                    .map(Color3DclToBevy::convert_srgb)
+                    .unwrap_or(Color::WHITE)
+                    .to_linear()
+                    .to_f32_array(),
+            )
+        };
+        let mut params = Self {
+            outline_color: Vec4::ZERO,
+            shadow_color: Vec4::ZERO,
+            shadow_offset: Vec2::ZERO,
+            outline_width: 0.0,
+            shadow_softness: 0.0,
+            spread,
+            flags: TEXT_SDF_FACE,
+        };
+
+        let outline_width = text_shape.outline_width.unwrap_or(0.0);
+        if outline_width > 0.0 {
+            params.flags |= TEXT_SDF_OUTLINE;
+            // matched against TextMeshPro: width 1 is a quarter of the distance range either
+            // side of the edge
+            params.outline_width = outline_width.min(1.0) * spread * 0.5;
+            params.outline_color = color(text_shape.outline_color);
+        }
+
+        let offset = Vec2::new(
+            text_shape.shadow_offset_x.unwrap_or(0.0),
+            text_shape.shadow_offset_y.unwrap_or(0.0),
+        );
+        if offset != Vec2::ZERO {
+            params.flags |= TEXT_SDF_SHADOW;
+            let blur = text_shape.shadow_blur.unwrap_or(0.0).max(0.0);
+            // keep the shadow within the glyph's distance range, as TextMeshPro scales its
+            // effects down to fit its padding
+            let scale = spread / (offset.abs().max_element() + blur).max(1.0);
+            params.shadow_offset = offset * scale;
+            params.shadow_softness = blur * scale;
+            params.shadow_color = color(text_shape.shadow_color);
+        }
+
+        params
+    }
+
+    /// The layers to draw, back to front, with their depth: the same parameters restricted to
+    /// one effect each.
+    fn layers(&self) -> impl Iterator<Item = (Self, f32)> + '_ {
+        [
+            (TEXT_SDF_SHADOW, -2.0 * LAYER_Z),
+            (TEXT_SDF_OUTLINE, -LAYER_Z),
+            (TEXT_SDF_FACE, 0.0),
+        ]
+        .into_iter()
+        .filter(|(flag, _)| self.flags & flag != 0)
+        .map(|(flag, z)| {
+            (
+                Self {
+                    flags: flag,
+                    ..*self
+                },
+                z,
+            )
+        })
+    }
+
+    fn bitmap() -> Self {
+        Self {
+            outline_color: Vec4::ZERO,
+            shadow_color: Vec4::ZERO,
+            shadow_offset: Vec2::ZERO,
+            outline_width: 0.0,
+            shadow_softness: 0.0,
+            spread: 0.0,
+            flags: TEXT_SDF_BITMAP,
+        }
+    }
+
+    fn key(&self) -> [u32; 13] {
+        let mut key = [0; 13];
+        for (slot, value) in key.iter_mut().zip(
+            self.outline_color
+                .to_array()
+                .into_iter()
+                .chain(self.shadow_color.to_array())
+                .chain(self.shadow_offset.to_array())
+                .chain([self.outline_width, self.shadow_softness])
+                .map(f32::to_bits)
+                .chain([self.flags]),
+        ) {
+            *slot = value;
+        }
+        key
+    }
+}
 
 /// One atlas per font family: a scene family's glyph churn can only exhaust its own atlas,
 /// never evict the built-in families' glyphs, and its atlas dies with the scene.
@@ -238,66 +436,68 @@ fn pix_per_m(effective_pt: f32) -> f32 {
 /// Where a glyph sits in the atlas (pixels), and the raster's offset from the glyph origin.
 #[derive(Clone, Copy)]
 struct GlyphSlot {
+    page: Page,
     rect: URect,
     offset: IVec2,
 }
 
-/// A row of the atlas; glyphs are appended left to right.
+/// The texture a glyph is rastered into: distance fields for outline glyphs, bitmaps for
+/// colour (emoji) glyphs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Page {
+    Sdf,
+    Color,
+}
+
+/// A row of a page; glyphs are appended left to right.
 struct Shelf {
     y: u32,
     height: u32,
     next_x: u32,
 }
 
-/// One texture holding every glyph a family's text shapes draw, in pixel units. A placed glyph
-/// never moves: when the texture fills up it doubles in place (the old pixels stay at the same
-/// top left) so existing meshes stay valid, and only the materials' uv scale changes. At
-/// [`GlyphAtlas::MAX_SIZE`] it is rebuilt from the glyphs still in use instead, which moves
-/// them: every shape built before the rebuild is then re-laid out (its generation is stale),
-/// and keeps the old texture alive through its old material until it has.
-#[derive(Resource)]
-pub struct GlyphAtlas {
+/// One texture of an atlas, in pixel units. A placed glyph never moves: when the texture
+/// fills up it doubles in place (the old pixels stay at the same top left) so existing meshes
+/// stay valid, and only the materials' uv scale changes.
+struct AtlasPage {
     image: Handle<Image>,
     size: u32,
-    generation: u32,
-    glyphs: HashMap<CacheKey, GlyphSlot>,
+    max_size: u32,
+    format: TextureFormat,
+    bytes_per_pixel: u32,
     shelves: Vec<Shelf>,
     shelves_bottom: u32,
     /// Changed this frame (growth): materials need their uv scale updated.
     resized: bool,
 }
 
-/// The atlas can't fit the glyph: at [`GlyphAtlas::MAX_SIZE`] and no room.
+/// The atlas can't fit the glyph: at the page's maximum size and no room.
 struct AtlasFull;
 
-impl GlyphAtlas {
-    fn new(images: &mut Assets<Image>) -> Self {
-        let image = images.add(Self::blank_image(Self::INITIAL_SIZE));
-        let mut atlas = Self {
-            image,
-            size: Self::INITIAL_SIZE,
-            generation: 0,
-            glyphs: HashMap::default(),
+impl AtlasPage {
+    /// Glyph rasters are separated by this much to keep bilinear sampling from bleeding.
+    const PADDING: u32 = 1;
+
+    fn new(
+        images: &mut Assets<Image>,
+        size: u32,
+        max_size: u32,
+        format: TextureFormat,
+        bytes_per_pixel: u32,
+    ) -> Self {
+        Self {
+            image: images.add(Self::blank_image(size, format, bytes_per_pixel)),
+            size,
+            max_size,
+            format,
+            bytes_per_pixel,
             shelves: Vec::default(),
             shelves_bottom: 0,
             resized: false,
-        };
-        atlas.reset(images);
-        atlas
+        }
     }
 
-    const INITIAL_SIZE: u32 = 512;
-    /// 64MB of rgba; also the size of the upload whenever a glyph is added at this size.
-    const MAX_SIZE: u32 = 4096;
-    /// Glyph rasters are separated by this much to keep bilinear sampling from bleeding.
-    const PADDING: u32 = 1;
-    /// A block of white at the top left for the untextured quads (extras) to sample.
-    const WHITE: URect = URect {
-        min: UVec2::ZERO,
-        max: UVec2::splat(4),
-    };
-
-    fn blank_image(size: u32) -> Image {
+    fn blank_image(size: u32, format: TextureFormat, bytes_per_pixel: u32) -> Image {
         let mut image = Image::new_fill(
             Extent3d {
                 width: size,
@@ -305,8 +505,8 @@ impl GlyphAtlas {
                 depth_or_array_layers: 1,
             },
             TextureDimension::D2,
-            &[0, 0, 0, 0],
-            TextureFormat::Rgba8UnormSrgb,
+            &vec![0; bytes_per_pixel as usize],
+            format,
             // cpu copy kept to add glyphs to
             RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
         );
@@ -314,29 +514,21 @@ impl GlyphAtlas {
         image
     }
 
-    /// The uv of the white block's centre, in pixels.
-    fn white_uv() -> Vec2 {
-        Self::WHITE.center().as_vec2()
-    }
-
-    /// Start packing afresh into `self.image` (sized `self.size`): the white block first.
-    fn reset(&mut self, images: &mut Assets<Image>) {
-        self.glyphs.clear();
+    /// Start packing afresh into a blank texture of the same size; returns the old one.
+    fn restart(&mut self, images: &mut Assets<Image>) -> Handle<Image> {
         self.shelves.clear();
         self.shelves_bottom = 0;
-        let white = self
-            .allocate(Self::WHITE.width(), Self::WHITE.height())
-            .unwrap();
-        debug_assert_eq!(white, Self::WHITE.min);
-        let image = images.get_mut(&self.image).unwrap();
-        for y in 0..Self::WHITE.height() {
-            let start = ((y * self.size) * 4) as usize;
-            image.data.as_mut().unwrap()[start..start + (Self::WHITE.width() * 4) as usize]
-                .fill(255);
-        }
+        std::mem::replace(
+            &mut self.image,
+            images.add(Self::blank_image(
+                self.size,
+                self.format,
+                self.bytes_per_pixel,
+            )),
+        )
     }
 
-    /// Find room for a `width` x `height` raster, growing the atlas if needed.
+    /// Find room for a `width` x `height` raster.
     fn allocate(&mut self, width: u32, height: u32) -> Option<UVec2> {
         let padded_w = width + Self::PADDING;
         // shelves come in multiples of 8px so similar glyphs share them
@@ -365,15 +557,16 @@ impl GlyphAtlas {
 
     /// Double the texture in place, keeping the old pixels where they were.
     fn grow(&mut self, images: &mut Assets<Image>) -> Result<(), AtlasFull> {
-        if self.size >= Self::MAX_SIZE {
+        if self.size >= self.max_size {
             return Err(AtlasFull);
         }
         let old_size = self.size;
         let new_size = old_size * 2;
+        let bpp = self.bytes_per_pixel as usize;
         let image = images.get_mut(&self.image).unwrap();
         let old = image.data.take().unwrap();
-        let mut data = vec![0u8; (new_size * new_size * 4) as usize];
-        let row = (old_size * 4) as usize;
+        let mut data = vec![0u8; (new_size * new_size) as usize * bpp];
+        let row = old_size as usize * bpp;
         for y in 0..old_size as usize {
             data[y * row * 2..y * row * 2 + row].copy_from_slice(&old[y * row..(y + 1) * row]);
         }
@@ -382,45 +575,158 @@ impl GlyphAtlas {
         image.texture_descriptor.size.height = new_size;
         self.size = new_size;
         self.resized = true;
-        info!("glyph atlas grown to {new_size}");
+        info!("glyph atlas page grown to {new_size}");
         Ok(())
     }
 
-    /// Replace the texture with one holding only `in_use` glyphs, repacked; the old texture
-    /// lives on through the old materials until the shapes using it are rebuilt.
+    /// Copy a `width` x `height` raster to `pos`.
+    fn write(&self, images: &mut Assets<Image>, pos: UVec2, width: u32, height: u32, src: &[u8]) {
+        let bpp = self.bytes_per_pixel as usize;
+        let row = width as usize * bpp;
+        let image = images.get_mut(&self.image).unwrap();
+        let data = image.data.as_mut().unwrap();
+        for y in 0..height as usize {
+            let dst = ((pos.y as usize + y) * self.size as usize + pos.x as usize) * bpp;
+            data[dst..dst + row].copy_from_slice(&src[y * row..(y + 1) * row]);
+        }
+    }
+
+    /// Place a raster, growing the page if needed.
+    fn place(
+        &mut self,
+        images: &mut Assets<Image>,
+        width: u32,
+        height: u32,
+        src: &[u8],
+    ) -> Result<URect, AtlasFull> {
+        let pos = loop {
+            if let Some(pos) = self.allocate(width, height) {
+                break pos;
+            }
+            self.grow(images)?;
+        };
+        self.write(images, pos, width, height, src);
+        Ok(URect::from_corners(pos, pos + UVec2::new(width, height)))
+    }
+
+    /// The pixels of `rect` in `data`, a texture of this page's size.
+    fn read(&self, data: &[u8], rect: URect) -> Vec<u8> {
+        let bpp = self.bytes_per_pixel as usize;
+        let row = rect.width() as usize * bpp;
+        let mut out = Vec::with_capacity(row * rect.height() as usize);
+        for y in rect.min.y..rect.max.y {
+            let start = (y as usize * self.size as usize + rect.min.x as usize) * bpp;
+            out.extend_from_slice(&data[start..start + row]);
+        }
+        out
+    }
+}
+
+/// The textures holding every glyph a family's text shapes draw: distance fields of the
+/// outline glyphs, and bitmaps of any colour glyphs. When a page reaches its maximum size the
+/// atlas is rebuilt from the glyphs still in use instead, which moves them: every shape built
+/// before the rebuild is then re-laid out (its generation is stale), and keeps the old textures
+/// alive through its old materials until it has.
+#[derive(Resource)]
+pub struct GlyphAtlas {
+    sdf: AtlasPage,
+    /// Made when the family's first colour glyph is rastered.
+    color: Option<AtlasPage>,
+    generation: u32,
+    glyphs: HashMap<CacheKey, GlyphSlot>,
+    /// Glyphs rastered this frame, and the time it took.
+    rastered: (u32, Duration),
+}
+
+impl GlyphAtlas {
+    const INITIAL_SIZE: u32 = 512;
+    /// 16MB of r8; also the size of the upload whenever a glyph is added at this size.
+    const MAX_SIZE: u32 = 4096;
+    const COLOR_INITIAL_SIZE: u32 = 256;
+    /// 16MB of rgba.
+    const COLOR_MAX_SIZE: u32 = 2048;
+    /// Distance range either side of a glyph's ink, in pixels; the margin around each raster.
+    const SPREAD: u32 = 8;
+    /// A block of "inside" at the top left of the distance-field page for the untextured quads
+    /// (extras) to sample; big enough that a shadow offset stays within it.
+    const WHITE: URect = URect {
+        min: UVec2::ZERO,
+        max: UVec2::splat(24),
+    };
+
+    fn new(images: &mut Assets<Image>) -> Self {
+        let mut atlas = Self {
+            sdf: AtlasPage::new(
+                images,
+                Self::INITIAL_SIZE,
+                Self::MAX_SIZE,
+                TextureFormat::R8Unorm,
+                1,
+            ),
+            color: None,
+            generation: 0,
+            glyphs: HashMap::default(),
+            rastered: (0, Duration::ZERO),
+        };
+        atlas.add_white(images);
+        atlas
+    }
+
+    /// The uv of the white block's centre, in pixels.
+    fn white_uv() -> Vec2 {
+        Self::WHITE.center().as_vec2()
+    }
+
+    fn add_white(&mut self, images: &mut Assets<Image>) {
+        let (w, h) = (Self::WHITE.width(), Self::WHITE.height());
+        let white = self.sdf.allocate(w, h).unwrap();
+        debug_assert_eq!(white, Self::WHITE.min);
+        self.sdf
+            .write(images, white, w, h, &vec![255u8; (w * h) as usize]);
+    }
+
+    fn page(&self, page: Page) -> Option<&AtlasPage> {
+        match page {
+            Page::Sdf => Some(&self.sdf),
+            Page::Color => self.color.as_ref(),
+        }
+    }
+
+    fn pages_mut(&mut self) -> impl Iterator<Item = (Page, &mut AtlasPage)> {
+        std::iter::once((Page::Sdf, &mut self.sdf))
+            .chain(self.color.as_mut().map(|page| (Page::Color, page)))
+    }
+
+    /// Replace the textures with ones holding only `in_use` glyphs, repacked; the old textures
+    /// live on through the old materials until the shapes using them are rebuilt.
     fn rebuild(&mut self, images: &mut Assets<Image>, in_use: &HashSet<CacheKey>) {
         let old_glyphs = std::mem::take(&mut self.glyphs);
-        let old_image =
-            std::mem::replace(&mut self.image, images.add(Self::blank_image(self.size)));
         self.generation += 1;
-        self.reset(images);
-        let old_data = images.get(&old_image).unwrap().data.clone().unwrap();
-        let old_size = self.size;
+        let old_sdf = self.sdf.restart(images);
+        let old_color = self.color.as_mut().map(|page| page.restart(images));
+        self.add_white(images);
+        let old_data = |handle: &Handle<Image>| images.get(handle).unwrap().data.clone().unwrap();
+        let old_sdf_data = old_data(&old_sdf);
+        let old_color_data = old_color.as_ref().map(old_data);
         for (key, slot) in old_glyphs {
             if !in_use.contains(&key) {
                 continue;
             }
-            let (w, h) = (slot.rect.width(), slot.rect.height());
-            let Some(pos) = self.allocate(w, h) else {
+            let (page, old) = match slot.page {
+                Page::Sdf => (&mut self.sdf, &old_sdf_data),
+                Page::Color => (
+                    self.color.as_mut().unwrap(),
+                    old_color_data.as_ref().unwrap(),
+                ),
+            };
+            let raster = page.read(old, slot.rect);
+            let Ok(rect) = page.place(images, slot.rect.width(), slot.rect.height(), &raster)
+            else {
                 // can't happen: the old texture held them all, and it was the same size
                 warn!("glyph atlas rebuild overflowed");
                 break;
             };
-            let image = images.get_mut(&self.image).unwrap();
-            let data = image.data.as_mut().unwrap();
-            for y in 0..h {
-                let src = (((slot.rect.min.y + y) * old_size + slot.rect.min.x) * 4) as usize;
-                let dst = (((pos.y + y) * self.size + pos.x) * 4) as usize;
-                data[dst..dst + (w * 4) as usize]
-                    .copy_from_slice(&old_data[src..src + (w * 4) as usize]);
-            }
-            self.glyphs.insert(
-                key,
-                GlyphSlot {
-                    rect: URect::from_corners(pos, pos + UVec2::new(w, h)),
-                    offset: slot.offset,
-                },
-            );
+            self.glyphs.insert(key, GlyphSlot { rect, ..slot });
         }
         info!(
             "glyph atlas rebuilt (generation {}): {} glyphs kept",
@@ -442,46 +748,56 @@ impl GlyphAtlas {
             return Ok((!slot.rect.is_empty()).then_some(*slot));
         }
 
-        let Ok((raster, offset)) = FontAtlasSet::get_outlined_glyph_texture(
-            &mut font_system.0,
-            &mut swash_cache.0,
-            physical,
-            FontSmoothing::AntiAliased,
-        ) else {
-            // no raster (missing glyph): draw nothing for it
-            self.glyphs.insert(
-                physical.cache_key,
-                GlyphSlot {
-                    rect: URect::EMPTY,
-                    offset: IVec2::ZERO,
-                },
-            );
-            return Ok(None);
-        };
-
-        let (w, h) = (raster.width(), raster.height());
+        let start = Instant::now();
         let mut slot = GlyphSlot {
+            page: Page::Sdf,
             rect: URect::EMPTY,
-            offset,
+            offset: IVec2::ZERO,
         };
-        if w > 0 && h > 0 {
-            let pos = loop {
-                if let Some(pos) = self.allocate(w, h) {
-                    break pos;
+        let image = swash_cache
+            .0
+            .get_image_uncached(&mut font_system.0, physical.cache_key)
+            .filter(|image| image.placement.width > 0 && image.placement.height > 0);
+        if let Some(image) = image {
+            let Placement {
+                left,
+                top,
+                width,
+                height,
+            } = image.placement;
+            match image.content {
+                SwashContent::Mask => {
+                    let spread = Self::SPREAD;
+                    let sdf = sdf_from_mask(&image.data, width, height, spread);
+                    slot.rect =
+                        self.sdf
+                            .place(images, width + 2 * spread, height + 2 * spread, &sdf)?;
+                    slot.offset = IVec2::new(left - spread as i32, top + spread as i32);
                 }
-                self.grow(images)?;
-            };
-            let image = images.get_mut(&self.image).unwrap();
-            let data = image.data.as_mut().unwrap();
-            let src = raster.data.as_ref().unwrap();
-            for y in 0..h {
-                let dst = (((pos.y + y) * self.size + pos.x) * 4) as usize;
-                data[dst..dst + (w * 4) as usize]
-                    .copy_from_slice(&src[(y * w * 4) as usize..((y + 1) * w * 4) as usize]);
+                SwashContent::Color => {
+                    let page = self.color.get_or_insert_with(|| {
+                        AtlasPage::new(
+                            images,
+                            Self::COLOR_INITIAL_SIZE,
+                            Self::COLOR_MAX_SIZE,
+                            TextureFormat::Rgba8UnormSrgb,
+                            4,
+                        )
+                    });
+                    slot.page = Page::Color;
+                    slot.rect = page.place(images, width, height, &image.data)?;
+                    slot.offset = IVec2::new(left, top);
+                }
+                SwashContent::SubpixelMask => {
+                    // not produced when rendering an alpha mask
+                    warn!("unexpected subpixel glyph raster");
+                }
             }
-            slot.rect = URect::from_corners(pos, pos + UVec2::new(w, h));
         }
+        // missing glyphs and glyphs with no ink draw nothing
         self.glyphs.insert(physical.cache_key, slot);
+        self.rastered.0 += 1;
+        self.rastered.1 += start.elapsed();
         Ok((!slot.rect.is_empty()).then_some(slot))
     }
 }
@@ -559,6 +875,9 @@ fn span_iter(
 struct TextQuad {
     min: Vec2,
     max: Vec2,
+    /// Offset towards the viewer, in meters: the quads write depth, so extras over or under
+    /// the glyphs must not share their plane.
+    z: f32,
     uv_min: Vec2,
     uv_max: Vec2,
     color: LinearRgba,
@@ -567,7 +886,10 @@ struct TextQuad {
 /// A laid out block: a quad per glyph and per extra (underline etc).
 #[derive(Default)]
 struct LaidOutText {
-    quads: Vec<TextQuad>,
+    /// Quads sampling the distance-field page: outline glyphs and extras.
+    sdf_quads: Vec<TextQuad>,
+    /// Quads sampling the bitmap page: colour glyphs.
+    color_quads: Vec<TextQuad>,
     glyphs: Vec<CacheKey>,
     /// Width of the widest line and height of all the lines.
     size: Vec2,
@@ -651,24 +973,26 @@ fn layout_text(
             let (_, _, color, Some(extras)) = &spans[span] else {
                 return;
             };
-            let mut bar = |top: f32, height: f32, color: Color| {
+            let mut bar = |top: f32, height: f32, z: f32, color: Color| {
                 let top = run.line_top + run.line_height * top;
                 quads.push(TextQuad {
                     min: Vec2::new(start, top),
                     max: Vec2::new(end, top + (run.line_height * height).max(1.0)),
+                    z,
                     uv_min: GlyphAtlas::white_uv(),
                     uv_max: GlyphAtlas::white_uv(),
                     color: color.to_linear(),
                 });
             };
+            // the mark behind the glyphs and their effects, the lines over them
             if let Some(mark) = extras.mark {
-                bar(0.1, 1.0, mark);
+                bar(0.1, 1.0, -3.0 * LAYER_Z, mark);
             }
             if extras.strike {
-                bar(0.5, 0.1, color.0);
+                bar(0.5, 0.1, LAYER_Z, color.0);
             }
             if extras.underline {
-                bar(0.95, 0.1, color.0);
+                bar(0.95, 0.1, LAYER_Z, color.0);
             }
         };
 
@@ -677,7 +1001,7 @@ fn layout_text(
             match segment.as_mut() {
                 Some((seg_span, _, end)) if *seg_span == span => *end = glyph.x + glyph.w,
                 _ => {
-                    flush(segment.take(), &mut out.quads);
+                    flush(segment.take(), &mut out.sdf_quads);
                     segment = Some((span, glyph.x, glyph.x + glyph.w));
                 }
             }
@@ -704,22 +1028,28 @@ fn layout_text(
                 physical.x as f32 + slot.offset.x as f32,
                 run.line_y.round() + physical.y as f32 - slot.offset.y as f32,
             );
-            out.quads.push(TextQuad {
+            let quads = match slot.page {
+                Page::Sdf => &mut out.sdf_quads,
+                Page::Color => &mut out.color_quads,
+            };
+            quads.push(TextQuad {
                 min,
                 max: min + slot.rect.size().as_vec2(),
+                z: 0.0,
                 uv_min: slot.rect.min.as_vec2(),
                 uv_max: slot.rect.max.as_vec2(),
                 color: color.0.to_linear(),
             });
         }
-        flush(segment.take(), &mut out.quads);
+        flush(segment.take(), &mut out.sdf_quads);
     }
 
     Ok(out)
 }
 
-/// Build a mesh of the quads, placed in meters with `to_world` (text px -> world xy).
-fn quad_mesh(quads: &[TextQuad], to_world: impl Fn(Vec2) -> Vec2) -> (Mesh, Aabb) {
+/// Build a mesh of the quads, placed in meters with `to_world` (text px -> world xy) at depth
+/// `z` (plus each quad's own).
+fn quad_mesh(quads: &[TextQuad], to_world: impl Fn(Vec2) -> Vec2, z: f32) -> (Mesh, Aabb) {
     let mut positions = Vec::with_capacity(quads.len() * 4);
     let mut uvs = Vec::with_capacity(quads.len() * 4);
     let mut colors = Vec::with_capacity(quads.len() * 4);
@@ -750,7 +1080,7 @@ fn quad_mesh(quads: &[TextQuad], to_world: impl Fn(Vec2) -> Vec2) -> (Mesh, Aabb
             let world = to_world(corner);
             min = min.min(world);
             max = max.max(world);
-            positions.push([world.x, world.y, 0.0]);
+            positions.push([world.x, world.y, z + quad.z]);
             uvs.push([uv.x, uv.y]);
             colors.push(quad.color.to_f32_array());
         }
@@ -798,7 +1128,7 @@ fn update_text_shapes(
     (mut images, mut meshes, mut materials): (
         ResMut<Assets<Image>>,
         ResMut<Assets<Mesh>>,
-        ResMut<Assets<SceneMaterial>>,
+        ResMut<Assets<TextSdfMaterial>>,
     ),
     mut material_cache: ResMut<TextShapeMaterials>,
     config: Res<AppConfig>,
@@ -1046,38 +1376,71 @@ fn update_text_shapes(
             Vec2::new(origin.x + p.x, origin.y - p.y + add_y_pix) / pix_per_m
         };
 
-        let material = material_cache
-            .0
-            .entry((scene_ent.root, atlas_key.clone(), atlas.generation))
-            .or_insert_with(|| {
-                materials.add(SceneMaterial {
-                    base: StandardMaterial {
+        let effects = TextSdfParams::from_text_shape(&text_shape.0);
+        let layers = effects
+            .layers()
+            .map(|(params, z)| (Page::Sdf, &laid_out.sdf_quads, params, z))
+            .chain(std::iter::once((
+                Page::Color,
+                &laid_out.color_quads,
+                TextSdfParams::bitmap(),
+                0.0,
+            )));
+        let mut mesh_ents = Vec::new();
+        for (page, quads, params, z) in layers {
+            let Some(atlas_page) = atlas.page(page).filter(|_| !quads.is_empty()) else {
+                continue;
+            };
+            let key = MaterialKey {
+                scene: scene_ent.root,
+                atlas: atlas_key.clone(),
+                generation: atlas.generation,
+                page,
+                effects: params.key(),
+            };
+            let material = material_cache
+                .0
+                .entry(key)
+                .or_insert_with(|| {
+                    let base = StandardMaterial {
                         base_color: Color::WHITE,
-                        base_color_texture: Some(atlas.image.clone()),
-                        uv_transform: Affine2::from_scale(Vec2::splat(1.0 / atlas.size as f32)),
+                        base_color_texture: Some(atlas_page.image.clone()),
+                        uv_transform: Affine2::from_scale(Vec2::splat(
+                            1.0 / atlas_page.size as f32,
+                        )),
                         unlit: true,
                         alpha_mode: AlphaMode::Blend,
+                        // readable mirrored from behind, as the reference renderer
+                        double_sided: true,
+                        cull_mode: None,
                         ..Default::default()
-                    },
-                    extension: SceneBound::new(&scene.scene_bounds, config.graphics.oob),
+                    };
+                    materials.add(TextSdfMaterial {
+                        base: SceneMaterial {
+                            base,
+                            extension: SceneBound::new(&scene.scene_bounds, config.graphics.oob),
+                        },
+                        extension: TextSdf { params },
+                    })
                 })
-            })
-            .clone();
+                .clone();
 
-        let (mesh, aabb) = quad_mesh(&laid_out.quads, to_world);
-        let mesh_ent = commands
-            .spawn((
-                Mesh3d(meshes.add(mesh)),
-                MeshMaterial3d(material),
-                aabb,
-                NotShadowCaster,
-                ChildOf(ent),
-            ))
-            .id();
+            let (mesh, aabb) = quad_mesh(quads, to_world, z);
+            let mesh_ent = commands
+                .spawn((
+                    Mesh3d(meshes.add(mesh)),
+                    MeshMaterial3d(material),
+                    aabb,
+                    NotShadowCaster,
+                    ChildOf(ent),
+                ))
+                .id();
+            mesh_ents.push(mesh_ent);
+        }
 
         clean_up_text_shape(&mut commands, ent, maybe_prior);
         commands.entity(ent).try_insert(TextShapeMesh {
-            mesh: mesh_ent,
+            meshes: mesh_ents,
             source: text_shape.0.clone(),
             atlas: atlas_key,
             generation: atlas.generation,
@@ -1088,19 +1451,32 @@ fn update_text_shapes(
     }
 
     for (key, atlas) in atlases.0.iter_mut() {
-        if atlas.resized {
-            // the atlas grew in place: glyph rects (in pixels) are unchanged, only the scale.
+        if atlas.rastered.0 > 0 {
+            debug!(
+                "[{}] {key:?}: {} glyphs rastered in {:?}",
+                frame.0, atlas.rastered.0, atlas.rastered.1
+            );
+            atlas.rastered = (0, Duration::ZERO);
+        }
+        let generation = atlas.generation;
+        for (page, atlas_page) in atlas.pages_mut() {
+            if !atlas_page.resized {
+                continue;
+            }
+            // the page grew in place: glyph rects (in pixels) are unchanged, only the scale.
             // writing the material also re-prepares its bind group against the new, larger
             // texture (same-size glyph additions reuse the texture and need no rebind)
-            let scale = Affine2::from_scale(Vec2::splat(1.0 / atlas.size as f32));
-            for ((_, mat_key, generation), handle) in material_cache.0.iter() {
-                if mat_key == key && *generation == atlas.generation {
-                    if let Some(material) = materials.get_mut(handle) {
-                        material.base.uv_transform = scale;
-                    }
+            let scale = Affine2::from_scale(Vec2::splat(1.0 / atlas_page.size as f32));
+            for (mat_key, handle) in material_cache.0.iter() {
+                if mat_key.atlas != *key || mat_key.generation != generation || mat_key.page != page
+                {
+                    continue;
+                }
+                if let Some(material) = materials.get_mut(handle) {
+                    material.base.base.uv_transform = scale;
                 }
             }
-            atlas.resized = false;
+            atlas_page.resized = false;
         }
     }
 
@@ -1124,20 +1500,21 @@ fn update_text_shapes(
             let keep = scenes.contains(family.scene());
             if !keep {
                 info!(
-                    "glyph atlas {key:?} dropped ({} glyphs, {}px)",
+                    "glyph atlas {key:?} dropped ({} glyphs, {}px sdf, {:?}px color)",
                     atlas.glyphs.len(),
-                    atlas.size
+                    atlas.sdf.size,
+                    atlas.color.as_ref().map(|page| page.size)
                 );
             }
             keep
         }
     });
-    material_cache.0.retain(|(scene, key, generation), _| {
-        scenes.contains(*scene)
+    material_cache.0.retain(|key, _| {
+        scenes.contains(key.scene)
             && atlases
                 .0
-                .get(key)
-                .is_some_and(|atlas| atlas.generation == *generation)
+                .get(&key.atlas)
+                .is_some_and(|atlas| atlas.generation == key.generation)
     });
 
     debug!("built: {built}, deferred: {deferred}");
@@ -1155,7 +1532,9 @@ fn text_shape_removed(
 
 fn clean_up_text_shape(commands: &mut Commands, entity: Entity, prior: Option<&TextShapeMesh>) {
     if let Some(prior) = prior {
-        commands.entity(prior.mesh).try_despawn();
+        for mesh in &prior.meshes {
+            commands.entity(*mesh).try_despawn();
+        }
     }
     commands
         .entity(entity)
