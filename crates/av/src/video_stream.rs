@@ -15,7 +15,6 @@ use {
 
 pub struct VideoSink {
     pub source: String,
-    pub command_sender: tokio::sync::mpsc::UnboundedSender<AVCommand>,
     pub video_receiver: tokio::sync::mpsc::Receiver<VideoData>,
     pub image: Handle<Image>,
     pub current_time: f64,
@@ -31,13 +30,11 @@ pub struct VideoSink {
 impl VideoSink {
     fn new(
         source: String,
-        command_sender: tokio::sync::mpsc::UnboundedSender<AVCommand>,
         video_receiver: tokio::sync::mpsc::Receiver<VideoData>,
         image: Handle<Image>,
     ) -> Self {
         Self {
             source,
-            command_sender,
             video_receiver,
             image,
             current_time: -1.0,
@@ -100,12 +97,8 @@ pub fn av_sinks<T: AVPlayer>(
     AVSinks {
         #[cfg(feature = "ffmpeg")]
         audio,
-        video: Some(VideoSink::new(
-            source,
-            command_sender,
-            video_receiver,
-            image,
-        )),
+        video: Some(VideoSink::new(source, video_receiver, image)),
+        command_sender,
         _phantom: Default::default(),
     }
 }
@@ -175,12 +168,8 @@ pub fn noop_sinks<T: AVPlayer>(source: String, image: Handle<Image>) -> AVSinks<
     AVSinks {
         #[cfg(feature = "ffmpeg")]
         audio,
-        video: Some(VideoSink::new(
-            source,
-            command_sender,
-            video_receiver,
-            image,
-        )),
+        video: Some(VideoSink::new(source, video_receiver, image)),
+        command_sender,
         _phantom: Default::default(),
     }
 }

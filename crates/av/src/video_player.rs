@@ -95,9 +95,7 @@ fn new_player_source<T: AVPlayer>(
     };
 
     if let Some(sinks) = maybe_sinks {
-        if let Some(video_sink) = &sinks.video {
-            video_sink.command_sender.send(AVCommand::Dispose).report();
-        }
+        sinks.command_sender.send(AVCommand::Dispose).report();
     }
 
     let livestream = &**source == LIVEKIT_VIDEO_STREAM;
@@ -192,9 +190,7 @@ fn player_source_replaced<T: AVPlayer>(
     commands.entity(entity).try_remove::<AVSinks<T>>();
 
     if let Some(sinks) = maybe_sinks {
-        if let Some(video_sink) = &sinks.video {
-            video_sink.command_sender.send(AVCommand::Dispose).report();
-        }
+        sinks.command_sender.send(AVCommand::Dispose).report();
     }
 }
 
@@ -231,14 +227,20 @@ fn player_config_added<T: AVPlayer>(
         return;
     };
 
-    if let Some(video_sink) = &mut sinks.video {
+    let AVSinks {
+        audio: _,
+        video,
+        command_sender,
+        _phantom,
+    } = sinks.as_mut();
+
+    if let Some(video_sink) = video {
         if config.playing() && has_should_be_playing {
-            video_sink.command_sender.send(AVCommand::Play).report();
+            command_sender.send(AVCommand::Play).report();
         } else {
-            video_sink.command_sender.send(AVCommand::Pause).report();
+            command_sender.send(AVCommand::Pause).report();
         }
-        video_sink
-            .command_sender
+        command_sender
             .send(AVCommand::Repeat(config.r#loop()))
             .report();
         video_sink.rate = Some(config.playback_rate() as f64);
@@ -260,7 +262,14 @@ fn update_av_volume<T: AVPlayer>(
         .unwrap_or_default();
 
     for (scene, config, mut sinks) in av_players.iter_mut() {
-        let Some(video_sink) = sinks.video.as_mut() else {
+        let AVSinks {
+            audio: _,
+            video,
+            command_sender,
+            _phantom,
+        } = sinks.as_mut();
+
+        let Some(video_sink) = video else {
             continue;
         };
         let volume = if containing_scenes.contains(&scene.root) {
@@ -270,10 +279,7 @@ fn update_av_volume<T: AVPlayer>(
         };
         if video_sink.sent_volume != Some(volume) {
             video_sink.sent_volume = Some(volume);
-            video_sink
-                .command_sender
-                .send(AVCommand::Volume(volume))
-                .report();
+            command_sender.send(AVCommand::Volume(volume)).report();
         }
     }
 }
@@ -281,7 +287,7 @@ fn update_av_volume<T: AVPlayer>(
 #[expect(clippy::type_complexity)]
 fn player_position_added<T: AVPlayer>(
     trigger: Trigger<OnInsert, T::Position>,
-    mut av_players: Query<(&T::Position, Option<&mut AVSinks<T>>, Has<Stream>)>,
+    mut av_players: Query<(&T::Position, Option<&AVSinks<T>>, Has<Stream>)>,
 ) {
     let entity = trigger.target();
     let (position, maybe_sinks, has_stream) = av_players.get_mut(entity).unwrap_or_else(|e| {
@@ -290,7 +296,7 @@ fn player_position_added<T: AVPlayer>(
             disqualified::ShortName::of::<T>()
         )
     });
-    let Some(mut sinks) = maybe_sinks else {
+    let Some(sinks) = maybe_sinks else {
         if !has_stream {
             debug_panic!(
                 "Non-stream {} did not have sinks.",
@@ -305,12 +311,10 @@ fn player_position_added<T: AVPlayer>(
         disqualified::ShortName::of::<T::Source>(),
         (**position)
     );
-    if let Some(video_sink) = &mut sinks.video {
-        video_sink
-            .command_sender
-            .send(AVCommand::Seek((**position) as f64))
-            .report();
-    }
+    sinks
+        .command_sender
+        .send(AVCommand::Seek((**position) as f64))
+        .report();
 }
 
 fn av_sinks_on_remove<T: AVPlayer>(trigger: Trigger<OnRemove, AVSinks<T>>, mut commands: Commands) {
@@ -327,9 +331,7 @@ fn av_player_should_be_playing_on_add<T: AVPlayer>(
         return;
     };
 
-    if let Some(video_sink) = &sinks.video {
-        video_sink.command_sender.send(AVCommand::Play).report();
-    }
+    sinks.command_sender.send(AVCommand::Play).report();
 }
 
 fn av_player_should_be_playing_on_remove<T: AVPlayer>(
@@ -341,9 +343,7 @@ fn av_player_should_be_playing_on_remove<T: AVPlayer>(
         return;
     };
 
-    if let Some(video_sink) = &sinks.video {
-        video_sink.command_sender.send(AVCommand::Pause).report();
-    }
+    sinks.command_sender.send(AVCommand::Pause).report();
 }
 
 fn play_videos(
