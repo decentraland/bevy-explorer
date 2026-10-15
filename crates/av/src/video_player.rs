@@ -359,7 +359,8 @@ fn play_videos(
 ) {
     for (mut video_player_sinks, container, mut output) in q.iter_mut() {
         let AVSinks {
-            audio: _,
+            #[cfg(feature = "ffmpeg")]
+                audio: _,
             video: Some(video),
             command_sender: _,
             rate: sink_rate,
