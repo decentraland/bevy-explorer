@@ -67,7 +67,7 @@ pub fn av_sinks<T: AVPlayer>(
         spawn_av_thread(
             ipfs,
             command_receiver,
-            video_sender,
+            T::has_video().then_some(video_sender),
             audio_sender,
             handle_receiver,
             source.clone(),
@@ -97,7 +97,7 @@ pub fn av_sinks<T: AVPlayer>(
     AVSinks {
         #[cfg(feature = "ffmpeg")]
         audio,
-        video: Some(VideoSink::new(source, video_receiver, image)),
+        video: T::has_video().then_some(VideoSink::new(source, video_receiver, image)),
         command_sender,
         _phantom: Default::default(),
     }
@@ -107,7 +107,7 @@ pub fn av_sinks<T: AVPlayer>(
 pub fn spawn_av_thread(
     ipfs: IpfsResource,
     commands: tokio::sync::mpsc::UnboundedReceiver<AVCommand>,
-    frames: tokio::sync::mpsc::Sender<VideoData>,
+    frames: Option<tokio::sync::mpsc::Sender<VideoData>>,
     audio: tokio::sync::mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
     audio_handle: tokio::sync::oneshot::Receiver<AudioHandle>,
     path: String,
@@ -120,7 +120,7 @@ pub fn spawn_av_thread(
 fn av_thread(
     ipfs: IpfsResource,
     commands: tokio::sync::mpsc::UnboundedReceiver<AVCommand>,
-    frames: tokio::sync::mpsc::Sender<VideoData>,
+    frames: Option<tokio::sync::mpsc::Sender<VideoData>>,
     audio: tokio::sync::mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
     audio_handle: tokio::sync::oneshot::Receiver<AudioHandle>,
     path: String,
@@ -140,9 +140,11 @@ fn av_thread(
         path,
         hash,
     ) {
-        frames
-            .blocking_send(VideoData::State(VideoState::VsError))
-            .report();
+        if let Some(ref frames) = frames {
+            frames
+                .blocking_send(VideoData::State(VideoState::VsError))
+                .report();
+        }
         warn!("av error: {e}");
     } else {
         debug!("av closed");

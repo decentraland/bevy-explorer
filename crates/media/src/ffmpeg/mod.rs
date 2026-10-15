@@ -7,7 +7,7 @@ mod video_context;
 
 use std::path::Path;
 
-use bevy::log::{debug, trace};
+use bevy::log::debug;
 use common::{structs::AudioDecoderError, util::ReportErr};
 use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::format::input;
@@ -35,15 +35,17 @@ pub fn init_ffmpeg() {
 pub fn ffmpeg_worker(
     ipfas: &IpfsIo,
     commands: tokio::sync::mpsc::UnboundedReceiver<AVCommand>,
-    video: tokio::sync::mpsc::Sender<VideoData>,
+    video: Option<tokio::sync::mpsc::Sender<VideoData>>,
     audio: tokio::sync::mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
     audio_handle: tokio::sync::oneshot::Receiver<AudioHandle>,
     mut path: String,
     hash: String,
 ) -> Result<(), anyhow::Error> {
-    video
-        .blocking_send(VideoData::State(VideoState::VsLoading))
-        .report();
+    if let Some(ref video) = video {
+        video
+            .blocking_send(VideoData::State(VideoState::VsLoading))
+            .report();
+    }
     debug!("av thread spawned for {path} ...");
     let download = |url: &str| -> Result<String, anyhow::Error> {
         let local_folder = ipfas.cache_path().unwrap().join("video_downloads");
@@ -90,7 +92,7 @@ pub fn ffmpeg_worker(
     let mut input_context = input(&path)?;
 
     // try and get a video context
-    let video_context: Option<VideoContext> = {
+    let video_context: Option<VideoContext> = if let Some(video) = video {
         match VideoContext::init(&input_context, video.clone()) {
             Ok(vc) => Some(vc),
             Err(VideoError::BadPixelFormat) => {
@@ -104,6 +106,8 @@ pub fn ffmpeg_worker(
             Err(VideoError::Failed(ffmpeg_err)) => Err(ffmpeg_err)?,
             Err(VideoError::ChannelClosed) => return Ok(()),
         }
+    } else {
+        None
     };
 
     // try and get an audio context
