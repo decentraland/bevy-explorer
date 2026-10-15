@@ -17,6 +17,7 @@ export const BASE_PX_PER_PARCEL = 32
 
 export function SatelliteTiles({ chunks }: { chunks: Chunk[] }): React.JSX.Element {
   const tilePx = PARCELS_PER_TILE * BASE_PX_PER_PARCEL
+  const half_a_parcel = BASE_PX_PER_PARCEL / 2
   return (
     <>
       {chunks.map(({ col, row }) => (
@@ -28,7 +29,7 @@ export function SatelliteTiles({ chunks }: { chunks: Chunk[] }): React.JSX.Eleme
           draggable={false}
           width={tilePx}
           height={tilePx}
-          style={{ left: col * tilePx, top: row * tilePx }}
+          style={{ left: col * tilePx + half_a_parcel, top: row * tilePx - half_a_parcel }}
         />
       ))}
     </>
