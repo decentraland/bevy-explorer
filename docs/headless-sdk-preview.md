@@ -1,7 +1,7 @@
 # bevy-headless as the local preview authoritative server
 
 Replaces the Node `@dcl/hammurabi-server` that `sdk-commands start` spawns for
-authoritative-multiplayer scenes, with the Rust `headless` binary from this repo.
+authoritative-multiplayer scenes, with the Rust `dcl_headless_server` binary from this repo.
 
 ## What the SDK actually requires
 
@@ -33,7 +33,7 @@ one room and will fight over the synced entities.)
 
 ```bash
 # what the launcher does under the hood
-headless --realm http://localhost:8000 --preview --server-mode --location 0,0
+dcl_headless_server --realm http://localhost:8000 --preview --server-mode --location 0,0
 ```
 
 `--server-mode` makes `isServer()` true for scene code; `--preview` selects the local
@@ -46,9 +46,9 @@ Build the binaries and assemble the platform package once:
 
 ```bash
 cargo build --release -p dcl_deno_ipc
-cargo build --release --bin headless --no-default-features --features headless,livekit
+cargo build --release --bin dcl_headless_server --no-default-features --features headless,livekit
 node deploy/headless/build-platform-package.js --platform darwin-arm64 --version 0.1.0 \
-  --engine target/release/headless --sidecar target/release/dcl_deno_ipc --out deploy/headless/dist
+  --engine target/release/dcl_headless_server --sidecar target/release/dcl_deno_ipc --out deploy/headless/dist
 ```
 
 **The command on its own** — `npm link` the platform package into the launcher, then the
@@ -74,13 +74,13 @@ DCL_SERVER_PACKAGE=/path/to/bevy-explorer/deploy/headless/launcher \
 ```
 
 Look for `[Game] Running as SERVER` / `[Server] Ready` in the preview output, and confirm
-the child is the engine rather than node with `pgrep -fl "headless --realm"`.
+the child is the engine rather than node with `pgrep -fl "dcl_headless_server --realm"`.
 
 To verify a client syncs without needing a GPU, run a second engine as a plain client and
 watch for `[Game] Connected to server`:
 
 ```bash
-headless --realm http://localhost:8000 --preview --location 0,0
+dcl_headless_server --realm http://localhost:8000 --preview --location 0,0
 ```
 
 ## Validation (2026-07-31, towerofmadness)
@@ -188,4 +188,4 @@ client fails with *"World not found — the world isn't reachable right now"* fo
 `localhost` and the LAN IP: an https page cannot fetch an http realm. It fails at the
 client→realm hop, before any contact with the authoritative server, so it is unrelated to
 which server implementation runs. Use the native explorer, or a headless client
-(`headless --realm <url> --preview`), to exercise a local preview end to end.
+(`dcl_headless_server --realm <url> --preview`), to exercise a local preview end to end.

@@ -3,7 +3,7 @@
 const fs = require('fs')
 const path = require('path')
 
-// Platform packages ship `headless` and `dcl_deno_ipc` side by side. The engine
+// Platform packages ship `dcl_headless_server` and `dcl_deno_ipc` side by side. The engine
 // spawns the sidecar from its own directory under a fixed name, so the pair must
 // never be split or copied apart.
 const SUPPORTED = {
@@ -58,7 +58,7 @@ function resolveBinary() {
     )
   }
 
-  const exe = path.join(binDir, process.platform === 'win32' ? 'headless.exe' : 'headless')
+  const exe = path.join(binDir, process.platform === 'win32' ? 'dcl_headless_server.exe' : 'dcl_headless_server')
   if (!fs.existsSync(exe)) {
     throw new MissingBinaryError(`corrupt install: ${exe} is missing — reinstall the package`)
   }
