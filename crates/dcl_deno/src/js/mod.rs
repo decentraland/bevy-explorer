@@ -428,7 +428,7 @@ pub(crate) fn scene_thread(
             }
 
             // we no longer exit on uncaught `onUpdate` errors unless the scene failed to reach the renderer interface functions
-            if reported_errors == 10
+            if reported_errors >= 10
                 && state
                     .borrow()
                     .try_borrow::<CommunicatedWithRenderer>()
@@ -446,6 +446,8 @@ pub(crate) fn scene_thread(
                 });
                 return;
             }
+        } else {
+            reported_errors = 0;
         }
 
         state.borrow_mut().try_take::<CommunicatedWithRenderer>();
