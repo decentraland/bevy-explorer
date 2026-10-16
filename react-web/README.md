@@ -51,6 +51,10 @@ React DOM page  ──BroadcastChannel('bevy-ui-bridge')──►  super-user br
 
 ## Run
 
+The editor host can temporarily cap a covered viewport at 5 FPS through `setViewportActive`.
+Restoring the viewport restores the configured frame rate. Hidden tabs also use the temporary
+cap; it never changes the saved graphics setting.
+
 One command — vite starts the bridge scene's live preview (:8100, scene hot-reload) alongside
 the app unless one is already running:
 

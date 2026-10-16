@@ -1,7 +1,7 @@
 // Engine logic - ES module
 // Handles WASM/WebGPU initialization and game execution
 
-import init, { engine_init, engine_start, engine_spawn_worker, engine_console_command, engine_home_scene, engine_terms_accepted, engine_crash_event, gpu_cache_hash, report_pointer_lock, media_host_main, audio_host_main, livekit_host_main, engine_prepare_render } from "./pkg/webgpu_build.js";
+import init, { engine_init, engine_start, engine_spawn_worker, engine_console_command, engine_home_scene, engine_terms_accepted, engine_crash_event, gpu_cache_hash, report_pointer_lock, media_host_main, audio_host_main, livekit_host_main, engine_prepare_render, engine_set_viewport_active } from "./pkg/webgpu_build.js";
 import { createSandboxHost } from "./sandbox_host.js";
 
 // Re-export for main.js
@@ -473,6 +473,15 @@ export function start(options = {}) {
   workerReady(engineWorker).then(() => {
     window.engine_console_command = engine_console_command;
   });
+
+  let viewportActive = true;
+  const updateViewport = () => engine_set_viewport_active(viewportActive && !document.hidden);
+  window.__bevySetViewportActive = (active) => {
+    viewportActive = active;
+    updateViewport();
+  };
+  document.addEventListener("visibilitychange", updateViewport);
+  updateViewport();
 
   // The engine worker cannot see the document's pointer-lock state (Escape, a refused request):
   // report it through the shared wasm memory (src/web.rs report_pointer_lock).

@@ -255,6 +255,10 @@
     // (`match`, `put`). Always answers, and from the stores alone, but for the pointers a
     // catalyst owns (activeEntities).
     async function handle(request, previewRoot, store, storage, client) {
+        if (request.method === 'HEAD') {
+            const response = await handle(new Request(request.url), previewRoot, store, storage, client);
+            return new Response(null, { status: response.status, headers: response.headers });
+        }
         const target = parse(request.url, previewRoot);
         if (!target) return notFound();
         const route = STORAGE_ROUTE.exec(target.path);

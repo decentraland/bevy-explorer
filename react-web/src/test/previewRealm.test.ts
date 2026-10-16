@@ -83,6 +83,13 @@ describe('preview realm', () => {
     expect(about.configurations.localSceneParcels).toEqual(['4,-2', '5,-2'])
   })
 
+  it('answers HEAD as GET without a body, so a client probing the realm finds it reachable', async () => {
+    const res = await dclPreviewRealm.handle(new Request(`${REALM}about`, { method: 'HEAD' }), ROOT, store, undefined, PAGE)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Type')).toBe('application/json')
+    expect(await res.text()).toBe('')
+  })
+
   it('answers the realm the engine reaches by appending to a trailing-slash realm url', async () => {
     expect((await get(`${REALM}/about`)).status).toBe(200)
   })
