@@ -62,7 +62,6 @@ fn show_foreign_profiles(
                 PROFILE_UI_RENDERLAYER,
                 AvatarShape::from(profile),
                 Extent3d::default(),
-                false,
             );
 
             let components = commands

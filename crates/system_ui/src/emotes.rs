@@ -205,7 +205,6 @@ fn set_emotes_content(
                     height: 16,
                     depth_or_array_layers: 1,
                 },
-                true,
             );
             commands
                 .entity(settings_entity)
