@@ -24,6 +24,7 @@ type HostWindow = Window & {
   engine_console_command?: (line: string) => Promise<string>
   __bevyStartServer?: (options: unknown) => Promise<unknown>
   __bevyBootConfig?: Record<string, unknown>
+  __bevySetViewportActive?: (active: boolean) => void
 }
 const w = window as HostWindow
 
@@ -161,6 +162,10 @@ describe('editor host', () => {
     })
     expect(host().container.parentElement).toBe(document.body)
     expect(host().container.style.pointerEvents).toBe('none')
+    const viewportActive = vi.fn()
+    w.__bevySetViewportActive = viewportActive
+    host().setViewportActive(false)
+    expect(viewportActive).toHaveBeenLastCalledWith(false)
 
     // the package fails to load: a toast, and the page closes
     const first = document.querySelector<HTMLScriptElement>('script[src$="editor.js"]')!
@@ -209,6 +214,8 @@ describe('editor host', () => {
     // back to scenes: the editor's scene is left as on exit, and the Create page opens
     holdNext = true
     host().openCreatePage()
+    expect(viewportActive).toHaveBeenLastCalledWith(true)
+    delete w.__bevySetViewportActive
     expect(editor.unmount).toHaveBeenCalledTimes(1)
     expect(session.editor.setMode).toHaveBeenLastCalledWith('off')
     await vi.waitFor(() => expect(travel).toHaveBeenLastCalledWith('boedo.dcl.eth', { x: 3, y: 4 }))

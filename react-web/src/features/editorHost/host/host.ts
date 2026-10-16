@@ -51,6 +51,8 @@ export interface DclEditorHostV1 {
   engineConsole: (line: string) => Promise<string>
   identity: () => { address: string | null; isGuest: boolean }
   setMode: (mode: 'edit' | 'play' | 'off') => void
+  /** Reduce background rendering while another preview covers the editor viewport. */
+  setViewportActive: (active: boolean) => void
   /** Travel the running engine to `<pageDir>preview/<projectId>` at parcel `x,y`. */
   openPreview: (projectId: string, position: string) => Promise<void>
   /** Spawn the package's own scene (`<editorBase>scene`, checked against the pin and served by
@@ -116,6 +118,7 @@ type HostWindow = Window & {
   __dclEditorSigner?: (signer: Signer) => void
   __bevyStartServer?: (options: Record<string, unknown> & { realm: string; position: string; preview: true }) => Promise<unknown>
   __bevyBootConfig?: Record<string, unknown>
+  __bevySetViewportActive?: (active: boolean) => void
 }
 
 interface Home {
@@ -315,6 +318,7 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
   }
 
   const leave = (): void => {
+    w.__bevySetViewportActive?.(true)
     void serveScene(null)
     try {
       w.__dclEditor?.unmount?.()
@@ -366,6 +370,9 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
       return deps.engineConsole(line)
     },
     identity: deps.identity,
+    setViewportActive(active) {
+      w.__bevySetViewportActive?.(active)
+    },
     setMode(mode) {
       if (mode !== 'off') readClock()
       deps.setMode(mode)

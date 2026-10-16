@@ -20,10 +20,10 @@ const profile: Profile = {
       name: 'Traveler',
       description: 'Scenes explored',
       tier: 'Starter',
-      unlockedAt: Date.UTC(2024, 10, 1),
+      unlockedAt: Date.UTC(2024, 10, 15, 12),
       progress: { done: 5, target: 50 },
       tiers: [
-        { id: 'traveler-starter', name: 'Starter', description: '1 scene explored', unlockedAt: Date.UTC(2024, 10, 1) },
+        { id: 'traveler-starter', name: 'Starter', description: '1 scene explored', unlockedAt: Date.UTC(2024, 10, 15, 12) },
         { id: 'traveler-bronze', name: 'Bronze', description: '50 scenes explored' }
       ]
     },

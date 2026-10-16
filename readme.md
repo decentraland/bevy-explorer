@@ -50,6 +50,9 @@ Platform libraries (needed by the native and headless builds):
 
 The engine is compiled to wasm and boots **in the React page's own document** (no iframe): the canvas sits behind the HUD, and the bridge scene relays between them.
 
+Hidden tabs and an editor viewport covered by another preview run at up to 5 FPS. Returning
+to the viewport restores the configured frame rate without changing saved graphics settings.
+
 ```bash
 rustup toolchain install nightly-2026-04-15 --target wasm32-unknown-unknown --component rust-src
 cargo install wasm-pack
