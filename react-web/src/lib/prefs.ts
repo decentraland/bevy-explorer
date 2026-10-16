@@ -27,7 +27,11 @@ export const PREF = {
   voiceDisabled: 'nearbyVoiceDisabled',
   voiceVolume: 'nearbyVoiceVolume',
   voiceUsed: 'nearbyVoiceUsed',
-  launchCount: 'launchCount'
+  launchCount: 'launchCount',
+  analyticsQueue: 'analytics.queue',
+  analyticsLastSeen: 'analytics.lastSeen',
+  analyticsRedirect: 'analytics.redirect',
+  analyticsAttributed: 'analytics.attributed'
 } as const
 
 const DB = 'hud-prefs'

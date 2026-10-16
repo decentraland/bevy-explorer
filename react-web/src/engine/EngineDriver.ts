@@ -5,7 +5,9 @@
 //     from the super-user bridge scene over the `bevy-ui-bridge` BroadcastChannel
 //     and are delivered through ONE generic `on(msg => …)` subscription.
 
+import { trackGuestWalletCreation } from '../features/auth/guestWalletEvent'
 import { encodeIdentity, getLogin, rootAddress, type AuthIdentity, type StoredLogin } from '../features/auth/sso'
+import { sessionId } from '../lib/analytics'
 import { inShell, shellRequest } from '../lib/shell'
 import type { LoginDriver } from './driver'
 import type { EngineRpc, LaunchHostOptions } from './engineRpc'
@@ -56,7 +58,7 @@ export class EngineDriver implements LoginDriver {
   // embed) there is nowhere to keep it, so the guest is a throwaway one.
   async loginPersistentGuest(): Promise<void> {
     if (!inShell) return this.loginGuest()
-    const login = await shellRequest<StoredLogin>('createGuest', undefined, CREATE_GUEST_TIMEOUT_MS)
+    const login = await trackGuestWalletCreation(() => shellRequest<StoredLogin>('createGuest', undefined, CREATE_GUEST_TIMEOUT_MS))
     await this.loginWithIdentity(login.identity, false, true)
   }
 
@@ -135,8 +137,9 @@ export class EngineDriver implements LoginDriver {
     this.rpc.rearmCrashWatchdog()
   }
 
+  // The page's analytics session id rides along so engine and page events share one session.
   launch(realm?: string, position?: string, host?: LaunchHostOptions): void {
-    this.rpc.launch(realm, position, host)
+    this.rpc.launch(realm, position, { ...host, sessionId: sessionId() })
   }
 
   homeScene(): { realm: string | null; parcel: string } | null {

@@ -6,6 +6,7 @@
 // `on(msg => …)` subscription; only request/response (login) is correlated by id.
 
 import { createGuestIdentity } from '../features/auth/guest'
+import { trackGuestWalletCreation } from '../features/auth/guestWalletEvent'
 import { encodeIdentity, type AuthIdentity } from '../features/auth/sso'
 import type { GuestWallet } from '../features/auth/thirdweb'
 import { BridgeChannel } from './bridgeChannel'
@@ -21,6 +22,13 @@ import {
 } from './protocol'
 
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void; timer?: ReturnType<typeof setTimeout> }
+
+// Native: the CEF shim installs window.engine_console_command (see lib/cefNativeBridge). The
+// mock has no engine console.
+export function engineConsoleCommand(line: string): Promise<string> {
+  const run = (window as Window & { engine_console_command?: (line: string) => Promise<string> }).engine_console_command
+  return run ? run(line) : Promise.reject(new Error('engine console not available'))
+}
 
 // Local reads/actions only: sign-ins wait on the network or the user's external browser.
 const QUICK_RPC_TIMEOUT_MS: Partial<Record<RpcMethod, number>> = {
@@ -63,10 +71,12 @@ export class BridgeClient implements LoginDriver {
   // console. The mock has no engine console, so it stays a plain guest.
   async loginPersistentGuest(): Promise<void> {
     if (!('engine_console_command' in window)) return this.loginGuest()
-    const identity = await createGuestIdentity({
-      login: (sessionId) => this.rpc<GuestWallet>('guestLogin', { sessionId }),
-      sign: (token, message) => this.rpc<string>('guestSign', { token, message })
-    })
+    const identity = await trackGuestWalletCreation(() =>
+      createGuestIdentity({
+        login: (sessionId) => this.rpc<GuestWallet>('guestLogin', { sessionId }),
+        sign: (token, message) => this.rpc<string>('guestSign', { token, message })
+      })
+    )
     await this.command(`/login_identity ${encodeIdentity(identity)} --guest`)
   }
 
@@ -130,11 +140,8 @@ export class BridgeClient implements LoginDriver {
     this.listeners.clear()
   }
 
-  // Native: the CEF shim installs window.engine_console_command (see lib/cefNativeBridge). The
-  // mock has no engine console.
   command(line: string): Promise<string> {
-    const run = (window as Window & { engine_console_command?: (line: string) => Promise<string> }).engine_console_command
-    return run ? run(line) : Promise.reject(new Error('engine console not available'))
+    return engineConsoleCommand(line)
   }
 
   private rpc<T>(method: RpcMethod, params?: Record<string, string>): Promise<T> {

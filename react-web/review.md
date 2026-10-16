@@ -189,6 +189,50 @@ Run through this on every diff (it encodes `AGENTS.md`):
 
 ---
 
+## Analytics
+
+The page sends the same Segment events as mobile's screens (`lib/analytics.ts`; the full event
+table and the engine's consent gate are in `crates/analytics/README.md`). Every page event is
+stamped when it is called (`created_at`, `message_id`, the page's `session_id`), queued in prefs
+(`PREF.analyticsQueue`, newest 200), and handed to the engine as `/track <base64 batch>` of at most
+50 once the console answers; a failed send (no console yet) keeps the batch for the next
+`track()`/`flush()`, while the engine's own verdict (`ok <n>` or `rejected: …`) consumes it. The same
+session id goes to the engine at launch (`LaunchHostOptions.sessionId`), so engine and page events
+share one session. Expectations:
+
+- **Boot** (`lib/analyticsBoot.ts`, once per page load from `main.tsx`): `App Opened`
+  {start_kind cold, trigger deeplink|icon, prev_session_id, seconds_since_last_seen from
+  `PREF.analyticsLastSeen`}, `Install Attribution` once per device (`PREF.analyticsAttributed`)
+  when the entry url carries `utm_*` or `c`, then `Screen Viewed` START {startup_time_ms,
+  platform web}.
+- **The auth redirect is one session**: `markAuthRedirect()` leaves {session, at} in
+  `PREF.analyticsRedirect` before `redirectToAuth()`; the returning page load (within 30 min)
+  resumes that session id, reports nothing under mobile's 30 s warm floor and `App Opened`
+  {start_kind warm, trigger icon} past it, never a second cold open, START or attribution.
+- **Sign-in** (`useEngineSession`): screens ACCOUNT_HOME (sign in or guest, as mobile names it),
+  COMEBACK (the welcome-back panel, i.e. after a failed sign-in), ACCOUNT_GUEST_CREATE,
+  AUTH_BROWSER_OPEN {method sso} + flush before the auth redirect (what the flush can't finish
+  before the page unloads waits in prefs), AUTH_SUCCESS {login_type guest|fully_registered},
+  AUTH_ERROR {error}; clicks SIGN_IN, PLAY_GUEST, lets_go, use_another_account, try_again (on
+  AUTH_ERROR), cancel. `Guest Wallet Creation` wraps the thirdweb guest step
+  (`features/auth/guestWalletEvent.ts`).
+- **Welcome / lobby / picker**: WELCOME or AVATAR_NAMING when the engine asks for the page,
+  AUTH_DEPLOY_SUCCESS after a new profile deploys; clicks LETS_GO, NAME_RANDOMIZE. LOBBY on the
+  lobby (startup and in-world); clicks JUMP_IN {kind landing|place|event, place_id|event_id}, CUSTOMIZE,
+  NOTIFICATIONS, CLOSE (`LobbyHome.tsx`). PLACES_PICKER on the picker.
+- **Loading** (`features/session/sessionAnalytics.ts`): LOADING_START {position, realm, when
+  on_explorer_ready|on_teleport} when entering towards a destination the user picked (the engine
+  streaming on its own is not reported), LOADING_END {position, status Success|Failed},
+  LOADING_TIMEOUT after 90 s.
+- **Seeing them**: `?analyticsDebug=1` logs every queued event with `console.debug('[analytics]', …)`.
+  The mock (`?mock=1`) never attaches an engine, so events only queue.
+- Tests: `src/test/analytics.test.ts` (stamping, persistence, batching, failed sends),
+  `src/test/analyticsBoot.test.ts` (the auth return's session, attribution once),
+  `src/test/analytics.session.test.tsx` (the guest sign-in sequence), `engineDriver.test.ts` (the
+  session id at launch), `entryParams.test.ts` (campaign params are accepted).
+
+---
+
 ## 7. Input routing contracts
 
 The ENGINE resolves input to actions; the HUD reacts to the action stream and declares its

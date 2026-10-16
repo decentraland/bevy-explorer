@@ -5,6 +5,7 @@
 // with a line of doc each so the dialog can show what IS accepted, the internal ones just known.
 
 import { WEB_PARAMS } from '../engine/generated'
+import { isAttributionParam } from './analyticsBoot'
 
 export interface AcceptedParam {
   name: string
@@ -35,6 +36,7 @@ const INTERNAL_PARAMS = [
   'previousLogin',
   'perm',
   'worldpw',
+  'analyticsDebug',
   // dev only (lib/systemScene.ts)
   ...(import.meta.env.PROD ? [] : ['bridgePort'])
 ]
@@ -54,5 +56,5 @@ export function acceptedEntryParams(): AcceptedParam[] {
  *  `hostParams`: host-delivered params this page is acting on (the scene editor's `editor`). */
 export function unrecognisedEntryParams(q: URLSearchParams, hostParams: string[] = []): string[] {
   const accepted = new Set([...acceptedEntryParams().map((p) => p.name), ...INTERNAL_PARAMS, ...hostParams])
-  return [...new Set(q.keys())].filter((name) => !accepted.has(name))
+  return [...new Set(q.keys())].filter((name) => !accepted.has(name) && !isAttributionParam(name))
 }

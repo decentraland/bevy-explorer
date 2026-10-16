@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
-import { BridgeClient } from './engine/bridge'
+import { BridgeClient, engineConsoleCommand } from './engine/bridge'
+import { attachEngine } from './lib/analytics'
 import { EngineDriver } from './engine/EngineDriver'
 import { EngineRpc } from './engine/engineRpc'
 import { EngineHost } from './features/engine/EngineHost'
@@ -192,6 +193,10 @@ function Hud(): React.JSX.Element {
   }, [])
 
   const session = useEngineSession(createDriver)
+  useEffect(() => {
+    if (rpc != null) attachEngine((line) => rpc.command(line))
+    else if (MODE === 'native') attachEngine(engineConsoleCommand)
+  }, [rpc])
   // mounted for good once wanted: `?editor`, or Create opened
   const [editorWanted, setEditorWanted] = useState(params.has('editor'))
   if (EDITOR_BUILD && EDITOR && !editorWanted && session.create.open) setEditorWanted(true)

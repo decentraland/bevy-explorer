@@ -10,7 +10,10 @@ import { countLaunch } from './lib/launchCount'
 import { isNativeHud } from './lib/bootMode'
 import { inShell } from './lib/shell'
 import { loadPrefs } from './lib/prefs'
+import { bootAnalytics } from './lib/analyticsBoot'
 import './styles/global.css'
+
+const ENTRY_SEARCH = location.search
 
 // Before anything fetches: annotate loopback/local-network requests so Chrome's Local Network
 // Access permission (142+) prompts instead of silently blocking — preview realms live on localhost.
@@ -56,6 +59,7 @@ if (isNativeHud()) {
 // The HUD's stored values are read before it renders (lib/prefs).
 if (!redirecting) void loadPrefs().then(() => {
   countLaunch()
+  bootAnalytics(ENTRY_SEARCH)
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <App />
