@@ -805,19 +805,16 @@ impl GlyphAtlas {
         let old_data = |handle: &Handle<Image>| images.get(handle).unwrap().data.clone().unwrap();
         let old_sdf_data = old_data(&old_sdf);
         let old_color_data = old_color.as_ref().map(old_data);
-        // tallest first: shelves are height-quantised, so this packs at least as well as the
-        // old page did, whatever order the glyphs arrived in
-        let mut kept = old_glyphs
+        // glyphs with no ink have nothing to move (and an empty rect has no size)
+        let (mut kept, inkless): (Vec<_>, Vec<_>) = old_glyphs
             .into_iter()
             .filter(|(key, _)| in_use.contains(key))
-            .collect::<Vec<_>>();
+            .partition(|(_, slot)| !slot.rect.is_empty());
+        self.glyphs.extend(inkless);
+        // tallest first: shelves are height-quantised, so this packs at least as well as the
+        // old page did, whatever order the glyphs arrived in
         kept.sort_by_key(|(_, slot)| std::cmp::Reverse((slot.rect.height(), slot.rect.width())));
         for (key, slot) in kept {
-            if slot.rect.is_empty() {
-                // no ink: nothing to move
-                self.glyphs.insert(key, slot);
-                continue;
-            }
             let (page, old) = match slot.page {
                 Page::Sdf => (&mut self.sdf, &old_sdf_data),
                 Page::Color => (
