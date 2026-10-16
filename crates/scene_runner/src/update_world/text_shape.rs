@@ -132,8 +132,9 @@ use dcl_component::{
     },
     SceneComponentId,
 };
+use indexmap::IndexMap;
 use scene_material::{MaterialExtPlugin, SceneBound, SceneMaterial};
-use std::{cell::RefCell, collections::VecDeque, sync::Arc, time::Duration};
+use std::{cell::RefCell, sync::Arc, time::Duration};
 use swash::{
     scale::{Render, ScaleContext, Source, StrikeWith},
     zeno::{Angle, Format, Transform, Vector},
@@ -605,8 +606,8 @@ struct GlyphRaster {
 /// atlas: for the session for a built-in family, with the scene for a scene family.
 #[derive(Default)]
 struct SpareRasters {
-    rasters: HashMap<CacheKey, GlyphRaster>,
-    order: VecDeque<CacheKey>,
+    /// Oldest first.
+    rasters: IndexMap<CacheKey, GlyphRaster>,
     bytes: usize,
 }
 
@@ -619,22 +620,20 @@ impl SpareRasters {
             return;
         };
         self.bytes += data.len();
-        self.order.push_back(key);
-        if let Some(old) = self.rasters.insert(key, raster) {
+        if let Some(old) = self.rasters.shift_remove(&key) {
             self.bytes -= Self::len(&old);
         }
+        self.rasters.insert(key, raster);
         while self.bytes > Self::MAX_BYTES {
-            let Some(oldest) = self.order.pop_front() else {
+            let Some((_, old)) = self.rasters.shift_remove_index(0) else {
                 break;
             };
-            if let Some(old) = self.rasters.remove(&oldest) {
-                self.bytes -= Self::len(&old);
-            }
+            self.bytes -= Self::len(&old);
         }
     }
 
     fn take(&mut self, key: CacheKey) -> Option<GlyphRaster> {
-        let raster = self.rasters.remove(&key)?;
+        let raster = self.rasters.shift_remove(&key)?;
         self.bytes -= Self::len(&raster);
         Some(raster)
     }
@@ -879,6 +878,9 @@ pub struct GlyphAtlas {
     pending: HashMap<CacheKey, Task<GlyphRaster>>,
     /// Rasters that didn't fit this frame; placed after the rebuild they asked for.
     unplaced: Vec<(CacheKey, GlyphRaster)>,
+    /// Glyphs dropped for want of room since the last rebuild: empty slots the next rebuild
+    /// doesn't carry over, so they are placed (or rastered) again.
+    dropped: HashSet<CacheKey>,
     /// Rasters of glyphs not in the atlas: evicted by a rebuild while unused, or dropped for
     /// want of room (those draw nothing until a later rebuild makes room). Wanted again, they
     /// are placed without rastering.
@@ -921,6 +923,7 @@ impl GlyphAtlas {
             glyphs: HashMap::default(),
             pending: HashMap::default(),
             unplaced: Vec::new(),
+            dropped: HashSet::default(),
             spare: SpareRasters::default(),
             rastered: (0, Duration::ZERO),
             reused: 0,
@@ -968,10 +971,13 @@ impl GlyphAtlas {
         let old_data = |handle: &Handle<Image>| images.get(handle).unwrap().data.clone().unwrap();
         let old_sdf_data = old_data(&old_sdf);
         let old_color_data = old_color.as_ref().map(old_data);
-        // glyphs with no ink have nothing to move (and an empty rect has no size)
-        let (mut inked, inkless): (Vec<_>, Vec<_>) = old_glyphs
+        // glyphs with no ink have nothing to move (and an empty rect has no size); dropped
+        // glyphs start over
+        let (mut inked, mut inkless): (Vec<_>, Vec<_>) = old_glyphs
             .into_iter()
             .partition(|(_, slot)| !slot.rect.is_empty());
+        inkless.retain(|(key, _)| !self.dropped.contains(key));
+        self.dropped.clear();
         self.glyphs.extend(inkless);
         // tallest first: shelves are height-quantised, so this packs at least as well as the
         // old page did, whatever order the glyphs arrived in
@@ -1092,13 +1098,12 @@ impl GlyphAtlas {
     ) {
         let mut waiting = std::mem::take(&mut self.unplaced);
         if rebuilt {
-            // dropped: an empty slot with a spare raster
-            let dropped = in_use.iter().copied().filter(|key| {
-                self.glyphs
-                    .get(key)
-                    .is_some_and(|slot| slot.rect.is_empty())
-                    && self.spare.contains(*key)
-            });
+            // dropped glyphs weren't carried over: those with a spare raster are placed now,
+            // the others rastered again when their shapes retry
+            let dropped = in_use
+                .iter()
+                .copied()
+                .filter(|key| !self.glyphs.contains_key(key) && self.spare.contains(*key));
             for key in dropped.collect::<Vec<_>>() {
                 waiting.push((key, self.spare.take(key).unwrap()));
             }
@@ -1107,6 +1112,7 @@ impl GlyphAtlas {
             if let Err(AtlasFull) = self.place(images, key, &raster) {
                 warn!("glyph atlas full, glyph {} dropped", key.glyph_id);
                 self.glyphs.insert(key, GlyphSlot::EMPTY);
+                self.dropped.insert(key);
                 self.spare.insert(key, raster);
             }
         }
@@ -1588,9 +1594,6 @@ fn update_text_shapes(
             continue;
         }
 
-        built += 1;
-        debug!("ts: {:?}", text_shape.0);
-
         let atlas_key = AtlasKey::from(&family);
         let atlas = atlases.get_or_create(atlas_key.clone(), &mut images);
 
@@ -1603,6 +1606,9 @@ fn update_text_shapes(
                 continue;
             }
         }
+
+        built += 1;
+        debug!("ts: {:?}", text_shape.0);
 
         if text_shape.0.text.is_empty()
             || text_shape
@@ -1800,13 +1806,12 @@ fn update_text_shapes(
 
         // the block (lines + side padding) is anchored at the entity by the alignment. when
         // wrapping the sdk box replaces the block: it is centred on the entity and the lines
-        // are aligned within it (a fixed sdk height applies unless auto-sizing, which only
-        // uses the box to pick the font size)
+        // are aligned within it, at the sdk height when given
         let block = layout.text.size + Vec2::new(padding_left + padding_right, 0.0);
         let (box_size, anchor, inner_y) = if wrapping {
             let box_h = match text_shape.0.height {
-                Some(h) if !text_shape.0.font_auto_size() => h * pix_per_m,
-                _ => block.y,
+                Some(h) => h * pix_per_m,
+                None => block.y,
             };
             (
                 Vec2::new(block.x, box_h),
@@ -1816,12 +1821,19 @@ fn update_text_shapes(
         } else {
             (block, Vec2::new(halign, valign), 0.0)
         };
+        // auto-sizing only uses the sdk box to pick the font size, but the box is still centred
+        // on the entity, so top/bottom-aligned lines sit at its edge rather than at the entity
+        let box_y = if text_shape.0.font_auto_size() && text_shape.0.text_wrapping() {
+            (0.5 - valign) * text_shape.0.height.unwrap_or(0.2) * pix_per_m
+        } else {
+            0.0
+        };
         // text px (y down from the box's top left) -> meters (y up), the box's anchor at the
         // entity
         let origin = Vec2::new(-box_size.x * anchor.x, box_size.y * anchor.y);
         let to_world = move |p: Vec2| {
             let p = p + Vec2::new(padding_left, inner_y);
-            Vec2::new(origin.x + p.x, origin.y - p.y + add_y_pix) / pix_per_m
+            Vec2::new(origin.x + p.x, origin.y - p.y + add_y_pix + box_y) / pix_per_m
         };
 
         let effects = TextEffects::from_text_shape(&text_shape.0);

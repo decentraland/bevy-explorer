@@ -87,10 +87,11 @@ fn distance_transform(img: &[f32], w: usize, h: usize) -> Vec<f32> {
         (w as isize + 1, -1, -1),
     );
 
-    let mut propagate = |i: usize, neighbours: &[(isize, i32, i32)]| {
+    let mut propagate = |i: usize, neighbours: &[(isize, i32, i32)]| -> bool {
         if dist[i] <= 0.0 {
-            return;
+            return false;
         }
+        let mut changed = false;
         for &(delta, ox, oy) in neighbours {
             let c = (i as isize + delta) as usize;
             let (nx, ny) = (distx[c] + ox, disty[c] + oy);
@@ -99,30 +100,40 @@ fn distance_transform(img: &[f32], w: usize, h: usize) -> Vec<f32> {
                 distx[i] = nx;
                 disty[i] = ny;
                 dist[i] = nd;
+                changed = true;
             }
         }
+        changed
     };
 
-    // forward scan: from above and the left, then the right
-    for y in 1..h {
-        propagate(y * w, &[u, ur]);
-        for x in 1..w - 1 {
-            propagate(y * w + x, &[L, lu, u, ur]);
+    // until no pixel finds a closer edge: in a concave region the way to the closest edge can
+    // turn against both scans, and takes another pass
+    loop {
+        let mut changed = false;
+        // forward scan: from above and the left, then the right
+        for y in 1..h {
+            changed |= propagate(y * w, &[u, ur]);
+            for x in 1..w - 1 {
+                changed |= propagate(y * w + x, &[L, lu, u, ur]);
+            }
+            changed |= propagate(y * w + w - 1, &[L, lu, u]);
+            for x in (0..w - 1).rev() {
+                changed |= propagate(y * w + x, &[R]);
+            }
         }
-        propagate(y * w + w - 1, &[L, lu, u]);
-        for x in (0..w - 1).rev() {
-            propagate(y * w + x, &[R]);
+        // backward scan: from below and the right, then the left
+        for y in (0..h - 1).rev() {
+            changed |= propagate(y * w + w - 1, &[d, dl]);
+            for x in (1..w - 1).rev() {
+                changed |= propagate(y * w + x, &[R, rd, d, dl]);
+            }
+            changed |= propagate(y * w, &[R, rd, d]);
+            for x in 1..w {
+                changed |= propagate(y * w + x, &[L]);
+            }
         }
-    }
-    // backward scan: from below and the right, then the left
-    for y in (0..h - 1).rev() {
-        propagate(y * w + w - 1, &[d, dl]);
-        for x in (1..w - 1).rev() {
-            propagate(y * w + x, &[R, rd, d, dl]);
-        }
-        propagate(y * w, &[R, rd, d]);
-        for x in 1..w {
-            propagate(y * w + x, &[L]);
+        if !changed {
+            break;
         }
     }
 
