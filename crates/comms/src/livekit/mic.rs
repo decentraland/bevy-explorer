@@ -24,7 +24,7 @@ use {
             prelude::{AudioFrame, AudioSourceOptions, RtcAudioSource},
         },
     },
-    tokio::sync::broadcast,
+    tokio::sync::{broadcast, oneshot},
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -145,6 +145,12 @@ struct LocalAudioTrackFuture(JoinHandle<LocalAudioTrack>);
 
 #[derive(Component, Deref)]
 struct MicrophoneLocalTrack(LocalAudioTrack);
+
+/// Keeps the participant's mic worker alive; dropping it (component removed or replaced, or the
+/// participant despawned with its room) stops the worker.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Component)]
+struct MicWorker(#[allow(dead_code, reason = "held for its drop")] oneshot::Sender<()>);
 
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Default, Deref, DerefMut)]
@@ -404,11 +410,16 @@ fn publish_tracks(
         #[cfg(target_arch = "wasm32")]
         let local_audio_track_future = livekit_runtime.spawn(build_audio_local_track());
         #[cfg(not(target_arch = "wasm32"))]
-        let local_audio_track_future = livekit_runtime.spawn(build_audio_local_track(
-            local_audio_source.subscribe(),
-            config.sample_rate().0,
-            u32::from(config.channels()),
-        ));
+        let local_audio_track_future = {
+            let (stop_sender, stop_receiver) = oneshot::channel();
+            commands.entity(entity).try_insert(MicWorker(stop_sender));
+            livekit_runtime.spawn(build_audio_local_track(
+                local_audio_source.subscribe(),
+                stop_receiver,
+                config.sample_rate().0,
+                u32::from(config.channels()),
+            ))
+        };
 
         commands.entity(entity).try_insert((
             ParticipantWithTrack,
@@ -523,6 +534,8 @@ fn unpublish_tracks(
         });
 
         commands.entity(entity).remove::<MicrophoneLocalTrack>();
+        #[cfg(not(target_arch = "wasm32"))]
+        commands.entity(entity).remove::<MicWorker>();
     }
 }
 
@@ -581,6 +594,7 @@ fn locate_foreign_streams(
 #[cfg(not(target_arch = "wasm32"))]
 async fn build_audio_local_track(
     mic_receiver: broadcast::Receiver<LocalAudioFrame>,
+    stop_receiver: oneshot::Receiver<()>,
     sample_rate: u32,
     num_channels: u32,
 ) -> LocalAudioTrack {
@@ -599,24 +613,23 @@ async fn build_audio_local_track(
 
     let local_audio_track_clone = local_audio_track.clone();
     tokio::task::spawn(async move {
-        let mut mic_receiver = mic_receiver;
-        while let Ok(frame) = mic_receiver.recv().await {
-            if frame.sample_rate == 0 && frame.num_channels == 0 {
-                // Termination frame
-                break;
+        run_mic_worker(mic_receiver, stop_receiver, |frame| {
+            let new_source = new_source.clone();
+            async move {
+                if let Err(e) = new_source
+                    .capture_frame(&AudioFrame {
+                        data: Cow::Borrowed(&frame.data),
+                        sample_rate: frame.sample_rate,
+                        num_channels: frame.num_channels,
+                        samples_per_channel: frame.samples_per_channel,
+                    })
+                    .await
+                {
+                    warn!("failed to capture from mic: {e}");
+                };
             }
-            if let Err(e) = new_source
-                .capture_frame(&AudioFrame {
-                    data: Cow::Borrowed(&frame.data),
-                    sample_rate: frame.sample_rate,
-                    num_channels: frame.num_channels,
-                    samples_per_channel: frame.samples_per_channel,
-                })
-                .await
-            {
-                warn!("failed to capture from mic: {e}");
-            };
-        }
+        })
+        .await;
         debug!(
             "Mic worker for local audio track {} closed.",
             local_audio_track_clone.sid()
@@ -624,6 +637,33 @@ async fn build_audio_local_track(
     });
 
     local_audio_track
+}
+
+/// Feeds mic frames to `capture` until a termination frame arrives, the broadcast closes or
+/// lags, or the stop sender is dropped.
+#[cfg(not(target_arch = "wasm32"))]
+async fn run_mic_worker<F, Fut>(
+    mut mic_receiver: broadcast::Receiver<LocalAudioFrame>,
+    mut stop_receiver: oneshot::Receiver<()>,
+    mut capture: F,
+) where
+    F: FnMut(LocalAudioFrame) -> Fut,
+    Fut: std::future::Future<Output = ()>,
+{
+    loop {
+        let frame = tokio::select! {
+            _ = &mut stop_receiver => break,
+            frame = mic_receiver.recv() => frame,
+        };
+        let Ok(frame) = frame else {
+            break;
+        };
+        if frame.sample_rate == 0 && frame.num_channels == 0 {
+            // Termination frame
+            break;
+        }
+        capture(frame).await;
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -640,4 +680,64 @@ async fn build_audio_local_track() -> LocalAudioTrack {
         error!("Failed to create local audio track due to '{err}'.");
         LocalAudioTrack::unavailable()
     })
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use super::*;
+
+    fn frame(sample_rate: u32, num_channels: u32) -> LocalAudioFrame {
+        LocalAudioFrame {
+            data: Arc::from([0i16; 4]),
+            sample_rate,
+            num_channels,
+            samples_per_channel: 4,
+        }
+    }
+
+    fn spawn_worker(
+        mic_receiver: broadcast::Receiver<LocalAudioFrame>,
+        stop_receiver: oneshot::Receiver<()>,
+    ) -> (tokio::task::JoinHandle<()>, Arc<AtomicUsize>) {
+        let captured = Arc::new(AtomicUsize::new(0));
+        let counter = captured.clone();
+        let handle = tokio::task::spawn(run_mic_worker(mic_receiver, stop_receiver, move |_| {
+            counter.fetch_add(1, Ordering::SeqCst);
+            async {}
+        }));
+        (handle, captured)
+    }
+
+    #[tokio::test]
+    async fn mic_worker_stops_when_stop_sender_is_dropped() {
+        let (mic_sender, mic_receiver) = broadcast::channel(8);
+        let (stop_sender, stop_receiver) = oneshot::channel();
+        let (handle, captured) = spawn_worker(mic_receiver, stop_receiver);
+
+        assert!(mic_sender.send(frame(48000, 1)).is_ok());
+        while captured.load(Ordering::SeqCst) == 0 {
+            tokio::task::yield_now().await;
+        }
+
+        // the broadcast stays open, as the app-lifetime source does
+        drop(stop_sender);
+        handle.await.unwrap();
+        assert_eq!(captured.load(Ordering::SeqCst), 1);
+        drop(mic_sender);
+    }
+
+    #[tokio::test]
+    async fn mic_worker_stops_on_termination_frame() {
+        let (mic_sender, mic_receiver) = broadcast::channel(8);
+        let (stop_sender, stop_receiver) = oneshot::channel();
+        let (handle, captured) = spawn_worker(mic_receiver, stop_receiver);
+
+        assert!(mic_sender.send(frame(48000, 1)).is_ok());
+        assert!(mic_sender.send(frame(0, 0)).is_ok());
+        handle.await.unwrap();
+        assert_eq!(captured.load(Ordering::SeqCst), 1);
+        drop(stop_sender);
+    }
 }
