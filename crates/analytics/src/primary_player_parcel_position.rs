@@ -3,14 +3,15 @@
 use crate::data_definition::{SegmentEvent, SegmentEventExplorerMoveToParcel};
 use crate::segment_system::{SegmentConfig, SegmentMetricsEvents};
 use bevy::prelude::*;
-use common::structs::PrimaryUser;
+use common::structs::{OutOfWorld, PrimaryUser};
 
 // TODO: already defined in scene_runner
 const PARCEL_SIZE: f32 = 16.0;
 
+// Out of world (sign-in, lobby, a teleport in flight) the player sits on the boot parcel
+// without having arrived anywhere; the first observation is the real placement.
 pub fn primary_player_parcel_position_system(
-    player: Query<&GlobalTransform, With<PrimaryUser>>,
-    // None until the first observation: the first event comes from "no-position", as on mobile
+    player: Query<&GlobalTransform, (With<PrimaryUser>, Without<OutOfWorld>)>,
     mut last_parcel_position: Local<Option<IVec2>>,
     mut metrics: ResMut<SegmentMetricsEvents>,
     mut segment_config: Option<ResMut<SegmentConfig>>,
