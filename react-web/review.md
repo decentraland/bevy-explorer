@@ -217,3 +217,32 @@ from HUD-side key matching. The rules:
   engine-side reservation and gamepad scrolling all key off that.
 - Key **labels** come from `bindingLabels` (`keyHintFor`/`labelForInput`), never hardcoded
   letters — they follow the user's rebinds and keyboard layout.
+
+## Analytics
+
+The page reports the screens and clicks mobile does, with mobile's names and property shapes
+(`lib/analytics.ts`). Nothing is sent from the page: each event is stamped when it happens, waits
+in prefs (`PREF.analyticsQueue`, newest 200) and goes to the engine's `/track` console command once
+the engine is up (`App.tsx` attaches the console), 50 per command; a send the console never answered
+is kept for the next one. The engine posts them with its own events and adds the common fields
+as it does for those (`crates/analytics/README.md`), including `campaign_anon_user_id`, the
+landing page's Segment anonymous id that the shell reads from the `ajs_anonymous_id` cookie and
+hands the app as `anon_user_id` (`shell/main.ts`). The session id goes to the engine at launch (`EngineDriver.launch`), and the
+return from the sign-in redirect continues it (the shell keeps it in sessionStorage and hands it
+back as `analyticsSession`). Expectations:
+
+- **Boot** (`bootAnalytics`, `main.tsx`): `App Opened` then `Screen Viewed` START, except on the
+  return from the sign-in redirect.
+- **Sign-in** (`useEngineSession`): ACCOUNT_HOME, COMEBACK (after a failed stored sign-in),
+  ACCOUNT_GUEST_CREATE, AUTH_BROWSER_OPEN, AUTH_SUCCESS {login_type}, AUTH_ERROR {error}; clicks
+  SIGN_IN, PLAY_GUEST, lets_go, use_another_account, try_again. `Guest Wallet Creation` wraps the
+  thirdweb guest step (`features/auth/guestWalletEvent.ts`).
+- **Welcome / lobby**: WELCOME or AVATAR_NAMING, AUTH_DEPLOY_SUCCESS; clicks LETS_GO,
+  NAME_RANDOMIZE; LOBBY, PLACES_PICKER; clicks JUMP_IN {kind, place_id|event_id}, CUSTOMIZE,
+  NOTIFICATIONS, CLOSE (`LobbyHome.tsx`).
+- **Loading** (`sessionAnalytics.ts`): LOADING_START {position, realm, when} towards a destination
+  the user picked, LOADING_END {position, status}, LOADING_TIMEOUT after 90 s.
+- **Social**: Friend Request, Friend Accept, Unfriend, Block User on the action.
+- Tests: `src/test/analytics.test.ts` (stamping, batching, the failed send), 
+  `src/test/analytics.session.test.tsx` (the sequences above), `engineDriver.test.ts` (the session
+  id at launch), `entryParams.test.ts` (campaign params).

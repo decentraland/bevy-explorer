@@ -6,7 +6,7 @@
 // which window to point at is kept behind here so callers don't care.
 
 /** Options the host decides for one launch (delivery `host` in the web param table, never a link's). */
-export type LaunchHostOptions = { holdWorld?: boolean }
+export type LaunchHostOptions = { holdWorld?: boolean; sessionId?: string; campaignAnonUserId?: string }
 
 type EngineWindow = Window & {
   engine_console_command?: (line: string) => Promise<string>
