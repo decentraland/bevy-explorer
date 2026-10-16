@@ -10853,6 +10853,7 @@ dependencies = [
  "serde",
  "serde_json",
  "spin_sleep",
+ "swash",
  "system_bridge",
  "tokio",
  "ttf-parser 0.21.1",

@@ -110,9 +110,10 @@ use bevy::{
         },
         view::VisibilitySystems,
     },
+    tasks::{futures::check_ready, AsyncComputeTaskPool, Task},
     text::{
-        ComputedTextBlock, CosmicBuffer, CosmicFontSystem, LineBreak, LineHeight, SwashCache,
-        TextBounds, TextPipeline,
+        ComputedTextBlock, CosmicBuffer, CosmicFontSystem, LineBreak, LineHeight, TextBounds,
+        TextPipeline,
     },
     ui::{update::update_clipping_system, widget::text_system, UiSystem},
 };
@@ -122,7 +123,7 @@ use common::{
     structs::{AppConfig, PrimaryUser},
     util::TryPushChildrenEx,
 };
-use cosmic_text::{CacheKey, Placement, SwashContent};
+use cosmic_text::{CacheKey, CacheKeyFlags, Placement, SwashContent};
 use dcl::interface::ComponentPosition;
 use dcl_component::{
     proto_components::{
@@ -132,7 +133,11 @@ use dcl_component::{
     SceneComponentId,
 };
 use scene_material::{MaterialExtPlugin, SceneBound, SceneMaterial};
-use std::time::Duration;
+use std::{cell::RefCell, collections::VecDeque, sync::Arc, time::Duration};
+use swash::{
+    scale::{Render, ScaleContext, Source, StrikeWith},
+    zeno::{Angle, Format, Transform, Vector},
+};
 use ui_core::{FontName, WeightName, FONT_SIZE_SCALE};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -161,7 +166,6 @@ impl Plugin for TextShapePlugin {
                     .insert(TextShapeMaterials::default());
             },
         );
-        app.init_resource::<SwashCache>();
         // chained: the rebuild sees the shapes built this frame
         app.add_systems(
             Update,
@@ -206,11 +210,11 @@ pub struct TextShapeMesh {
 #[derive(Component)]
 pub struct RetryTextShape {
     since: u32,
-    /// The shape's glyphs didn't fit its atlas: the atlas's rebuild count at the time. If it
-    /// still doesn't fit after a rebuild, it is dropped.
-    atlas_full: Option<u32>,
-    /// The layout of an interrupted build (out of raster budget, or atlas room).
+    /// The layout of a build waiting for glyphs to be rastered.
     layout: Option<ShapeLayout>,
+    /// Every glyph of that layout has been requested: the next try can stop at the first one
+    /// not ready.
+    requested: bool,
 }
 
 /// A text shape's layout: what it was laid out from, and the result. Independent of the atlas,
@@ -517,9 +521,10 @@ const CALIBRATION_FONT_SIZE: f32 = 20.0;
 const RASTER_FONT_SIZE: f32 = 64.0;
 /// Shapes laid out per frame; the rest wait: the player's scenes first, then oldest first.
 const MAX_BUILDS_PER_FRAME: usize = 64;
-/// Glyphs rastered per frame (across all atlases): a shape needing more waits for the next
-/// frame, keeping what it has, rather than hitching the frame.
-const MAX_RASTERS_PER_FRAME: usize = 32;
+/// Glyph rasters in flight on the compute pool, across all atlases. Shapes queue their glyphs
+/// in build order, so the bound keeps a neighbouring scene's glyph churn from delaying the
+/// player's scenes' glyphs by more than a frame.
+const MAX_RASTERS_IN_FLIGHT: usize = 256;
 
 /// Pixels per meter of text laid out at [`RASTER_FONT_SIZE`] for a given point size.
 fn pix_per_m(effective_pt: f32) -> f32 {
@@ -532,6 +537,15 @@ struct GlyphSlot {
     page: Page,
     rect: URect,
     offset: IVec2,
+}
+
+impl GlyphSlot {
+    /// A glyph that draws nothing.
+    const EMPTY: Self = Self {
+        page: Page::Sdf,
+        rect: URect::EMPTY,
+        offset: IVec2::ZERO,
+    };
 }
 
 /// The texture a glyph is rastered into: distance fields for outline glyphs, bitmaps for
@@ -567,15 +581,137 @@ struct AtlasPage {
 /// The atlas can't fit the glyph: at the page's maximum size and no room.
 struct AtlasFull;
 
-enum RasterError {
-    AtlasFull,
-    /// This frame's raster budget is spent.
-    Budget,
+/// The glyph isn't in the atlas yet; ask again next frame.
+enum Wait {
+    /// Being rastered, or waiting for room.
+    Pending,
+    /// Not requested: no raster in flight was allowed this frame.
+    Deferred,
 }
 
-impl From<AtlasFull> for RasterError {
-    fn from(_: AtlasFull) -> Self {
-        Self::AtlasFull
+/// The block is waiting for glyphs; whether every one of them has been requested.
+struct Pending {
+    all_requested: bool,
+}
+
+/// A glyph rastered on the compute pool: the page it goes on, the raster's placement relative
+/// to the pen, and its pixels; `None` for a glyph with no ink. `took` is the pool time.
+struct GlyphRaster {
+    image: Option<(Page, Placement, Vec<u8>)>,
+    took: Duration,
+}
+
+/// Rasters held in RAM but not in the atlas, oldest out past the byte cap. Lives with the
+/// atlas: for the session for a built-in family, with the scene for a scene family.
+#[derive(Default)]
+struct SpareRasters {
+    rasters: HashMap<CacheKey, GlyphRaster>,
+    order: VecDeque<CacheKey>,
+    bytes: usize,
+}
+
+impl SpareRasters {
+    /// Twice the largest page: a family's glyph churn is kept in RAM rather than re-rastered.
+    const MAX_BYTES: usize = 32 << 20;
+
+    fn insert(&mut self, key: CacheKey, raster: GlyphRaster) {
+        let Some((_, _, data)) = &raster.image else {
+            return;
+        };
+        self.bytes += data.len();
+        self.order.push_back(key);
+        if let Some(old) = self.rasters.insert(key, raster) {
+            self.bytes -= Self::len(&old);
+        }
+        while self.bytes > Self::MAX_BYTES {
+            let Some(oldest) = self.order.pop_front() else {
+                break;
+            };
+            if let Some(old) = self.rasters.remove(&oldest) {
+                self.bytes -= Self::len(&old);
+            }
+        }
+    }
+
+    fn take(&mut self, key: CacheKey) -> Option<GlyphRaster> {
+        let raster = self.rasters.remove(&key)?;
+        self.bytes -= Self::len(&raster);
+        Some(raster)
+    }
+
+    fn contains(&self, key: CacheKey) -> bool {
+        self.rasters.contains_key(&key)
+    }
+
+    fn len(raster: &GlyphRaster) -> usize {
+        raster.image.as_ref().map_or(0, |(_, _, data)| data.len())
+    }
+}
+
+/// Raster a glyph as cosmic-text's swash cache does (same sources, hinting, subpixel offset and
+/// synthetic italic, so it matches the UI's text), and convert an outline glyph's mask to a
+/// distance field with [`GlyphAtlas::SPREAD`] pixels of margin.
+fn raster_glyph(font: Arc<cosmic_text::Font>, key: CacheKey) -> GlyphRaster {
+    thread_local! {
+        static CONTEXT: RefCell<ScaleContext> = RefCell::new(ScaleContext::new());
+    }
+    let start = Instant::now();
+    let image = CONTEXT.with(|context| {
+        let mut context = context.borrow_mut();
+        let mut scaler = context
+            .builder(font.as_swash())
+            .size(f32::from_bits(key.font_size_bits))
+            .hint(true)
+            .build();
+        Render::new(&[
+            Source::ColorOutline(0),
+            Source::ColorBitmap(StrikeWith::BestFit),
+            Source::Outline,
+        ])
+        .format(Format::Alpha)
+        .offset(Vector::new(key.x_bin.as_float(), key.y_bin.as_float()))
+        .transform(
+            key.flags
+                .contains(CacheKeyFlags::FAKE_ITALIC)
+                .then(|| Transform::skew(Angle::from_degrees(14.0), Angle::from_degrees(0.0))),
+        )
+        .render(&mut scaler, key.glyph_id)
+    });
+    let image = image
+        .filter(|image| image.placement.width > 0 && image.placement.height > 0)
+        .and_then(|image| {
+            let Placement {
+                left,
+                top,
+                width,
+                height,
+            } = image.placement;
+            match image.content {
+                SwashContent::Mask => {
+                    let spread = GlyphAtlas::SPREAD;
+                    let placement = Placement {
+                        left: left - spread as i32,
+                        top: top + spread as i32,
+                        width: width + 2 * spread,
+                        height: height + 2 * spread,
+                    };
+                    Some((
+                        Page::Sdf,
+                        placement,
+                        sdf_from_mask(&image.data, width, height, spread),
+                    ))
+                }
+                SwashContent::Color => Some((Page::Color, image.placement, image.data)),
+                SwashContent::SubpixelMask => {
+                    // not produced when rendering an alpha mask
+                    warn!("unexpected subpixel glyph raster");
+                    None
+                }
+            }
+        });
+    GlyphRaster {
+        image,
+        took: start.elapsed(),
     }
 }
 
@@ -728,23 +864,31 @@ impl AtlasPage {
 }
 
 /// The textures holding every glyph a family's text shapes draw: distance fields of the
-/// outline glyphs, and bitmaps of any colour glyphs. When a page reaches its maximum size the
-/// atlas is rebuilt from the glyphs still in use instead, which moves them: every shape built
-/// before the rebuild is then re-laid out (its generation is stale), and keeps the old textures
-/// alive through its old materials until it has.
-#[derive(Resource)]
+/// outline glyphs, and bitmaps of any colour glyphs. Glyphs are rastered on the compute pool
+/// and placed as they finish. When a page reaches its maximum size the atlas is rebuilt from
+/// the glyphs still in use instead, which moves them: every shape built before the rebuild is
+/// then re-laid out (its generation is stale), and keeps the old textures alive through its
+/// old materials until it has.
 pub struct GlyphAtlas {
     sdf: AtlasPage,
-    /// Made when the family's first colour glyph is rastered.
+    /// Made when the family's first colour glyph is placed.
     color: Option<AtlasPage>,
     generation: u32,
     glyphs: HashMap<CacheKey, GlyphSlot>,
-    /// Glyphs rastered this frame, and the time it took.
+    /// Glyphs being rastered.
+    pending: HashMap<CacheKey, Task<GlyphRaster>>,
+    /// Rasters that didn't fit this frame; placed after the rebuild they asked for.
+    unplaced: Vec<(CacheKey, GlyphRaster)>,
+    /// Rasters of glyphs not in the atlas: evicted by a rebuild while unused, or dropped for
+    /// want of room (those draw nothing until a later rebuild makes room). Wanted again, they
+    /// are placed without rastering.
+    spare: SpareRasters,
+    /// Glyphs placed from the pool this frame, and the pool time their rasters took.
     rastered: (u32, Duration),
-    /// A shape didn't fit this frame: rebuild once the frame's shapes are in place.
+    /// Glyphs placed from the spare rasters this frame.
+    reused: u32,
+    /// A raster didn't fit this frame: rebuild once the frame's shapes are in place.
     rebuild_requested: bool,
-    /// Rebuild requests served (whether or not anything could be freed).
-    rebuilds: u32,
 }
 
 impl GlyphAtlas {
@@ -775,9 +919,12 @@ impl GlyphAtlas {
             color: None,
             generation: 0,
             glyphs: HashMap::default(),
+            pending: HashMap::default(),
+            unplaced: Vec::new(),
+            spare: SpareRasters::default(),
             rastered: (0, Duration::ZERO),
+            reused: 0,
             rebuild_requested: false,
-            rebuilds: 0,
         };
         atlas.add_white(images);
         atlas
@@ -809,8 +956,10 @@ impl GlyphAtlas {
     }
 
     /// Replace the textures with ones holding only `in_use` glyphs, repacked; the old textures
-    /// live on through the old materials until the shapes using them are rebuilt.
+    /// live on through the old materials until the shapes using them are rebuilt. The other
+    /// glyphs' rasters are kept in RAM.
     fn rebuild(&mut self, images: &mut Assets<Image>, in_use: &HashSet<CacheKey>) {
+        let mut evicted = 0;
         let old_glyphs = std::mem::take(&mut self.glyphs);
         self.generation += 1;
         let old_sdf = self.sdf.restart(images);
@@ -820,15 +969,14 @@ impl GlyphAtlas {
         let old_sdf_data = old_data(&old_sdf);
         let old_color_data = old_color.as_ref().map(old_data);
         // glyphs with no ink have nothing to move (and an empty rect has no size)
-        let (mut kept, inkless): (Vec<_>, Vec<_>) = old_glyphs
+        let (mut inked, inkless): (Vec<_>, Vec<_>) = old_glyphs
             .into_iter()
-            .filter(|(key, _)| in_use.contains(key))
             .partition(|(_, slot)| !slot.rect.is_empty());
         self.glyphs.extend(inkless);
         // tallest first: shelves are height-quantised, so this packs at least as well as the
         // old page did, whatever order the glyphs arrived in
-        kept.sort_by_key(|(_, slot)| std::cmp::Reverse((slot.rect.height(), slot.rect.width())));
-        for (key, slot) in kept {
+        inked.sort_by_key(|(_, slot)| std::cmp::Reverse((slot.rect.height(), slot.rect.width())));
+        for (key, slot) in inked {
             let (page, old) = match slot.page {
                 Page::Sdf => (&mut self.sdf, &old_sdf_data),
                 Page::Color => (
@@ -837,6 +985,23 @@ impl GlyphAtlas {
                 ),
             };
             let raster = page.read(old, slot.rect);
+            if !in_use.contains(&key) {
+                let placement = Placement {
+                    left: slot.offset.x,
+                    top: slot.offset.y,
+                    width: slot.rect.width(),
+                    height: slot.rect.height(),
+                };
+                self.spare.insert(
+                    key,
+                    GlyphRaster {
+                        image: Some((slot.page, placement, raster)),
+                        took: Duration::ZERO,
+                    },
+                );
+                evicted += 1;
+                continue;
+            }
             let Ok(rect) = page.place(images, slot.rect.width(), slot.rect.height(), &raster)
             else {
                 // can't happen: the old texture held them all, and it was the same size
@@ -846,58 +1011,119 @@ impl GlyphAtlas {
             self.glyphs.insert(key, GlyphSlot { rect, ..slot });
         }
         info!(
-            "glyph atlas rebuilt (generation {}): {} glyphs kept",
+            "glyph atlas rebuilt (generation {}): {} glyphs kept, {evicted} evicted",
             self.generation,
-            self.glyphs.len()
+            self.glyphs.len(),
         );
     }
 
-    /// The slot of a glyph, rastering it into the atlas if it isn't there yet (and `budget`
-    /// allows). `None` for glyphs with no ink (spaces).
+    /// The slot of a glyph. A glyph not in the atlas yet is placed from its spare raster if there
+    /// is one, else rastered on the compute pool (if `in_flight` allows another) and placed
+    /// when done: a `Wait` until then. `None` for glyphs with no ink (spaces).
     fn glyph(
         &mut self,
         key: CacheKey,
         images: &mut Assets<Image>,
         font_system: &mut CosmicFontSystem,
-        swash_cache: &mut SwashCache,
-        budget: &mut usize,
-    ) -> Result<Option<GlyphSlot>, RasterError> {
+        in_flight: &mut usize,
+    ) -> Result<Option<GlyphSlot>, Wait> {
         if let Some(slot) = self.glyphs.get(&key) {
             return Ok((!slot.rect.is_empty()).then_some(*slot));
         }
-        if *budget == 0 {
-            return Err(RasterError::Budget);
+        if self.pending.contains_key(&key)
+            || self.unplaced.iter().any(|(pending, _)| *pending == key)
+        {
+            return Err(Wait::Pending);
         }
-        *budget -= 1;
-
-        let start = Instant::now();
-        let mut slot = GlyphSlot {
-            page: Page::Sdf,
-            rect: URect::EMPTY,
-            offset: IVec2::ZERO,
+        if let Some(raster) = self.spare.take(key) {
+            if let Err(AtlasFull) = self.place(images, key, &raster) {
+                self.rebuild_requested = true;
+                self.unplaced.push((key, raster));
+                return Err(Wait::Pending);
+            }
+            self.reused += 1;
+            return Ok(Some(self.glyphs[&key]));
+        }
+        if *in_flight == 0 {
+            return Err(Wait::Deferred);
+        }
+        let Some(font) = font_system.0.get_font(key.font_id) else {
+            // the layout would have substituted; nothing to draw
+            warn!("glyph raster: no font {:?}", key.font_id);
+            self.glyphs.insert(key, GlyphSlot::EMPTY);
+            return Ok(None);
         };
-        let image = swash_cache
-            .0
-            .get_image_uncached(&mut font_system.0, key)
-            .filter(|image| image.placement.width > 0 && image.placement.height > 0);
-        if let Some(image) = image {
-            let Placement {
-                left,
-                top,
-                width,
-                height,
-            } = image.placement;
-            match image.content {
-                SwashContent::Mask => {
-                    let spread = Self::SPREAD;
-                    let sdf = sdf_from_mask(&image.data, width, height, spread);
-                    slot.rect =
-                        self.sdf
-                            .place(images, width + 2 * spread, height + 2 * spread, &sdf)?;
-                    slot.offset = IVec2::new(left - spread as i32, top + spread as i32);
-                }
-                SwashContent::Color => {
-                    let page = self.color.get_or_insert_with(|| {
+        *in_flight -= 1;
+        self.pending.insert(
+            key,
+            AsyncComputeTaskPool::get().spawn(async move { raster_glyph(font, key) }),
+        );
+        Err(Wait::Pending)
+    }
+
+    /// Place the rasters finished since last frame; one that doesn't fit asks for a rebuild.
+    fn collect(&mut self, images: &mut Assets<Image>) {
+        let mut done = Vec::new();
+        self.pending.retain(|key, task| {
+            let Some(raster) = check_ready(task) else {
+                return true;
+            };
+            done.push((*key, raster));
+            false
+        });
+        for (key, raster) in done {
+            self.rastered.0 += 1;
+            self.rastered.1 += raster.took;
+            if let Err(AtlasFull) = self.place(images, key, &raster) {
+                self.rebuild_requested = true;
+                self.unplaced.push((key, raster));
+            }
+        }
+    }
+
+    /// After a rebuild request was served: place the rasters that asked for it, and (if room
+    /// was made) the wanted glyphs dropped earlier. What still doesn't fit is dropped: its glyph
+    /// draws nothing, and the raster stays spare for the next rebuild.
+    fn place_unplaced(
+        &mut self,
+        images: &mut Assets<Image>,
+        rebuilt: bool,
+        in_use: &HashSet<CacheKey>,
+    ) {
+        let mut waiting = std::mem::take(&mut self.unplaced);
+        if rebuilt {
+            // dropped: an empty slot with a spare raster
+            let dropped = in_use.iter().copied().filter(|key| {
+                self.glyphs
+                    .get(key)
+                    .is_some_and(|slot| slot.rect.is_empty())
+                    && self.spare.contains(*key)
+            });
+            for key in dropped.collect::<Vec<_>>() {
+                waiting.push((key, self.spare.take(key).unwrap()));
+            }
+        }
+        for (key, raster) in waiting {
+            if let Err(AtlasFull) = self.place(images, key, &raster) {
+                warn!("glyph atlas full, glyph {} dropped", key.glyph_id);
+                self.glyphs.insert(key, GlyphSlot::EMPTY);
+                self.spare.insert(key, raster);
+            }
+        }
+    }
+
+    fn place(
+        &mut self,
+        images: &mut Assets<Image>,
+        key: CacheKey,
+        raster: &GlyphRaster,
+    ) -> Result<(), AtlasFull> {
+        let slot = match &raster.image {
+            None => GlyphSlot::EMPTY,
+            Some((page, placement, data)) => {
+                let atlas_page = match page {
+                    Page::Sdf => &mut self.sdf,
+                    Page::Color => self.color.get_or_insert_with(|| {
                         AtlasPage::new(
                             images,
                             Self::COLOR_INITIAL_SIZE,
@@ -905,22 +1131,18 @@ impl GlyphAtlas {
                             TextureFormat::Rgba8UnormSrgb,
                             4,
                         )
-                    });
-                    slot.page = Page::Color;
-                    slot.rect = page.place(images, width, height, &image.data)?;
-                    slot.offset = IVec2::new(left, top);
-                }
-                SwashContent::SubpixelMask => {
-                    // not produced when rendering an alpha mask
-                    warn!("unexpected subpixel glyph raster");
+                    }),
+                };
+                let rect = atlas_page.place(images, placement.width, placement.height, data)?;
+                GlyphSlot {
+                    page: *page,
+                    rect,
+                    offset: IVec2::new(placement.left, placement.top),
                 }
             }
-        }
-        // missing glyphs and glyphs with no ink draw nothing
+        };
         self.glyphs.insert(key, slot);
-        self.rastered.0 += 1;
-        self.rastered.1 += start.elapsed();
-        Ok((!slot.rect.is_empty()).then_some(slot))
+        Ok(())
     }
 }
 
@@ -1156,22 +1378,38 @@ fn layout_text(
 }
 
 /// The block's quads with their atlas rects: those sampling the distance-field page (glyphs
-/// and bars) and those sampling the bitmap page. Glyphs not in the atlas yet are rastered, as
-/// `budget` allows; an interrupted call keeps what it rastered.
+/// and bars) and those sampling the bitmap page. Glyphs not in the atlas yet are queued for
+/// rastering (as `in_flight` allows), all of them, and the block is `Pending` until they land.
+/// Once `all_requested`, the walk stops at the first glyph not ready.
 fn glyph_quads(
     text: &LaidOutText,
     atlas: &mut GlyphAtlas,
     images: &mut Assets<Image>,
     font_system: &mut CosmicFontSystem,
-    swash_cache: &mut SwashCache,
-    budget: &mut usize,
-) -> Result<(Vec<TextQuad>, Vec<TextQuad>), RasterError> {
+    in_flight: &mut usize,
+    all_requested: bool,
+) -> Result<(Vec<TextQuad>, Vec<TextQuad>), Pending> {
     let mut sdf_quads = text.bars.clone();
     let mut color_quads = Vec::new();
+    let mut pending = false;
+    let mut deferred = false;
     for glyph in &text.glyphs {
-        let Some(slot) = atlas.glyph(glyph.key, images, font_system, swash_cache, budget)? else {
+        let slot = match atlas.glyph(glyph.key, images, font_system, in_flight) {
+            Ok(Some(slot)) => slot,
             // no ink
-            continue;
+            Ok(None) => continue,
+            Err(Wait::Pending) => {
+                pending = true;
+                if all_requested {
+                    break;
+                }
+                continue;
+            }
+            Err(Wait::Deferred) => {
+                pending = true;
+                deferred = true;
+                continue;
+            }
         };
         let min = glyph.pen + Vec2::new(slot.offset.x as f32, -(slot.offset.y as f32));
         let quads = match slot.page {
@@ -1185,6 +1423,11 @@ fn glyph_quads(
             uv_min: slot.rect.min.as_vec2(),
             uv_max: slot.rect.max.as_vec2(),
             color: glyph.color,
+        });
+    }
+    if pending {
+        return Err(Pending {
+            all_requested: !deferred,
         });
     }
     Ok((sdf_quads, color_quads))
@@ -1269,7 +1512,6 @@ fn update_text_shapes(
     mut text_pipeline: ResMut<TextPipeline>,
     mut scene_fonts: SceneFontServer,
     mut font_system: ResMut<CosmicFontSystem>,
-    mut swash_cache: ResMut<SwashCache>,
     mut atlases: ResMut<GlyphAtlases>,
     (mut images, mut meshes, mut materials): (
         ResMut<Assets<Image>>,
@@ -1293,17 +1535,23 @@ fn update_text_shapes(
         )
     });
 
+    // glyphs rastered since last frame go in before this frame's builds look for them
+    for atlas in atlases.0.values_mut() {
+        atlas.collect(&mut images);
+    }
+    let mut in_flight = MAX_RASTERS_IN_FLIGHT
+        .saturating_sub(atlases.0.values().map(|atlas| atlas.pending.len()).sum());
+
     let mut built = 0;
     let mut deferred = 0;
-    let mut raster_budget = MAX_RASTERS_PER_FRAME;
 
     for (ent, scene_ent, text_shape, maybe_prior, maybe_retry) in candidates {
         if built >= MAX_BUILDS_PER_FRAME {
             if maybe_retry.is_none() {
                 commands.entity(ent).try_insert(RetryTextShape {
                     since: frame.0,
-                    atlas_full: None,
                     layout: None,
+                    requested: false,
                 });
             }
             deferred += 1;
@@ -1313,8 +1561,8 @@ fn update_text_shapes(
         let retry = |commands: &mut Commands| {
             commands.entity(ent).try_insert(RetryTextShape {
                 since: frame.0,
-                atlas_full: None,
                 layout: None,
+                requested: false,
             });
         };
 
@@ -1403,15 +1651,17 @@ fn update_text_shapes(
         // the layout doesn't depend on the atlas: reuse the last build's, or an interrupted
         // build's, until the component changes
         let reusable =
-            |layout: &&ShapeLayout| layout.source == text_shape.0 && layout.atlas == atlas_key;
-        let cached = maybe_prior
+            |layout: &ShapeLayout| layout.source == text_shape.0 && layout.atlas == atlas_key;
+        let (cached, all_requested) = match maybe_prior
             .map(|prior| &prior.layout)
-            .filter(reusable)
-            .or_else(|| {
-                maybe_retry
-                    .and_then(|retry| retry.layout.as_ref())
-                    .filter(reusable)
-            });
+            .filter(|layout| reusable(layout))
+        {
+            Some(layout) => (Some(layout), false),
+            None => match maybe_retry.filter(|retry| retry.layout.as_ref().is_some_and(reusable)) {
+                Some(retry) => (retry.layout.as_ref(), retry.requested),
+                None => (None, false),
+            },
+        };
         let layout = match cached {
             Some(layout) => layout.clone(),
             None => {
@@ -1533,35 +1783,16 @@ fn update_text_shapes(
             atlas,
             &mut images,
             &mut font_system,
-            &mut swash_cache,
-            &mut raster_budget,
+            &mut in_flight,
+            all_requested,
         ) {
             Ok(quads) => quads,
-            Err(RasterError::Budget) => {
-                // the glyphs rastered so far are kept, and so is the layout; finish next frame
+            Err(Pending { all_requested }) => {
+                // glyphs are being rastered; finish when they have landed
                 commands.entity(ent).try_insert(RetryTextShape {
                     since: frame.0,
-                    atlas_full: None,
                     layout: Some(layout),
-                });
-                continue;
-            }
-            Err(RasterError::AtlasFull) => {
-                let rebuilt_since = maybe_retry
-                    .and_then(|retry| retry.atlas_full)
-                    .is_some_and(|rebuilds| rebuilds < atlas.rebuilds);
-                if rebuilt_since {
-                    // still full after a rebuild: more live glyphs than fit
-                    warn!("glyph atlas {atlas_key:?} full, textshape {ent:?} dropped");
-                    clean_up_text_shape(&mut commands, ent, maybe_prior);
-                    continue;
-                }
-                // rebuilt by maintain_glyph_atlases, once this frame's shapes are in place
-                atlas.rebuild_requested = true;
-                commands.entity(ent).try_insert(RetryTextShape {
-                    since: frame.0,
-                    atlas_full: Some(atlas.rebuilds),
-                    layout: Some(layout),
+                    requested: all_requested,
                 });
                 continue;
             }
@@ -1687,17 +1918,17 @@ fn maintain_glyph_atlases(
     mut materials: ResMut<Assets<TextSdfMaterial>>,
 ) {
     for (key, atlas) in atlases.0.iter_mut() {
-        if atlas.rastered.0 > 0 {
+        if atlas.rastered.0 > 0 || atlas.reused > 0 {
             debug!(
-                "[{}] {key:?}: {} glyphs rastered in {:?}",
-                frame.0, atlas.rastered.0, atlas.rastered.1
+                "[{}] {key:?}: {} glyphs placed, {:?} of rastering; {} placed from spare",
+                frame.0, atlas.rastered.0, atlas.rastered.1, atlas.reused
             );
             atlas.rastered = (0, Duration::ZERO);
+            atlas.reused = 0;
         }
 
         if atlas.rebuild_requested {
             atlas.rebuild_requested = false;
-            atlas.rebuilds += 1;
             // what is drawn, and what an interrupted build has rastered so far
             let in_use = shapes
                 .iter()
@@ -1720,14 +1951,15 @@ fn maintain_glyph_atlases(
                     {
                         commands.entity(ent).try_insert(RetryTextShape {
                             since: frame.0,
-                            atlas_full: None,
                             layout: None,
+                            requested: false,
                         });
                     }
                 }
             } else {
                 warn!("glyph atlas {key:?} full, every glyph in use");
             }
+            atlas.place_unplaced(&mut images, freeable, &in_use);
         }
 
         let generation = atlas.generation;
