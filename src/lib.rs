@@ -822,9 +822,10 @@ fn desktop_default_plugins(decentraland_app_config: &DecentralandAppConfig) -> P
 
 #[cfg(target_arch = "wasm32")]
 fn wasm_default_plugins(decentraland_app_config: &DecentralandAppConfig) -> PluginGroupBuilder {
-    // Only the compute pool has real threads on the web (the page's compute workers); the io and
-    // async compute pools run their tasks on the engine worker's event loop, so one nominal
-    // thread each.
+    // The compute and async compute pools have real threads on the web (the page's compute and
+    // async workers; the async pool's `spawn` runs futures there). The io pool and
+    // `TaskPool::spawn` run their tasks on the engine worker's event loop, so one nominal thread
+    // each.
     let fixed = |n: usize| TaskPoolThreadAssignmentPolicy {
         min_threads: n,
         max_threads: n,
