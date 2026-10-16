@@ -8,17 +8,20 @@ import type { Destination } from './useEngineSession'
 
 export type LoginType = 'guest' | 'fully_registered'
 
-export function storedLoginType(stored: StoredLogin | null): LoginType {
-  return stored?.guest === true ? 'guest' : 'fully_registered'
+/** A reused login's kind: the shell's stored login when there is one (the driver signs in with
+ *  it first), else the engine's saved login. */
+export function storedLoginType(stored: StoredLogin | null, engineGuest: boolean): LoginType {
+  const guest = stored != null ? stored.guest === true : engineGuest
+  return guest ? 'guest' : 'fully_registered'
 }
-
-// Mobile gives up on a load after this long and reports it.
-export const LOADING_TIMEOUT_MS = 90_000
 
 /** The realm the page is in, as the engine keeps the url (`?realm=`) in step with it. */
 export function currentRealm(defaultRealm: string): string {
   return new URLSearchParams(location.search).get('realm') ?? defaultRealm
 }
+
+// Mobile gives up on a load after this long and reports it.
+export const LOADING_TIMEOUT_MS = 90_000
 
 export interface LoadingTarget {
   realm: string

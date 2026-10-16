@@ -34,11 +34,11 @@ export class EngineDriver implements LoginDriver {
     )
   }
 
-  async getPreviousLogin(): Promise<{ userId: string | null }> {
+  async getPreviousLogin(): Promise<{ userId: string | null; guest: boolean }> {
     // The engine has no console command to query a saved login, but a same-domain SSO identity
     // in localStorage is exactly that — a previous login we can hand back via `/login_identity`.
     const login = await getLogin()
-    return { userId: login ? rootAddress(login.identity) : null }
+    return { userId: login ? rootAddress(login.identity) : null, guest: login?.guest === true }
   }
 
   async loginPrevious(defaultOnError?: boolean): Promise<unknown> {

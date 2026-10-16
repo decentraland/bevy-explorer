@@ -19,7 +19,7 @@ export class FakeDriver implements LoginDriver {
   /** Login-method invocations, in order (getPreviousLogin/loginGuest/jumpIn/logout/…). */
   readonly calls: string[] = []
   /** What getPreviousLogin resolves to (set before render to drive the login branch). */
-  previousLogin: { userId: string | null } = { userId: null }
+  previousLogin: { userId: string | null; guest?: boolean } = { userId: null }
   /** Every engine console command line run via `command`, in order. */
   readonly commands: string[] = []
   /** What `command` resolves to for a line (defaults to the engine's `/time` reply at 10:00, 12×). */
@@ -29,9 +29,9 @@ export class FakeDriver implements LoginDriver {
 
   private readonly listeners = new Set<(msg: SceneToPage) => void>()
 
-  async getPreviousLogin(): Promise<{ userId: string | null }> {
+  async getPreviousLogin(): Promise<{ userId: string | null; guest: boolean }> {
     this.calls.push('getPreviousLogin')
-    return this.previousLogin
+    return { guest: false, ...this.previousLogin }
   }
   async loginPrevious(): Promise<unknown> {
     this.calls.push('loginPrevious')
@@ -112,7 +112,7 @@ export interface Harness {
 
 /** Render the real session hook wired to a FakeDriver (pass a subclass to simulate boot panics). */
 export function renderSession(
-  previousLogin?: { userId: string | null },
+  previousLogin?: { userId: string | null; guest?: boolean },
   driver: FakeDriver = new FakeDriver()
 ): Harness {
   if (previousLogin) driver.previousLogin = previousLogin

@@ -651,6 +651,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [stored, setStored] = useState<StoredLogin | null>(null)
   // The address of the engine's actual reusable previous login (drives "Welcome back").
   const [prevUserId, setPrevUserId] = useState<string | null>(null)
+  const prevGuest = useRef(false)
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
   busyRef.current = busy
@@ -1290,6 +1291,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     driver
       .getPreviousLogin()
       .then((r) => {
+        prevGuest.current = r.guest
         setPrevUserId(r.userId)
         setStatus(r.userId ? 'reuse-login-or-new' : 'sign-in-or-guest')
       })
@@ -1768,7 +1770,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     pendingLoginType.current = null
     Promise.resolve(login?.(driver))
       .then(() => {
-        if (type != null) screenViewed('AUTH_SUCCESS', { login_type: type === 'stored' ? storedLoginType(storedRef.current) : type })
+        if (type != null) screenViewed('AUTH_SUCCESS', { login_type: type === 'stored' ? storedLoginType(storedRef.current, prevGuest.current) : type })
         welcomeLink.current = urlDestination.current
         urlDestination.current = null
         setBusy(false)

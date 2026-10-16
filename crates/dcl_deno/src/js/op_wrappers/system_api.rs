@@ -12,8 +12,8 @@ use system_bridge::{
     BlockingStatusData, ChatMessage, ChatReactionData, DmHistoryEntryData, DmUserStateData,
     FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData,
     FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo, PermanentPermissionItem,
-    PermissionRequestEvent, ProfileChangedEvent, ProximityEvent, SatelliteView, SceneLoadingUi,
-    SetAvatarData, VoiceMessage, WelcomeState, WorldAccessEvent,
+    PermissionRequestEvent, PreviousLoginInfo, ProfileChangedEvent, ProximityEvent, SatelliteView,
+    SceneLoadingUi, SetAvatarData, VoiceMessage, WelcomeState, WorldAccessEvent,
 };
 
 // list of op declarations
@@ -136,8 +136,8 @@ fn op_get_current_login(state: &mut OpState) -> Option<String> {
 }
 
 #[op2(async)]
-#[string]
-async fn op_get_previous_login(state: Rc<RefCell<OpState>>) -> Result<Option<String>, AnyError> {
+#[serde]
+async fn op_get_previous_login(state: Rc<RefCell<OpState>>) -> Result<PreviousLoginInfo, AnyError> {
     dcl::js::system_api::op_get_previous_login(state).await
 }
 

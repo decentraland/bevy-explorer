@@ -64,6 +64,16 @@ describe('session analytics', () => {
     expect(tail(from).map(([, name]) => name)).toContain('WELCOME')
   })
 
+  it('a reused guest login the engine saved (nothing stored on the page) reports AUTH_SUCCESS guest', async () => {
+    const from = analytics.pending().length
+    const h = renderSession({ userId: '0x1111111111111111111111111111111111111111', guest: true })
+    await waitFor(() => expect(h.session().phase).toBe('lobby'))
+    await waitFor(() => expect(h.session().login.busy).toBe(false))
+
+    const auth = tail(from).find(([, name]) => name === 'AUTH_SUCCESS')
+    expect(auth?.[2]).toEqual({ screen_name: 'AUTH_SUCCESS', extra_properties: '{"login_type":"guest"}' })
+  })
+
   it("after a link launch, a chat teleport's loading episode names its own parcel, not the link's", async () => {
     history.replaceState(null, '', '/?position=1,2')
     const driver = new LaunchingDriver()

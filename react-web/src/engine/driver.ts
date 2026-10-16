@@ -12,7 +12,7 @@ import type { PageToScene, SceneToPage } from './protocol'
 // because the two implementations drive it differently (console vs rpc).
 
 export interface LoginDriver {
-  getPreviousLogin(): Promise<{ userId: string | null }>
+  getPreviousLogin(): Promise<{ userId: string | null; guest: boolean }>
   loginPrevious(defaultOnError?: boolean): Promise<unknown>
   loginGuest(): Promise<void>
   /** Create a guest account that persists across visits (a thirdweb guest wallet) and sign in

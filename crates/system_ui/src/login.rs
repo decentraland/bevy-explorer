@@ -25,7 +25,7 @@ use comms::profile::{
 };
 use ipfs::{IpfsAssetServer, IpfsIo};
 use scene_runner::Toaster;
-use system_bridge::{NativeUi, SystemApi, WelcomeState, PROFILE_FETCH_FAILED};
+use system_bridge::{NativeUi, PreviousLoginInfo, SystemApi, WelcomeState, PROFILE_FETCH_FAILED};
 use tokio::sync::oneshot::error::TryRecvError;
 use ui_core::{
     button::DuiButton,
@@ -569,8 +569,13 @@ fn process_login_bridge(
                 rpc_result_sender.send("".to_owned());
             }
             SystemApi::GetPreviousLogin(rpc_result_sender) => {
-                rpc_result_sender
-                    .send(get_previous_login(&config).map(|pl| format!("{:#x}", pl.root_address)));
+                let previous = get_previous_login(&config);
+                rpc_result_sender.send(PreviousLoginInfo {
+                    user_id: previous
+                        .as_ref()
+                        .map(|pl| format!("{:#x}", pl.root_address)),
+                    guest: previous.is_some_and(|pl| pl.guest_account),
+                });
             }
             SystemApi::GetWelcome(sender) => sender.send(WelcomeState {
                 terms: !config.terms_accepted() && !preview.is_preview,

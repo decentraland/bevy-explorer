@@ -29,11 +29,10 @@ module.exports.getCurrentLogin = function() {
     }
 }
 
-// (userId: option<string>)
+// (userId: option<string>, guest: bool); a None is undefined on wasm, null on deno
 module.exports.getPreviousLogin = async function() {
-    return {
-        userId: await op_get_previous_login()
-    }
+    const previous = await op_get_previous_login()
+    return { userId: previous.userId ?? null, guest: previous.guest === true }
 }
 
 // (success: bool, error: option<string>)

@@ -997,7 +997,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
           kind: 'rpc:res',
           id: msg.id,
           ok: true,
-          value: { userId: o.hasPreviousLogin ? o.userId : null }
+          value: { userId: o.hasPreviousLogin ? o.userId : null, guest: false }
         })
         return
       case 'loginPrevious':

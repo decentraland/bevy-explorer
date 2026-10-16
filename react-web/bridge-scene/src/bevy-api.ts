@@ -177,7 +177,7 @@ export type BevyApiInterface = {
   getUserProfile: (address: string) => Promise<SerializedProfile>
   kernelFetch: (req: KernelFetchRequest) => Promise<KernelFetchResponse>
   getRealmProvider: () => Promise<string>
-  getPreviousLogin: () => Promise<{ userId: string | null }>
+  getPreviousLogin: () => Promise<{ userId: string | null; guest: boolean }>
   loginPrevious: () => Promise<{ success: boolean; error: string }>
   /** Remote-wallet fresh sign-in: the engine opens the auth site in the external browser.
    *  `code` resolves with the verification code to display (null = none issued); `success`

@@ -98,6 +98,16 @@ pub struct WelcomeState {
     pub new_profile: bool,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PreviousLoginInfo {
+    /// The saved login's address; None for a fresh install or an expired login.
+    pub user_id: Option<String>,
+    /// The saved login is a guest account.
+    pub guest: bool,
+}
+
 /// The satellite map tiles a realm advertises in its `/about` (`configurations.map.satelliteView`).
 /// Only Genesis City realms carry one.
 #[derive(Serialize, Deserialize, Clone, Debug, Default, ts_rs::TS)]

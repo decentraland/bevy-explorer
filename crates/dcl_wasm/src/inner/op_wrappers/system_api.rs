@@ -21,10 +21,8 @@ pub fn op_get_current_login(state: &WorkerContext) -> Option<String> {
 }
 
 #[wasm_bindgen]
-pub async fn op_get_previous_login(state: &WorkerContext) -> Result<Option<String>, WasmError> {
-    dcl::js::system_api::op_get_previous_login(state.rc())
-        .await
-        .map_err(WasmError::from)
+pub async fn op_get_previous_login(state: &WorkerContext) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_get_previous_login(state.rc()).await)
 }
 
 #[wasm_bindgen]

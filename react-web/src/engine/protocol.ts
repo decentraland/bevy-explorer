@@ -35,6 +35,7 @@ export function bridgeChannelName(): string {
 /** Mirrors SystemApi.getPreviousLogin(): userId is absent for a fresh user. */
 export interface PreviousLogin {
   userId: string | null
+  guest: boolean
 }
 
 /** Mirrors SystemApi.loginPrevious() result. */

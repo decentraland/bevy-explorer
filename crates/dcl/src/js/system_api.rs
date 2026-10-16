@@ -18,9 +18,9 @@ use system_bridge::{
     BlockingStatusData, ChatMessage, ChatReactionData, DmHistoryEntryData, DmUserStateData,
     FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData,
     FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo, PermanentPermissionItem,
-    PermissionRequestEvent, ProfileChangedEvent, ProximityEvent, SatelliteView, SceneLoadingUi,
-    SetAvatarData, SetPermanentPermission, SetSinglePermission, SystemApi, VoiceMessage,
-    WelcomeState, WorldAccessEvent,
+    PermissionRequestEvent, PreviousLoginInfo, ProfileChangedEvent, ProximityEvent, SatelliteView,
+    SceneLoadingUi, SetAvatarData, SetPermanentPermission, SetSinglePermission, SystemApi,
+    VoiceMessage, WelcomeState, WorldAccessEvent,
 };
 use tokio::sync::Notify;
 
@@ -64,7 +64,7 @@ pub fn op_get_current_login(state: &impl State) -> Option<String> {
 
 pub async fn op_get_previous_login(
     state: Rc<RefCell<impl State>>,
-) -> Result<Option<String>, anyhow::Error> {
+) -> Result<PreviousLoginInfo, anyhow::Error> {
     debug!("op_get_previous_login");
     let (sx, rx) = RpcResultSender::channel();
 

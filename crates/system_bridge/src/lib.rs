@@ -60,7 +60,7 @@ pub enum SystemApi {
     ConsoleCommand(String, Vec<String>, RpcResultSender<Result<String, String>>),
     CheckForUpdate(RpcResultSender<Option<(String, String)>>),
     MOTD(RpcResultSender<String>),
-    GetPreviousLogin(RpcResultSender<Option<String>>),
+    GetPreviousLogin(RpcResultSender<PreviousLoginInfo>),
     /// bool: continue with (and deploy) a default profile if the user's current profile
     /// can't be fetched — overwrites the server-side profile, so UIs should only set it
     /// after a failed attempt and with explicit user consent.

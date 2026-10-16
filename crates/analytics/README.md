@@ -73,7 +73,7 @@ Screens (`Screen Viewed`), from `features/session/useEngineSession.ts` unless no
 | COMEBACK | | the welcome-back panel after a **failed** stored sign-in | same name; mobile shows it to every returning user |
 | ACCOUNT_GUEST_CREATE | | after PLAY_GUEST while a persistent guest is created (shell or native) | same |
 | AUTH_BROWSER_OPEN | method `"sso"` | right before the SSO redirect | same |
-| AUTH_SUCCESS | login_type `"guest"` \| `"fully_registered"` | the login resolves (a stored login reports its stored kind) | same |
+| AUTH_SUCCESS | login_type `"guest"` \| `"fully_registered"` | the login resolves (a reused login reports the kind of the shell's stored login, else of the engine's saved one, from `getPreviousLogin`) | same |
 | AUTH_ERROR | error | the login rejects | same |
 | WELCOME | | the terms page for an existing profile | web-only |
 | AVATAR_NAMING | | the terms page for a new profile | same |
