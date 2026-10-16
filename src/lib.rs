@@ -400,6 +400,23 @@ impl DecentralandApp {
 
         info!("Bevy-Explorer version {}", version);
 
+        // the host page's session id (web), else one per engine run; sending starts once the
+        // terms are accepted (preview never shows them)
+        let mut segment_config = SegmentConfig::new(
+            decentraland_app_config.app_config.user_id.clone(),
+            decentraland_app_config
+                .arguments
+                .client
+                .session_id
+                .clone()
+                .unwrap_or_else(|| Uuid::new_v4().to_string()),
+            version_hash,
+        );
+        segment_config.set_consent(
+            decentraland_app_config.app_config.terms_accepted()
+                || decentraland_app_config.arguments.launch.preview,
+        );
+
         let boot_server = map_realm_name(&decentraland_app_config.boot_server());
         let boot_location = BootLocation {
             parcel: decentraland_app_config.boot_location(),
@@ -477,11 +494,7 @@ impl DecentralandApp {
                         1.0
                     },
             })
-            .insert_resource(SegmentConfig::new(
-                decentraland_app_config.app_config.user_id.clone(),
-                Uuid::new_v4().to_string(),
-                version_hash,
-            ));
+            .insert_resource(segment_config);
 
         if decentraland_app_config.arguments.no_gltf {
             app.insert_resource(NoGltf(true));

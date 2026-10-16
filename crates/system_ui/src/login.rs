@@ -582,6 +582,7 @@ fn process_login_bridge(
                     config.accepted_terms = Some(TERMS_VERSION);
                     platform::write_config_file(&*config);
                 }
+                segment_config.set_consent(true);
                 sender.send(());
             }
             // the account can only change while the world is held (the lobby): once in
@@ -742,6 +743,7 @@ fn process_login_bridge(
                 wallet.disconnect();
                 current_profile.profile = None;
                 current_profile.deploy_held = false;
+                segment_config.update_identity("unauthenticated".to_owned(), false);
             }
             _ => (),
         }

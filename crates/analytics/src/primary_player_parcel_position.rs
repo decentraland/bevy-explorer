@@ -10,7 +10,8 @@ const PARCEL_SIZE: f32 = 16.0;
 
 pub fn primary_player_parcel_position_system(
     player: Query<&GlobalTransform, With<PrimaryUser>>,
-    mut last_parcel_position: Local<IVec2>,
+    // None until the first observation: the first event comes from "no-position", as on mobile
+    mut last_parcel_position: Local<Option<IVec2>>,
     mut metrics: ResMut<SegmentMetricsEvents>,
     mut segment_config: Option<ResMut<SegmentConfig>>,
 ) {
@@ -20,8 +21,10 @@ pub fn primary_player_parcel_position_system(
     let parcel_position = ((player.translation().xz() * Vec2::new(1.0, -1.0)) / PARCEL_SIZE)
         .floor()
         .as_ivec2();
-    if parcel_position != *last_parcel_position {
-        let current = format!("{},{}", last_parcel_position.x, last_parcel_position.y);
+    if *last_parcel_position != Some(parcel_position) {
+        let current = last_parcel_position
+            .map(|p| format!("{},{}", p.x, p.y))
+            .unwrap_or_else(|| "no-position".to_owned());
         let next = format!("{},{}", parcel_position.x, parcel_position.y);
         metrics.add_event(SegmentEvent::ExplorerMoveToParcel(
             next.clone(),
@@ -34,6 +37,6 @@ pub fn primary_player_parcel_position_system(
             segment_config.update_position(next);
         }
 
-        *last_parcel_position = parcel_position;
+        *last_parcel_position = Some(parcel_position);
     }
 }

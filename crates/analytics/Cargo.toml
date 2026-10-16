@@ -5,9 +5,25 @@ edition = "2021"
 
 [lib]
 
+[lints]
+workspace = true
+
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
 bevy = { workspace = true }
 anyhow = { workspace = true }
 common = { workspace = true }
+console = { workspace = true }
+bevy_console = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+base64 = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { workspace = true }
+js-sys = { workspace = true }
+wasm-bindgen = { workspace = true }
+getrandom = { workspace = true, features = ["wasm_js"] }
+uuid = { workspace = true, features = ["js"] }
