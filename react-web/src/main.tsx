@@ -10,6 +10,7 @@ import { countLaunch } from './lib/launchCount'
 import { isNativeHud } from './lib/bootMode'
 import { inShell } from './lib/shell'
 import { loadPrefs } from './lib/prefs'
+import { bootAnalytics } from './lib/analytics'
 import './styles/global.css'
 
 // Before anything fetches: annotate loopback/local-network requests so Chrome's Local Network
@@ -56,6 +57,7 @@ if (isNativeHud()) {
 // The HUD's stored values are read before it renders (lib/prefs).
 if (!redirecting) void loadPrefs().then(() => {
   countLaunch()
+  bootAnalytics()
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <App />

@@ -23,6 +23,8 @@ describe('unrecognisedEntryParams', () => {
   it('is empty for a link made of accepted params only', () => {
     expect(unrecognisedEntryParams(new URLSearchParams('?realm=x&position=1,2&mock=1&preview'))).toEqual([])
     expect(unrecognisedEntryParams(new URLSearchParams('?native=1&hud=0&gate=gpu&simerror=realm'))).toEqual([])
+    // campaign links: Segment reads them, never called out
+    expect(unrecognisedEntryParams(new URLSearchParams('?utm_source=x&utm_campaign=y&anon_user_id=abc&analyticsSession=s'))).toEqual([])
   })
 
   it('names each unknown key once, including the host-only editor flag', () => {

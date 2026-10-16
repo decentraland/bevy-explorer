@@ -7,6 +7,7 @@
 // redirect the browser to `/auth/login?redirectTo=<here>`; the auth site signs in and
 // redirects back, by which point the identity is already in localStorage.
 
+import { sessionId } from '../../lib/analytics'
 import { inShell, postToShell, shellRequest } from '../../lib/shell'
 import { GUEST_SESSION_KEY } from './thirdweb'
 
@@ -152,7 +153,7 @@ export function authLoginUrl(redirectTo: string = location.href): string {
 // Send the browser to the auth site to sign in (fresh account or switch account). Inside the shell
 // the shell navigates, so the auth site gets the top-level page and returns to the shell's URL.
 export function redirectToAuth(redirectTo: string = location.href): void {
-  if (inShell) postToShell({ type: 'bevy-shell:auth-login' })
+  if (inShell) postToShell({ type: 'bevy-shell:auth-login', session: sessionId() })
   else location.replace(authLoginUrl(redirectTo))
 }
 

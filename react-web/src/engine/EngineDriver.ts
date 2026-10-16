@@ -6,6 +6,8 @@
 //     and are delivered through ONE generic `on(msg => …)` subscription.
 
 import { encodeIdentity, getLogin, rootAddress, type AuthIdentity, type StoredLogin } from '../features/auth/sso'
+import { trackGuestWalletCreation } from '../features/auth/guestWalletEvent'
+import { attachEngine, launchAnalytics } from '../lib/analytics'
 import { inShell, shellRequest } from '../lib/shell'
 import type { LoginDriver } from './driver'
 import type { EngineRpc, LaunchHostOptions } from './engineRpc'
@@ -56,7 +58,7 @@ export class EngineDriver implements LoginDriver {
   // embed) there is nowhere to keep it, so the guest is a throwaway one.
   async loginPersistentGuest(): Promise<void> {
     if (!inShell) return this.loginGuest()
-    const login = await shellRequest<StoredLogin>('createGuest', undefined, CREATE_GUEST_TIMEOUT_MS)
+    const login = await trackGuestWalletCreation(() => shellRequest<StoredLogin>('createGuest', undefined, CREATE_GUEST_TIMEOUT_MS))
     await this.loginWithIdentity(login.identity, false, true)
   }
 
@@ -136,7 +138,10 @@ export class EngineDriver implements LoginDriver {
   }
 
   launch(realm?: string, position?: string, host?: LaunchHostOptions): void {
-    this.rpc.launch(realm, position, host)
+    // the page's analytics session and campaign id ride along so engine events carry them too,
+    // and from here on the page's events leave through the engine's console
+    this.rpc.launch(realm, position, { ...host, ...launchAnalytics() })
+    attachEngine((line) => this.rpc.command(line))
   }
 
   homeScene(): { realm: string | null; parcel: string } | null {

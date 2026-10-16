@@ -40,6 +40,11 @@ pub struct SegmentMetricsEvents {
     serialized_events: Vec<String>,
 }
 
+// The browser build goes through the first-party proxy, which ad blockers leave alone.
+#[cfg(target_arch = "wasm32")]
+const SEGMENT_BATCH_URL: &str = "https://api.e.decentraland.org/v1/batch";
+#[cfg(not(target_arch = "wasm32"))]
+const SEGMENT_BATCH_URL: &str = "https://api.segment.io/v1/batch";
 const SEGMENT_EVENT_SIZE_LIMIT_BYTES: usize = 32000;
 const SEGMENT_BATCH_SIZE_LIMIT_BYTES: usize = 500000;
 
@@ -50,12 +55,25 @@ impl SegmentMetricsEvents {
 }
 
 impl SegmentConfig {
-    pub fn new(user_id: String, session_id: String, version: String) -> Self {
+    pub fn new(
+        user_id: String,
+        session_id: String,
+        version: String,
+        campaign_anon_user_id: Option<String>,
+    ) -> Self {
         Self {
             user_id,
-            common: SegmentEventCommonExplorerFields::new(session_id, version),
+            common: SegmentEventCommonExplorerFields::new(
+                session_id,
+                version,
+                campaign_anon_user_id,
+            ),
             write_key: "EAdAcIyGP6lIQAfpFF2BXpNzpj7XNWMm".into(),
         }
+    }
+
+    pub fn common(&self) -> &SegmentEventCommonExplorerFields {
+        &self.common
     }
 
     pub fn update_realm(&mut self, realm: String) {
@@ -144,7 +162,7 @@ async fn send_segment_batch(write_key: &str, events: &[String]) -> Result<(), an
     );
 
     let response = reqwest_client()
-        .post("https://api.segment.io/v1/batch")
+        .post(SEGMENT_BATCH_URL)
         .header("Content-Type", "application/json")
         .body(json_body.clone())
         .send()

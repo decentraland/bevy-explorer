@@ -4,6 +4,7 @@
 // separate processes. The signed-in identity's key stays here: the app asks for the public
 // identity and for signatures, and never reads the origin's localStorage itself.
 import { authLoginUrl } from '../features/auth/sso'
+import { ANALYTICS_SESSION_PARAM, ANON_USER_ID_PARAM } from '../lib/analytics'
 import { migratePrefs } from '../lib/prefs'
 import { request } from './login'
 
@@ -25,9 +26,30 @@ function mount(): void {
     .then(mountApp)
 }
 
+// Segment's anonymous id for this browser, the cookie decentraland.org's pages set: the app
+// stamps it on its analytics so the warehouse joins the session to the landing visit.
+function segmentAnonymousId(): string | null {
+  const raw = document.cookie
+    .split('; ')
+    .find((c) => c.startsWith('ajs_anonymous_id='))
+    ?.slice('ajs_anonymous_id='.length)
+  if (!raw) return null
+  const value = decodeURIComponent(raw)
+  return value.startsWith('"') ? value.slice(1, -1) : value
+}
+
+const ANALYTICS_SESSION_KEY = 'dcl-analytics-session'
+
 function mountApp(): void {
   const f = document.createElement('iframe')
-  f.src = 'app.html' + location.search + location.hash
+  const q = new URLSearchParams(location.search)
+  // the return from the sign-in redirect continues the analytics session the app left with
+  const resumed = sessionStorage.getItem(ANALYTICS_SESSION_KEY)
+  sessionStorage.removeItem(ANALYTICS_SESSION_KEY)
+  if (resumed) q.set(ANALYTICS_SESSION_PARAM, resumed)
+  const anonymous = segmentAnonymousId()
+  if (anonymous && !q.has(ANON_USER_ID_PARAM)) q.set(ANON_USER_ID_PARAM, anonymous)
+  f.src = 'app.html' + (q.size > 0 ? '?' + q.toString() : '') + location.hash
   f.title = 'Decentraland'
   f.allow = 'fullscreen; microphone; clipboard-read; clipboard-write; autoplay; gamepad'
   f.addEventListener('load', () => f.focus())
@@ -75,6 +97,7 @@ addEventListener('message', async (e: MessageEvent) => {
       break
     // sign-in: the same-origin auth site, returning here
     case 'bevy-shell:auth-login':
+      if (typeof m.session === 'string') sessionStorage.setItem(ANALYTICS_SESSION_KEY, m.session)
       location.replace(authLoginUrl(location.href))
       break
     // the untrusted-link gate's exit (see src/features/gate/UntrustedLaunchGate.tsx)
