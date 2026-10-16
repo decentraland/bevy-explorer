@@ -72,6 +72,7 @@ pub mod initialize_scene;
 pub mod permissions;
 pub mod primary_entities;
 pub mod renderer_context;
+pub mod scene_load_times;
 #[cfg(test)]
 pub mod test;
 pub mod update_scene;

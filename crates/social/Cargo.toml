@@ -9,6 +9,7 @@ edition = "2021"
 social = ["dep:dcl-rpc", "dcl_component/social"]
 
 [dependencies]
+analytics = { workspace = true }
 common = { workspace = true }
 console = { workspace = true }
 dcl_component = { workspace = true }

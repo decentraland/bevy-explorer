@@ -106,6 +106,7 @@ impl Plugin for SceneLifecyclePlugin {
                 animate_ready_scene,
                 update_loading_quads,
                 handle_live_scene_info,
+                crate::scene_load_times::report_scene_load_times,
             )
                 .in_set(SceneSets::Init),
         );

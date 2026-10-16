@@ -1,5 +1,10 @@
 use std::f32::consts::TAU;
 
+use alloy_core::primitives::Address;
+use analytics::{
+    data_definition::{SegmentEvent, SegmentEventFirstMoveInWorld},
+    segment_system::{SegmentConfig, SegmentMetricsEvents},
+};
 use bevy::{
     diagnostic::FrameCount,
     math::DVec3,
@@ -10,8 +15,9 @@ use common::{
     dynamics::{PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS, PLAYER_GROUND_THRESHOLD},
     sets::{PostUpdateSets, SceneSets},
     structs::{
-        avatar_tilt_quat, AppConfig, AvatarDynamicState, EngineMovementControl, PrimaryPlayerRes,
-        PrimaryUser, SceneDrivenAnim, SceneDrivenAnimationFeedback, SceneDrivenAnimationRequest,
+        avatar_tilt_quat, AppConfig, AvatarDynamicState, EngineMovementControl, OutOfWorld,
+        PrimaryPlayerRes, PrimaryUser, SceneDrivenAnim, SceneDrivenAnimationFeedback,
+        SceneDrivenAnimationRequest,
     },
 };
 use dcl::interface::{ComponentPosition, CrdtType};
@@ -43,6 +49,7 @@ use scene_runner::{
     },
     ContainingScene, SceneEntity, SceneUpdates,
 };
+use wallet::Wallet;
 
 pub struct AvatarMovementPlugin;
 
@@ -98,6 +105,7 @@ impl Plugin for AvatarMovementPlugin {
                 resolve_collisions,
                 apply_impulses,
                 apply_movement,
+                report_first_move_in_world,
                 record_ground_collider,
                 accumulate_movement_periods,
             )
@@ -711,6 +719,57 @@ pub fn apply_movement(
 // (scene entity, collider id) of collider player is standing on
 #[derive(Component, Default)]
 pub struct GroundCollider(pub Option<(Entity, ColliderId, GlobalTransform)>);
+
+/// "First Move In World": the first frame in world, per login, with a non-zero horizontal
+/// movement intent (the vertical component is gravity, not the player).
+#[allow(clippy::type_complexity)]
+fn report_first_move_in_world(
+    player: Query<
+        (&Transform, &ActivePlayerComponent<AvatarMovement>),
+        (With<PrimaryUser>, Without<OutOfWorld>),
+    >,
+    movement_control: Res<EngineMovementControl>,
+    wallet: Res<Wallet>,
+    segment_config: Option<Res<SegmentConfig>>,
+    metrics: Option<ResMut<SegmentMetricsEvents>>,
+    mut login: Local<Option<Address>>,
+    mut sent: Local<bool>,
+) {
+    if wallet.is_changed() {
+        let address = wallet.address();
+        if address != *login {
+            *login = address;
+            *sent = false;
+        }
+    }
+    if *sent || login.is_none() {
+        return;
+    }
+    let Ok((transform, movement)) = player.single() else {
+        return;
+    };
+    if movement_suppressed(&movement_control, movement)
+        || movement.component.velocity.xz() == Vec2::ZERO
+    {
+        return;
+    }
+    let (Some(segment_config), Some(mut metrics)) = (segment_config, metrics) else {
+        return;
+    };
+    *sent = true;
+
+    let parcel = (transform.translation.xz() * Vec2::new(1.0, -1.0) / PARCEL_SIZE)
+        .floor()
+        .as_ivec2();
+    let common = segment_config.common();
+    metrics.add_event(SegmentEvent::FirstMoveInWorld(
+        SegmentEventFirstMoveInWorld {
+            position: format!("{},{}", parcel.x, parcel.y),
+            realm: common.realm.clone(),
+            is_guest: common.dcl_is_guest,
+        },
+    ));
+}
 
 fn record_ground_collider(
     mut player: Query<(

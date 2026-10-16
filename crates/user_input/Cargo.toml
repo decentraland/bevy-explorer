@@ -6,6 +6,7 @@ edition = "2021"
 [lib]
 
 [dependencies]
+analytics = { workspace = true }
 avatar = { workspace = true }
 common = { workspace = true }
 input_manager = { workspace = true }
@@ -16,6 +17,8 @@ dcl_component = { workspace = true }
 tween = { workspace = true }
 console = { workspace = true }
 comms = { workspace = true }
+wallet = { workspace = true }
+alloy-core = { workspace = true }
 
 bevy = { workspace = true }
 bevy_console = { workspace = true }

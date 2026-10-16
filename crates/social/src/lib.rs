@@ -1,6 +1,13 @@
 #[cfg(not(feature = "social"))]
 mod fake_client;
 use alloy_core::primitives::Address;
+use analytics::{
+    data_definition::{
+        SegmentEvent, SegmentEventAcceptFriend, SegmentEventBlockUser, SegmentEventRequestFriend,
+        SegmentEventUnfriend,
+    },
+    segment_system::SegmentMetricsEvents,
+};
 #[cfg(not(feature = "social"))]
 pub use fake_client::{FriendshipEventBody, SocialClientHandler};
 
@@ -642,9 +649,58 @@ fn spawn_friendship_action(
     }
 }
 
+/// Analytics id of a user the local one acts on: the lowercase 0x address, as
+/// `dcl_eth_address` is reported.
+fn receiver_id(address: &str) -> String {
+    address
+        .as_h160()
+        .map(|a| format!("{a:#x}"))
+        .unwrap_or_else(|| address.to_owned())
+}
+
 /// Handles request/response SystemApi messages for friends
-fn handle_social_requests(mut events: EventReader<SystemApi>, mut social: ResMut<SocialClient>) {
+fn handle_social_requests(
+    mut events: EventReader<SystemApi>,
+    mut social: ResMut<SocialClient>,
+    // absent in the social dev binary
+    mut metrics: Option<ResMut<SegmentMetricsEvents>>,
+) {
     for event in events.read() {
+        // emitted when the action is issued, like the mobile client's click, whatever the outcome
+        if let Some(metrics) = metrics.as_mut() {
+            match event {
+                SystemApi::SendFriendRequest(address, _, _) => {
+                    metrics.add_event(SegmentEvent::RequestFriend(SegmentEventRequestFriend {
+                        receiver_id: receiver_id(address),
+                    }));
+                }
+                SystemApi::AcceptFriendRequest(address, _) => {
+                    metrics.add_event(SegmentEvent::AcceptFriend(SegmentEventAcceptFriend {
+                        receiver_id: receiver_id(address),
+                        friendship_id: None,
+                    }));
+                }
+                SystemApi::DeleteFriend(address, _) => {
+                    metrics.add_event(SegmentEvent::Unfriend(SegmentEventUnfriend {
+                        receiver_id: receiver_id(address),
+                    }));
+                }
+                SystemApi::BlockUser(address, _) => {
+                    let is_friend = address.as_h160().is_some_and(|a| {
+                        social
+                            .0
+                            .as_ref()
+                            .is_some_and(|client| client.friends.contains_key(&a))
+                    });
+                    metrics.add_event(SegmentEvent::BlockUser(SegmentEventBlockUser {
+                        receiver_id: receiver_id(address),
+                        is_friend,
+                    }));
+                }
+                _ => (),
+            }
+        }
+
         match event {
             #[cfg(feature = "social")]
             SystemApi::GetFriends(sx) => {

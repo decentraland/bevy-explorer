@@ -11480,6 +11480,7 @@ name = "social"
 version = "0.1.0"
 dependencies = [
  "alloy-core",
+ "analytics",
  "anyhow",
  "async-std",
  "async-trait",
@@ -13168,6 +13169,8 @@ dependencies = [
 name = "user_input"
 version = "0.1.0"
 dependencies = [
+ "alloy-core",
+ "analytics",
  "avatar",
  "bevy",
  "bevy_console",
@@ -13182,6 +13185,7 @@ dependencies = [
  "rapier3d-f64",
  "scene_runner",
  "tween",
+ "wallet",
 ]
 
 [[package]]

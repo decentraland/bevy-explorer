@@ -1,5 +1,10 @@
 use std::f32::consts::TAU;
 
+use alloy_core::primitives::Address;
+use analytics::{
+    data_definition::{SegmentEvent, SegmentEventLoading},
+    segment_system::SegmentMetricsEvents,
+};
 use bevy::{image::ImageLoaderSettings, prelude::*};
 use bevy_dui::{DuiEntities, DuiEntityCommandsExt, DuiProps};
 use common::{
@@ -8,6 +13,7 @@ use common::{
     util::TryPushChildrenEx,
 };
 use scene_runner::{
+    initialize_scene::SceneLoading,
     renderer_context::{
         RendererSceneContext, SCENE_NOT_RESPONDING_DISPLAY_AFTER, SCENE_NOT_RESPONDING_TIMEOUT,
     },
@@ -72,7 +78,141 @@ impl Plugin for OowUiPlugin {
                 update_loading_backdrop.run_if(not(resource_exists::<WorldHold>)),
             );
         }
-        app.add_systems(Update, (pipe_scene_loading_ui_stream, animate_logo_pulse));
+        app.add_systems(
+            Update,
+            (
+                pipe_scene_loading_ui_stream,
+                animate_logo_pulse,
+                track_loading_episodes,
+            ),
+        );
+    }
+}
+
+/// Whether the loading screen covers the world: a connected player out of world, not held
+/// for a lobby.
+fn loading_visible(wallet: &Wallet, oow_player: bool, world_hold: bool) -> bool {
+    wallet.address().is_some() && oow_player && !world_hold
+}
+
+struct LoadingEpisode {
+    id: u64,
+    started_at: f64,
+    realm_bucket: String,
+    // the scene at the player's parcel failed to load, as last seen while loading
+    scene_failed: bool,
+}
+
+/// "world" on a worlds server, "genesis" on a catalyst of the base domain, else "other".
+fn realm_bucket(realm: &CurrentRealm) -> String {
+    if realm.about_url.is_empty() {
+        return "unknown".to_owned();
+    }
+    if ipfs::world_access::world_name(&realm.about_url).is_some() {
+        return "world".to_owned();
+    }
+    let host = realm
+        .about_url
+        .split("://")
+        .nth(1)
+        .and_then(|rest| rest.split('/').next())
+        .unwrap_or_default();
+    let base = common::base_domain::get();
+    if !realm.is_local() && (host == base || host.ends_with(&format!(".{base}"))) {
+        "genesis".to_owned()
+    } else {
+        "other".to_owned()
+    }
+}
+
+fn parcel_scene_failed(
+    player: Entity,
+    containing_scene: &ContainingScene,
+    loading: &Query<&SceneLoading>,
+) -> bool {
+    containing_scene
+        .get_parcel_oow(player)
+        .and_then(|scene| loading.get(scene).ok())
+        .is_some_and(|state| matches!(state, SceneLoading::Failed))
+}
+
+/// "Loading Event" started/completed for every user-visible load (the same predicate the
+/// loading screen shows on). Background streaming never opens an episode.
+#[allow(clippy::too_many_arguments)]
+fn track_loading_episodes(
+    time: Res<Time>,
+    wallet: Res<Wallet>,
+    world_hold: Option<Res<WorldHold>>,
+    current_realm: Res<CurrentRealm>,
+    player: Query<(Entity, Has<OutOfWorld>), With<PrimaryUser>>,
+    containing_scene: ContainingScene,
+    loading: Query<&SceneLoading>,
+    mut metrics: ResMut<SegmentMetricsEvents>,
+    mut episode: Local<Option<LoadingEpisode>>,
+    mut next_id: Local<u64>,
+    mut login: Local<Option<Address>>,
+    mut loaded_since_login: Local<bool>,
+    // the realm the last episode landed in: every realm change goes through an episode
+    mut landed_realm: Local<String>,
+) {
+    let (player, oow) = player.single().unwrap_or((Entity::PLACEHOLDER, false));
+    let visible = loading_visible(&wallet, oow, world_hold.is_some());
+    let now = time.elapsed_secs_f64();
+
+    let address = wallet.address();
+    if address != *login {
+        *login = address;
+        *loaded_since_login = false;
+    }
+
+    match (episode.as_mut(), visible) {
+        (None, true) => {
+            let when = if !*loaded_since_login {
+                "on_explorer_ready"
+            } else if *landed_realm != current_realm.about_url {
+                "on_changerealm"
+            } else {
+                "on_teleport"
+            };
+            *loaded_since_login = true;
+            *next_id += 1;
+            let bucket = realm_bucket(&current_realm);
+            let mut event = SegmentEventLoading::base("started", *next_id, bucket.clone());
+            event.when = Some(when.to_owned());
+            event.is_world = Some(bucket == "world");
+            metrics.add_event(SegmentEvent::Loading(Box::new(event)));
+            *episode = Some(LoadingEpisode {
+                id: *next_id,
+                started_at: now,
+                realm_bucket: bucket,
+                scene_failed: false,
+            });
+        }
+        (Some(current), true) => {
+            current.scene_failed |= parcel_scene_failed(player, &containing_scene, &loading);
+        }
+        (Some(current), false) => {
+            // a failed load keeps its entity, so it still shows once the player is let in
+            let failed =
+                current.scene_failed || parcel_scene_failed(player, &containing_scene, &loading);
+            let mut event =
+                SegmentEventLoading::base("completed", current.id, current.realm_bucket.clone());
+            event.is_world = Some(current.realm_bucket == "world");
+            event.duration_ms = Some(((now - current.started_at) * 1000.0).round() as i64);
+            let dismissed_by = if login.is_none() {
+                // logged out mid-load
+                "cancelled"
+            } else if failed {
+                "error"
+            } else {
+                "completion"
+            };
+            event.dismissed_by = Some(dismissed_by.to_owned());
+            metrics.add_event(SegmentEvent::Loading(Box::new(event)));
+            *episode = None;
+            landed_realm.clone_from(&current_realm.about_url);
+        }
+        (None, false) => (),
     }
 }
 
