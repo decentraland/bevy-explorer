@@ -67,6 +67,8 @@ pub enum SegmentEvent {
     ExplorerMoveToParcel(String, SegmentEventExplorerMoveToParcel),
     SystemInfoReport(SegmentEventSystemInfoReport),
     ChatMessageSent(SegmentEventChatMessageSent),
+    FirstMoveInWorld(SegmentEventFirstMoveInWorld),
+    TimeSpentInWorld(SegmentEventTimeSpentInWorld),
     /// An event the host page reports through `/track`: its name, properties and time as sent.
     Page {
         name: String,
@@ -197,6 +199,18 @@ impl SegmentEventChatMessageSent {
     }
 }
 
+/// The first frame of a login with the player moving in world; the common fields say where.
+#[derive(Serialize)]
+pub struct SegmentEventFirstMoveInWorld {}
+
+/// A chunk of time in world (`in_world.rs`), named and shaped as the desktop client's so one
+/// query sums the playtime of both.
+#[derive(Serialize)]
+pub struct SegmentEventTimeSpentInWorld {
+    pub time_spent: f32,
+    pub realm_name: String,
+}
+
 pub fn build_segment_event_batch_item(
     user_id: String,
     common: &SegmentEventCommonExplorerFields,
@@ -239,6 +253,16 @@ pub fn build_segment_event_batch_item(
         ),
         SegmentEvent::ChatMessageSent(event) => (
             "Chat Message Sent".to_string(),
+            serde_json::to_value(event).unwrap(),
+            None,
+        ),
+        SegmentEvent::FirstMoveInWorld(event) => (
+            "First Move In World".to_string(),
+            serde_json::to_value(event).unwrap(),
+            None,
+        ),
+        SegmentEvent::TimeSpentInWorld(event) => (
+            "time_spent_in_world".to_string(),
             serde_json::to_value(event).unwrap(),
             None,
         ),

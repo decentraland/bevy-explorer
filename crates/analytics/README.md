@@ -2,7 +2,7 @@
 
 The explorer's Segment events, one sender: the engine. Its own events (Performance Metrics,
 Explorer Error, Explorer Scene Load Times, Explorer Move To Parcel, System Info Report, Chat
-Message Sent; `data_definition.rs`) and, on the web, the page's screens and clicks, which reach it
+Message Sent, First Move In World, time_spent_in_world; `data_definition.rs`) and, on the web, the page's screens and clicks, which reach it
 through the `/track` console command (`page_events.rs`: a base64 JSON array of
 `{event, properties, timestamp}`, queued as sent). The web build posts through the first-party
 proxy (`api.e.decentraland.org`), which ad blockers leave alone; native posts to Segment directly.
@@ -20,3 +20,10 @@ as host-only web params:
 
 The page side is `react-web/src/lib/analytics.ts` (events and sequences in
 `react-web/review.md`, "Analytics").
+
+Two events answer the funnel's in-world questions (`in_world.rs`):
+
+- `First Move In World`: once per login, the first frame in world with the player moving.
+- `time_spent_in_world` (`time_spent` seconds, `realm_name`): the desktop client's event, sent in
+  chunks of up to 60 s and when the realm or the login changes, so the sum per session is the
+  playtime. A page closed mid-chunk loses that chunk.

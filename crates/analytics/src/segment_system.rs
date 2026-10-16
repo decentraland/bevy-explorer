@@ -72,6 +72,10 @@ impl SegmentConfig {
         }
     }
 
+    pub fn common(&self) -> &SegmentEventCommonExplorerFields {
+        &self.common
+    }
+
     pub fn update_realm(&mut self, realm: String) {
         self.common.realm = realm;
     }
