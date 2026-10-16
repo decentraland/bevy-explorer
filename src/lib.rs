@@ -477,10 +477,21 @@ impl DecentralandApp {
                         1.0
                     },
             })
+            // the host page's analytics session (web), else one per engine run
             .insert_resource(SegmentConfig::new(
                 decentraland_app_config.app_config.user_id.clone(),
-                Uuid::new_v4().to_string(),
+                decentraland_app_config
+                    .arguments
+                    .client
+                    .session_id
+                    .clone()
+                    .unwrap_or_else(|| Uuid::new_v4().to_string()),
                 version_hash,
+                decentraland_app_config
+                    .arguments
+                    .client
+                    .campaign_anon_user_id
+                    .clone(),
             ));
 
         if decentraland_app_config.arguments.no_gltf {

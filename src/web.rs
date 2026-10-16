@@ -631,8 +631,10 @@ fn update_url_params(
             // the default set is omitted so the canonical url stays clean (the page doesn't know it)
             portables: portables.filter(|p| p != system_api_types::web_params::DEFAULT_PORTABLES),
             editor: editor.0,
-            // the host's call for this load, never a link's
+            // the host's calls for this load, never a link's
             hold_world: false,
+            session_id: None,
+            campaign_anon_user_id: None,
             ..launched.client
         },
     };

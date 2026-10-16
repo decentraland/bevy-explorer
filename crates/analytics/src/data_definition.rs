@@ -13,6 +13,9 @@ pub struct SegmentMetricEventBody {
     event: String,
     #[serde(rename = "userId")]
     user_id: String,
+    // A page event keeps the time it happened, which can predate the engine.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    timestamp: Option<String>,
     properties: serde_json::Value,
 }
 
@@ -33,20 +36,26 @@ pub struct SegmentEventCommonExplorerFields {
     pub session_id: String,
     // Explorer’s release used.
     pub renderer_version: String,
+    // The landing page's Segment anonymous id, handed over by the host so the warehouse joins
+    // this session to the web visit that led to it (as the launcher does for the desktop client).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub campaign_anon_user_id: Option<String>,
 }
 
 impl SegmentEventCommonExplorerFields {
-    pub fn new(session_id: String, version: String) -> Self {
+    pub fn new(session_id: String, version: String, campaign_anon_user_id: Option<String>) -> Self {
         let dcl_renderer_type = format!("dao-bevy-{PLATFORM}");
 
         Self {
-            dcl_eth_address: "".into(),
-            dcl_is_guest: true,
-            realm: "".into(),
-            position: "".into(),
+            // mobile's values until the engine knows better
+            dcl_eth_address: "unauthenticated".into(),
+            dcl_is_guest: false,
+            realm: "no-realm".into(),
+            position: "no-position".into(),
             dcl_renderer_type,
             session_id,
             renderer_version: version,
+            campaign_anon_user_id,
         }
     }
 }
@@ -58,6 +67,12 @@ pub enum SegmentEvent {
     ExplorerMoveToParcel(String, SegmentEventExplorerMoveToParcel),
     SystemInfoReport(SegmentEventSystemInfoReport),
     ChatMessageSent(SegmentEventChatMessageSent),
+    /// An event the host page reports through `/track`: its name, properties and time as sent.
+    Page {
+        name: String,
+        properties: serde_json::Map<String, serde_json::Value>,
+        timestamp: String,
+    },
 }
 
 #[derive(Serialize)]
@@ -187,7 +202,16 @@ pub fn build_segment_event_batch_item(
     common: &SegmentEventCommonExplorerFields,
     event_data: SegmentEvent,
 ) -> SegmentMetricEventBody {
+    let mut timestamp = None;
     let (event_name, event_properties, override_position) = match event_data {
+        SegmentEvent::Page {
+            name,
+            properties,
+            timestamp: at,
+        } => {
+            timestamp = Some(at);
+            (name, serde_json::Value::Object(properties), None)
+        }
         SegmentEvent::PerformanceMetrics(event) => (
             "Performance Metrics".to_string(),
             serde_json::to_value(event).unwrap(),
@@ -234,6 +258,7 @@ pub fn build_segment_event_batch_item(
         r#type: "track".to_string(),
         event: event_name,
         user_id,
+        timestamp,
         properties,
     }
 }
