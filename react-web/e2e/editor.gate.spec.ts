@@ -167,13 +167,13 @@ test('the page hosts the scene editor: Create, preview, privileged scene, reload
   let editorScene = ''
 
   // What the page asks of the editor package and of its own Create chunk (all of features/editorHost
-  // but the HUD's config and mode). The dev server's `?worker&url` module only names a script's url.
+  // but the HUD's config, mode and shared entry-url parser). `?worker&url` only names a script's url.
   const editorRequests: string[] = []
   const serviceRequests: string[] = []
   page.on('request', (request) => {
     const { pathname, search } = new URL(request.url())
     if (request.url().startsWith(editorBase(origin))) editorRequests.push(request.url().split('?')[0])
-    else if (/\/editorHost\/(?!config\.ts|hudMode\.ts)|\/EditorHost-[\w-]+\.js$/.test(pathname) && search !== '?worker&url') editorRequests.push(pathname)
+    else if (/\/editorHost\/(?!config\.ts|hudMode\.ts|source\.ts)|\/EditorHost-[\w-]+\.js$/.test(pathname) && search !== '?worker&url') editorRequests.push(pathname)
     if (request.url().startsWith(PROJECTS)) serviceRequests.push(`${request.method()} ${pathname}`)
   })
 
