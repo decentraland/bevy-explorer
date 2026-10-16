@@ -20,10 +20,8 @@ export type EngineConsole = (line: string) => Promise<string>
 export const ANALYTICS_SESSION_PARAM = 'analyticsSession'
 export const ANON_USER_ID_PARAM = 'anon_user_id'
 
-// Newest kept when nothing drains them (the engine never came up); the engine's /track takes
-// at most this many per command.
-export const QUEUE_CAP = 200
-export const BATCH_SIZE = 50
+// Newest kept when the engine never comes up to drain them.
+const QUEUE_CAP = 200
 
 // Read before the engine's url sync rewrites the query.
 const entry = new URLSearchParams(location.search)
@@ -33,8 +31,6 @@ const campaignAnonUserId = entry.get(ANON_USER_ID_PARAM)
 
 let queue: QueuedEvent[] | null = null
 let run: EngineConsole | null = null
-let inflight: Promise<void> | null = null
-let again = false
 
 const items = (): QueuedEvent[] => (queue ??= restore())
 const persist = (): void => {
@@ -57,33 +53,19 @@ function isQueuedEvent(value: unknown): value is QueuedEvent {
   return e != null && typeof e.event === 'string' && typeof e.timestamp === 'string' && e.properties != null && typeof e.properties === 'object'
 }
 
-// A send the console never answered keeps the items for the next track()/flush().
-function drain(): Promise<void> {
-  if (run == null || items().length === 0) return Promise.resolve()
-  if (inflight != null) {
-    again = true
-    return inflight
+// Everything pending goes in one command; the engine batches the Segment posts itself. A send
+// the console rejected goes back in front for the next one.
+async function flush(): Promise<void> {
+  if (run == null || items().length === 0) return
+  const batch = items().splice(0)
+  persist()
+  try {
+    await run(`/track ${encodeBatch(batch)}`)
+  } catch (e) {
+    items().unshift(...batch)
+    persist()
+    console.debug('[analytics] send failed, kept', items().length, e)
   }
-  const send = run
-  inflight = (async () => {
-    try {
-      while (items().length > 0) {
-        const batch = items().slice(0, BATCH_SIZE)
-        await send(`/track ${encodeBatch(batch)}`)
-        queue = items().slice(batch.length)
-        persist()
-      }
-    } catch (e) {
-      console.debug('[analytics] send failed, kept', items().length, e)
-    } finally {
-      inflight = null
-    }
-    if (again) {
-      again = false
-      await drain()
-    }
-  })()
-  return inflight
 }
 
 export function track(event: string, properties: Record<string, unknown> = {}): void {
@@ -91,7 +73,7 @@ export function track(event: string, properties: Record<string, unknown> = {}): 
   list.push({ event, properties, timestamp: new Date().toISOString() })
   if (list.length > QUEUE_CAP) list.splice(0, list.length - QUEUE_CAP)
   persist()
-  void drain()
+  void flush()
 }
 
 export function screenViewed(screenName: string, extra?: Record<string, unknown>): void {
@@ -111,7 +93,7 @@ function extraProperties(extra: Record<string, unknown> | undefined): { extra_pr
  *  Unattached (mock, tests), events queue. */
 export function attachEngine(engine: EngineConsole): void {
   run = engine
-  void drain()
+  void flush()
 }
 
 export function pending(): readonly QueuedEvent[] {

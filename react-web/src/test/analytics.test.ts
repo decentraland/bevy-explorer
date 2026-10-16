@@ -1,8 +1,8 @@
 // DOMAIN: the page→engine analytics handoff — events are stamped when they happen, wait for the
-// engine's console, leave as `/track <base64 batch>` and are dropped only once the console answered.
+// engine's console, leave together as `/track <base64 batch>`, and a rejected send keeps them.
 
 import { beforeEach, describe, expect, it } from 'vitest'
-import { attachEngine, BATCH_SIZE, encodeBatch, pending, screenViewed, track, type QueuedEvent } from '../lib/analytics'
+import { attachEngine, encodeBatch, pending, screenViewed, track, type QueuedEvent } from '../lib/analytics'
 import { PREF, setPref } from '../lib/prefs'
 
 function decodeLine(line: string): QueuedEvent[] {
@@ -14,7 +14,7 @@ function decodeLine(line: string): QueuedEvent[] {
 describe('page analytics', () => {
   beforeEach(() => setPref(PREF.analyticsQueue, ''))
 
-  it('stamps each event with its time, and keeps it until the console answers', async () => {
+  it('stamps each event with its time, holds it until the engine is attached, then hands everything over at once', async () => {
     const from = pending().length
     screenViewed('ACCOUNT_HOME')
     track('App Opened', { start_kind: 'cold' })
@@ -24,42 +24,32 @@ describe('page analytics', () => {
     expect(() => new Date(queued[0].timestamp).toISOString()).not.toThrow()
 
     const lines: string[] = []
-    let answer: (reply: string) => void = () => {}
     attachEngine((line) => {
       lines.push(line)
-      return new Promise((resolve) => {
-        answer = resolve
-      })
+      return Promise.resolve('queued 2')
     })
-    await Promise.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
     expect(lines).toHaveLength(1)
     expect(decodeLine(lines[0]).map((e) => e.event)).toEqual(queued.map((e) => e.event))
-    expect(pending().length).toBe(queued.length + from)
-    answer('queued 2')
-    await new Promise((resolve) => setTimeout(resolve, 0))
     expect(pending().slice(from)).toEqual([])
   })
 
-  it('sends at most BATCH_SIZE per command, and a failed send is retried with what came after', async () => {
-    const from = pending().length
-    const batches: string[][] = []
-    let fail: ((e: Error) => void) | null = null
+  it('keeps a rejected send, in order, for the next one', async () => {
+    const sent: string[][] = []
+    let rejectOnce = true
     attachEngine((line) => {
-      batches.push(decodeLine(line).map((e) => String(e.properties.button_text)))
-      if (fail == null) {
-        return new Promise((_, reject) => {
-          fail = reject
-        })
-      }
-      return Promise.resolve('queued')
+      sent.push(decodeLine(line).map((e) => String(e.properties.button_text)))
+      if (!rejectOnce) return Promise.resolve('queued')
+      rejectOnce = false
+      return Promise.reject(new Error('no console'))
     })
-    for (let i = 0; i < BATCH_SIZE + 1; i++) track('Click Button', { button_text: String(i) })
-    fail!(new Error('no console'))
+    track('Click Button', { button_text: 'a' })
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(batches.map((b) => b.length)).toEqual([1, BATCH_SIZE, 1])
-    expect(batches[1][0]).toBe('0')
-    expect(batches[2]).toEqual([String(BATCH_SIZE)])
-    expect(pending().slice(from)).toEqual([])
+    expect(pending().map((e) => e.properties.button_text)).toEqual(['a'])
+    track('Click Button', { button_text: 'b' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(sent).toEqual([['a'], ['a', 'b']])
+    expect(pending()).toEqual([])
   })
 
   it('encodes a batch as one base64 token of its JSON', () => {

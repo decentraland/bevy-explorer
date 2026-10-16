@@ -223,8 +223,8 @@ from HUD-side key matching. The rules:
 The page reports the screens and clicks mobile does, with mobile's names and property shapes
 (`lib/analytics.ts`). Nothing is sent from the page: each event is stamped when it happens, waits
 in prefs (`PREF.analyticsQueue`, newest 200) and goes to the engine's `/track` console command once
-the engine is up (`App.tsx` attaches the console), 50 per command; a send the console never answered
-is kept for the next one. The engine posts them with its own events and adds the common fields
+the engine is up (`EngineDriver.launch` attaches the console); a send the console rejected is kept
+for the next one. The engine batches the Segment posts, with its own events, and adds the common fields
 as it does for those (`crates/analytics/README.md`), including `campaign_anon_user_id`, the
 landing page's Segment anonymous id that the shell reads from the `ajs_anonymous_id` cookie and
 hands the app as `anon_user_id` (`shell/main.ts`). The session id goes to the engine at launch (`EngineDriver.launch`), and the
@@ -243,6 +243,6 @@ back as `analyticsSession`). Expectations:
 - **Loading** (`sessionAnalytics.ts`): LOADING_START {position, realm, when} towards a destination
   the user picked, LOADING_END {position, status}, LOADING_TIMEOUT after 90 s.
 - **Social**: Friend Request, Friend Accept, Unfriend, Block User on the action.
-- Tests: `src/test/analytics.test.ts` (stamping, batching, the failed send), 
+- Tests: `src/test/analytics.test.ts` (stamping, the handoff, the rejected send),
   `src/test/analytics.session.test.tsx` (the sequences above), `engineDriver.test.ts` (the session
   id at launch), `entryParams.test.ts` (campaign params).
