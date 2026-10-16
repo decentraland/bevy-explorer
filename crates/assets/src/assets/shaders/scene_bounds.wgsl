@@ -10,6 +10,8 @@ struct SceneBoundData {
     flags: u32,
     // out-of-bounds fade width
     distance: f32,
+    // the opacity the camera-to-player dither fades this material towards (bound_material_effect.wgsl)
+    base_opacity: f32,
 }
 
 // heights: data[0..height_count] (f32 bits)
@@ -21,6 +23,8 @@ struct SceneCells {
 
 const SCENE_BOUNDED: u32 = 1u;
 const SCENE_FULL_RECT: u32 = 2u;
+// an avatar: dither as a whole, by the capsule at the mesh origin (bound_material_effect.wgsl)
+const SCENE_DITHER_CAPSULE: u32 = 4u;
 
 @group(2) @binding(100)
 var<uniform> scene_bounds: SceneBoundData;

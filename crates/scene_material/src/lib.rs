@@ -90,10 +90,22 @@ impl SceneBound {
     pub fn new_unbounded() -> Self {
         Self::new(&SceneBounds::unbounded(), 0.0)
     }
+
+    pub fn with_base_opacity(mut self, base_opacity: f32) -> Self {
+        self.data.base_opacity = base_opacity;
+        self
+    }
+
+    pub fn with_capsule_dither(mut self) -> Self {
+        self.data.flags |= SCENE_DITHER_CAPSULE;
+        self
+    }
 }
 
 pub const SCENE_BOUNDED: u32 = 1;
 pub const SCENE_FULL_RECT: u32 = 2;
+/// an avatar: the camera-to-player dither fades it as a whole, by its capsule
+pub const SCENE_DITHER_CAPSULE: u32 = 4;
 /// scenes with a larger bounding box fall back to the bounding box itself
 const MAX_SCENE_CELLS: u64 = 1 << 20;
 /// empty cell table for unbounded and full-rect scenes, which never read it
@@ -144,7 +156,7 @@ impl SceneBounds {
                 size: (max - min + IVec2::ONE).as_uvec2(),
                 rect_height: height,
                 flags: SCENE_BOUNDED | SCENE_FULL_RECT,
-                distance: 0.0,
+                ..default()
             },
             cells: EMPTY_SCENE_CELLS,
         }
@@ -214,7 +226,7 @@ impl SceneBounds {
                 size,
                 rect_height: max_height,
                 flags: SCENE_BOUNDED,
-                distance: 0.0,
+                ..default()
             },
             cells: buffers.add(ShaderStorageBuffer::new(
                 &bytes,
@@ -259,6 +271,8 @@ mod decl {
         pub rect_height: f32,
         pub flags: u32,
         pub distance: f32,
+        /// the opacity the camera-to-player dither fades the material towards: 0 fades out fully
+        pub base_opacity: f32,
     }
 }
 pub use decl::*;
