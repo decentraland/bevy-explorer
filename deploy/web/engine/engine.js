@@ -444,22 +444,27 @@ export function start(options = {}) {
 
   // The engine runs off the page: winit's DOM side stays here on the canvas, the app world runs
   // on an engine worker, the render world on a render worker that owns the canvas as an
-  // OffscreenCanvas, and the ComputeTaskPool's systems on compute workers (bevy::web_worker,
+  // OffscreenCanvas, the ComputeTaskPool's systems on compute workers (bevy::web_worker,
   // src/web.rs engine_start), as many as the `computeThreads` launch option says, else sized
-  // from the core count there.
+  // from the core count there, and the AsyncComputeTaskPool's tasks on an async worker.
   const canvas = document.getElementById("mygame-canvas");
   // Everything the host handed us goes through as-is (the engine rejects unknown keys).
-  const { engine: engineWorker, render: renderWorker, compute: computeWorkers } = engine_start(
-    canvas,
-    options,
-    glueUrl
-  );
+  const {
+    engine: engineWorker,
+    render: renderWorker,
+    compute: computeWorkers,
+    asyncCompute: asyncComputeWorkers,
+  } = engine_start(canvas, options, glueUrl);
   console.log(`[Main JS] compute workers: ${computeWorkers.length}`);
   renderWorker.onerror = workerCrashHandler("render");
   renderWorker.addEventListener("message", workerMessageHandler("render"));
   computeWorkers.forEach((worker, i) => {
     worker.onerror = workerCrashHandler(`compute ${i}`);
     worker.addEventListener("message", workerMessageHandler(`compute ${i}`));
+  });
+  asyncComputeWorkers.forEach((worker, i) => {
+    worker.onerror = workerCrashHandler(`async ${i}`);
+    worker.addEventListener("message", workerMessageHandler(`async ${i}`));
   });
   engineWorker.onerror = workerCrashHandler("engine");
   engineWorker.addEventListener("message", workerMessageHandler("engine"));

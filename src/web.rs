@@ -290,10 +290,12 @@ fn web_worker_config(glue_url: String, options: JsValue, compute_threads: u32) -
         engine_args: options,
         render_setup: Some("engine_render_setup".into()),
         compute_threads,
+        async_compute_threads: 1,
         // The engine worker gets the main-thread stack size (.cargo/config.toml -z stack-size);
         // the others need less.
         render_stack_size: Some(4 * 1024 * 1024),
         compute_stack_size: Some(4 * 1024 * 1024),
+        async_compute_stack_size: Some(4 * 1024 * 1024),
         engine_stack_size: Some(10 * 1024 * 1024),
     }
 }
@@ -317,7 +319,7 @@ pub fn engine_prepare_render(canvas: HtmlCanvasElement, glue_url: String) -> Res
 
 /// Page side: starts the engine on `canvas`. `options` is the `engine_run` options object,
 /// `glue_url` the url of this module's JS glue for the workers to import. Returns
-/// `{ engine, render, compute: [...] }`, the workers.
+/// `{ engine, render, compute: [...], asyncCompute: [...] }`, the workers.
 #[wasm_bindgen]
 pub fn engine_start(
     canvas: HtmlCanvasElement,
@@ -340,6 +342,11 @@ pub fn engine_start(
         &result,
         &"compute".into(),
         &workers.compute.iter().collect::<js_sys::Array>(),
+    )?;
+    js_sys::Reflect::set(
+        &result,
+        &"asyncCompute".into(),
+        &workers.async_compute.iter().collect::<js_sys::Array>(),
     )?;
     Ok(result.into())
 }
