@@ -424,7 +424,8 @@ impl TextEffects {
         }
     }
 
-    /// The layers to draw, back to front.
+    /// The layers to draw, back to front. Each layer's parameters are only those its shader
+    /// reads, so shapes differing in an effect the layer doesn't draw share its material.
     fn layers(&self) -> impl Iterator<Item = Layer> + '_ {
         [
             (TEXT_SDF_SHADOW, -2.0 * LAYER_BIAS, self.shadow_offset),
@@ -433,13 +434,26 @@ impl TextEffects {
         ]
         .into_iter()
         .filter(|(flag, ..)| self.params.flags & flag != 0)
-        .map(|(flag, depth_bias, offset)| Layer {
-            params: TextSdfParams {
+        .map(|(flag, depth_bias, offset)| {
+            let mut params = TextSdfParams {
                 flags: flag,
                 ..self.params
-            },
-            offset,
-            depth_bias,
+            };
+            if flag != TEXT_SDF_OUTLINE {
+                params.outline_color = Vec4::ZERO;
+            }
+            if flag != TEXT_SDF_SHADOW {
+                params.shadow_color = Vec4::ZERO;
+                params.shadow_softness = 0.0;
+            }
+            if flag == TEXT_SDF_SHADOW {
+                params.outline_width = 0.0;
+            }
+            Layer {
+                params,
+                offset,
+                depth_bias,
+            }
         })
     }
 }
