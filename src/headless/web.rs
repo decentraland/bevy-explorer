@@ -96,6 +96,7 @@ pub fn headless_run(options: JsValue) -> Result<(), JsValue> {
     let config = super::config(&realm, location, TICK_HZ, SCENE_THREADS, true);
 
     let mut app = App::new();
+    app.insert_non_send_resource(());
     app.add_plugins(LogPlugin {
         level: Level::INFO,
         filter: "symphonia=warn".to_owned(),
