@@ -66,6 +66,12 @@ pub struct FamilyKey {
     src: String,
 }
 
+impl FamilyKey {
+    pub fn scene(&self) -> Entity {
+        self.scene
+    }
+}
+
 #[derive(Resource, Default)]
 pub struct SceneFonts {
     families: HashMap<FamilyKey, SceneFontFamily>,

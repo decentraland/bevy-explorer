@@ -23,6 +23,7 @@ console = { workspace = true }
 input_manager = { workspace = true }
 wallet = { workspace = true }
 scene_material = { workspace = true }
+boimp = { workspace = true }
 world_ui = { workspace = true }
 platform = { workspace = true }
 
@@ -33,6 +34,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 reqwest = { workspace = true }
 ttf-parser = { workspace = true }
+cosmic-text = { workspace = true }
+swash = { workspace = true }
+indexmap = { workspace = true }
 anyhow = { workspace = true }
 bevy_console = { workspace = true }
 clap = { workspace = true }
