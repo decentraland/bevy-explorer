@@ -330,6 +330,10 @@ const TEXT_SDF_SHADOW: u32 = 4;
 /// The page holds bitmaps (colour glyphs), not distance fields: no effects.
 const TEXT_SDF_BITMAP: u32 = 8;
 
+/// The camera-to-player dither's base opacity for text, which must stay legible when it comes
+/// between the two: it fades towards this rather than fully.
+const TEXT_DITHER_BASE_OPACITY: f32 = 0.35;
+
 /// Depth between a layer's quads and its extras, in meters: the quads may write depth, so a
 /// bar must not share the glyphs' plane.
 const LAYER_Z: f32 = 0.001;
@@ -1878,7 +1882,8 @@ fn update_text_shapes(
                 let material = materials.add(TextSdfMaterial {
                     base: SceneMaterial {
                         base,
-                        extension: SceneBound::new(&scene.scene_bounds, config.graphics.oob),
+                        extension: SceneBound::new(&scene.scene_bounds, config.graphics.oob)
+                            .with_base_opacity(TEXT_DITHER_BASE_OPACITY),
                     },
                     extension: TextSdf {
                         params: layer.params,

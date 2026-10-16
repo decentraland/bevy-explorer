@@ -9,9 +9,41 @@
 fn get_depth(pos: vec4<f32>, si: u32) -> f32 {
     return view.clip_from_view[3][2] / prepass_depth(pos, si); 
 }
+
+// a neighbouring prepass pixel the dither discarded holds whatever lies behind the mesh, so it
+// would read as an edge. the prepass ran the same dither on it: the same noise at its pixel, and
+// a coverage that barely changes over a few pixels. predict the discard from this fragment's
+// opacity and the neighbour's threshold, and use this fragment's value in its place
+fn neighbour_dithered(position: vec4<f32>, offset: vec2<f32>, dither_opacity: f32) -> bool {
+    // the prepass hashed the neighbour pixel's centre
+    return dither_opacity < 1.0 && dither_opacity < dither_threshold(floor(position.xy + offset) + 0.5);
+}
+
+fn neighbour_depth(position: vec4<f32>, offset: vec2<f32>, fallback: f32, dither_opacity: f32, si: u32) -> f32 {
+    if neighbour_dithered(position, offset, dither_opacity) {
+        return fallback;
+    }
+    return get_depth(position + vec4(offset, 0.0, 0.0), si);
+}
+
+#ifdef NORMAL_PREPASS
+// a neighbour on another surface (seen through the dither holes, or in front of this fragment)
+// can't form a crease with it: the silhouette between them is the nearer surface's depth edge
+fn neighbour_normal(position: vec4<f32>, offset: vec2<f32>, fallback: vec3<f32>, center_depth: f32, dither_opacity: f32, si: u32) -> vec3<f32> {
+    if neighbour_dithered(position, offset, dither_opacity) {
+        return fallback;
+    }
+    let p = position + vec4(offset, 0.0, 0.0);
+    if abs(get_depth(p, si) / center_depth - 1.0) > 0.03 {
+        return fallback;
+    }
+    return prepass_normal(p, si);
+}
+#endif
 #endif
 
-fn apply_outline(position: vec4<f32>, color_in: vec4<f32>, outline_color: vec3<f32>, hilight: bool, sample_index: u32) -> vec4<f32> {
+// dither_opacity: this fragment's discard_dither opacity; 1 when it isn't dithered
+fn apply_outline(position: vec4<f32>, color_in: vec4<f32>, outline_color: vec3<f32>, hilight: bool, sample_index: u32, dither_opacity: f32) -> vec4<f32> {
     var out = color_in;
 #ifdef DEPTH_PREPASS
 
@@ -19,19 +51,18 @@ fn apply_outline(position: vec4<f32>, color_in: vec4<f32>, outline_color: vec3<f
     var edge2 = false;
 
     let is_orthographic = view.clip_from_view[3].w == 1.0;
-    var mid = 0.0;
+    let center = get_depth(position, sample_index);
+    var mid = center;
     if is_orthographic {
         mid = 2.0 / view.clip_from_view[1].y;
-    } else {
-        mid = get_depth(position, sample_index);
     }
     let width = (1.0 / mid) * view.viewport.z / 640.0;
     let d = clamp(width, 1.0, 5.0);
 
-    let pxpy = get_depth(position + vec4<f32>(d, d, 0.0, 0.0), sample_index);
-    let pxmy = get_depth(position + vec4<f32>(d, -d, 0.0, 0.0), sample_index);
-    let mxpy = get_depth(position + vec4<f32>(-d, d, 0.0, 0.0), sample_index);
-    let mxmy = get_depth(position + vec4<f32>(-d, -d, 0.0, 0.0), sample_index);
+    let pxpy = neighbour_depth(position, vec2(d, d), center, dither_opacity, sample_index);
+    let pxmy = neighbour_depth(position, vec2(d, -d), center, dither_opacity, sample_index);
+    let mxpy = neighbour_depth(position, vec2(-d, d), center, dither_opacity, sample_index);
+    let mxmy = neighbour_depth(position, vec2(-d, -d), center, dither_opacity, sample_index);
 
     let expected = (pxpy + pxmy + mxpy + mxmy) / 4.0;
 
@@ -42,10 +73,10 @@ fn apply_outline(position: vec4<f32>, color_in: vec4<f32>, outline_color: vec3<f
 #ifdef NORMAL_PREPASS
     let nd = 1.0;
     let nmid = prepass_normal(position, sample_index);
-    let npxpy = prepass_normal(position + vec4<f32>(nd, nd, 0.0, 0.0), sample_index);
-    let npxmy = prepass_normal(position + vec4<f32>(nd, -nd, 0.0, 0.0), sample_index);
-    let nmxpy = prepass_normal(position + vec4<f32>(-nd, nd, 0.0, 0.0), sample_index);
-    let nmxmy = prepass_normal(position + vec4<f32>(-nd, -nd, 0.0, 0.0), sample_index);        
+    let npxpy = neighbour_normal(position, vec2(nd, nd), nmid, center, dither_opacity, sample_index);
+    let npxmy = neighbour_normal(position, vec2(nd, -nd), nmid, center, dither_opacity, sample_index);
+    let nmxpy = neighbour_normal(position, vec2(-nd, nd), nmid, center, dither_opacity, sample_index);
+    let nmxmy = neighbour_normal(position, vec2(-nd, -nd), nmid, center, dither_opacity, sample_index);
 
     let nexpected = (npxpy + nmxmy) / 2.0;
     let nexpected2 = (npxmy + nmxpy) / 2.0;
@@ -68,9 +99,41 @@ fn apply_outline(position: vec4<f32>, color_in: vec4<f32>, outline_color: vec3<f
 return out;
 }
 
-fn discard_dither(ndc_position: vec2<f32>, world_position: vec3<f32>, depth: f32, distance_dither: bool) -> f32 {
-    let view_to_frag = world_position - view.world_position;
-    
+struct Dither {
+    // what the pixel's threshold is tested against; 1 or more never discards
+    opacity: f32,
+    // how faded the fragment is; used to cap brightness so bloom doesn't fill the discarded regions
+    transparency: f32,
+}
+
+// "interleaved gradient noise" magic numbers
+fn dither_threshold(pixel: vec2<f32>) -> f32 {
+    return fract(52.9829189 * fract(dot(pixel * (1.0 * 5.588238), vec2(0.06711056, 0.00583715))));
+}
+
+// avatars fade as a whole rather than per fragment: the dither is taken at the point of their
+// (fixed-size) capsule nearest the ray, so every fragment lands on the same opacity
+const AVATAR_CAPSULE_RADIUS: f32 = 0.35;
+const AVATAR_CAPSULE_HEIGHT: f32 = 2.0;
+
+// the point of the segment a-b nearest the line through o along (unit) d
+fn closest_point_on_segment_to_line(a: vec3<f32>, b: vec3<f32>, o: vec3<f32>, d: vec3<f32>) -> vec3<f32> {
+    let ab = b - a;
+    let ao = a - o;
+    let abab = dot(ab, ab);
+    let abd = dot(ab, d);
+    let denom = abab - abd * abd;
+    var t = 0.0;
+    if denom > 1e-6 {
+        t = clamp((abd * dot(d, ao) - dot(ab, ao)) / denom, 0.0, 1.0);
+    }
+    return a + ab * t;
+}
+
+// discards fragments between the camera and the player
+// base_opacity: the opacity the dither fades towards; 0 fades out fully
+// capsule: dither by the avatar capsule standing at capsule_root instead of by the fragment
+fn discard_dither(ndc_position: vec2<f32>, world_position: vec3<f32>, depth: f32, distance_dither: bool, base_opacity: f32, capsule_root: vec3<f32>, capsule: bool) -> Dither {
     // player is left of the view forward by 0.25 * clamp(camera distance, 0, 3). we use half of that as our target
     let view_fwd = -view.world_from_view[2].xyz;
     let view_right = view.world_from_view[0].xyz;
@@ -78,19 +141,30 @@ fn discard_dither(ndc_position: vec2<f32>, world_position: vec3<f32>, depth: f32
     let target_offset = depth * view_fwd - 0.125 * clamp(depth, 0.0, 3.0) * view_right; 
 
     let view_direction = normalize(target_offset);
+
+    var position = world_position;
+    var radius = 0.0;
+    if capsule {
+        position = closest_point_on_segment_to_line(
+            capsule_root + vec3(0.0, AVATAR_CAPSULE_RADIUS, 0.0),
+            capsule_root + vec3(0.0, AVATAR_CAPSULE_HEIGHT - AVATAR_CAPSULE_RADIUS, 0.0),
+            view.world_position,
+            view_direction,
+        );
+        radius = AVATAR_CAPSULE_RADIUS;
+    }
+
+    let view_to_frag = position - view.world_position;
     let projection_length = dot(view_to_frag, view_direction);
 
     if projection_length < depth + 0.35 { // 0.35 = collider radius
         let cone_distance = 
             // distance from ray to target
-            length(world_position - (view.world_position.xyz + (view_direction * projection_length))) 
+            max(0.0, length(position - (view.world_position.xyz + (view_direction * projection_length))) - radius)
             // shrink to cone, 0 radius at view position, 1 at target position
             / (projection_length / depth) 
             // expand cone at further camera distances
             / (1.0 + max(0.0, (projection_length - depth)) / 10.0);
-
-        // "interleaved gradient noise" magic numbers
-        let threshold = fract(52.9829189 * fract(dot(ndc_position * (1.0 * 5.588238), vec2(0.06711056, 0.00583715))));
 
         var use_distance = cone_distance;
         // add transparency to fullscreen for near fragments 
@@ -115,24 +189,20 @@ fn discard_dither(ndc_position: vec2<f32>, world_position: vec3<f32>, depth: f32
             }
         }
 
-        if  max(
-               0.1,
-               use_distance 
-                 // add opacity
-                 + 0.5 
-                 // remove further from target
-                 - saturate((depth - projection_length) * 0.5) * 1.0 
-                 // add behind target
-                 + saturate(projection_length - depth) * 5.0
-            ) < threshold
-        {
+        let opacity = use_distance 
+            // add opacity
+            + 0.5 
+            // remove further from target
+            - saturate((depth - projection_length) * 0.5) * 1.0 
+            // add behind target
+            + saturate(projection_length - depth) * 5.0;
+
+        let result = Dither(max(0.1, base_opacity + opacity * (1.0 - base_opacity)), 1.0 - saturate(use_distance));
+        if result.opacity < dither_threshold(ndc_position) {
             discard;
         }
-
-        // return transparency factor, used to cap brightness to avoid bloom obliterating the discarded regions
-        return 1.0 - saturate(use_distance);
+        return result;
     }
 
-    // return zero transparency factor
-    return 0.0;
+    return Dither(1.0, 0.0);
 }

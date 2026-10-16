@@ -11,7 +11,7 @@
 
 #import "embedded://shaders/simplex.wgsl"::simplex_noise_3d
 #import "embedded://shaders/bound_material_effect.wgsl"::discard_dither
-#import "embedded://shaders/scene_bounds.wgsl"::{scene_bounds, scene_outside_amount}
+#import "embedded://shaders/scene_bounds.wgsl"::{scene_bounds, scene_outside_amount, SCENE_DITHER_CAPSULE}
 
 @group(0) @binding(1) var<uniform> globals: Globals;
 
@@ -37,7 +37,7 @@ fn fragment(
 #endif
 
     if (mesh_tag & (#{NO_DITHERING_MESH_TAG} | #{OUTLINE_RED_MESH_TAG})) == 0 {
-        discard_dither(in.position.xy, in.world_position.xyz, view.user_value, (mesh_tag & #{CONE_ONLY_DITHER_MESH_TAG}) == 0);
+        discard_dither(in.position.xy, in.world_position.xyz, view.user_value, (mesh_tag & #{CONE_ONLY_DITHER_MESH_TAG}) == 0, scene_bounds.base_opacity, mesh_functions::get_world_from_local(in.instance_index)[3].xyz, (scene_bounds.flags & SCENE_DITHER_CAPSULE) != 0u);
     }
 
 #ifdef NORMAL_PREPASS
