@@ -80,7 +80,7 @@ Screens (`Screen Viewed`), from `features/session/useEngineSession.ts` unless no
 | AUTH_DEPLOY_SUCCESS | | the new profile deployed | same |
 | LOBBY | | the lobby phase, and each time the in-world lobby opens | web-only |
 | PLACES_PICKER | | the picking phase | web-only |
-| LOADING_START | position, realm, when `"on_explorer_ready"` \| `"on_teleport"` | entering towards a destination the user picked (`sessionAnalytics.ts`); the engine streaming on its own is not reported | same |
+| LOADING_START | position, realm, when `"on_explorer_ready"` \| `"on_teleport"` | entering towards a destination the user picked: a link, a lobby pick, a map or chat teleport (`sessionAnalytics.ts`); the engine streaming on its own is not reported | same |
 | LOADING_END | position, status `"Success"` \| `"Failed"` | the world is reached, or the load falls back to the lobby / sign-in, or a travel is refused | same |
 | LOADING_TIMEOUT | total_elapsed_seconds 90, timeout_reason `"max_time"` | 90 s after LOADING_START without an end | same |
 

@@ -14,7 +14,7 @@ import type { FatalError } from '../error/fatalError'
 import { createLoadingProgress } from './loadingProgress'
 import { clickButton, flush, screenViewed } from '../../lib/analytics'
 import { markAuthRedirect } from '../../lib/analyticsBoot'
-import { createLoadingEpisode, loadingTargetOf, storedLoginType, type LoadingTarget, type LoginType } from './sessionAnalytics'
+import { createLoadingEpisode, currentRealm, loadingTargetOf, storedLoginType, type LoadingTarget, type LoginType } from './sessionAnalytics'
 import { DEFAULT_REALM } from '../../lib/baseDomain'
 import { checkRealm, realmCheckMessage } from '../../lib/realmCheck'
 import { color3ToHex, hexToColor3 } from '../../lib/color'
@@ -1394,6 +1394,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           if (cmd.text) driverRef.current?.send({ kind: 'sendChat', message: cmd.text, channel: channelRef.current })
           break
         case 'goto':
+          loadingTarget.current = { realm: currentRealm(DEFAULT_REALM), position: `${cmd.x},${cmd.y}` }
           driverRef.current?.send({ kind: 'teleport', x: cmd.x, y: cmd.y })
           break
         case 'genesis':
@@ -1683,15 +1684,15 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   }, [])
   const teleport = useCallback((x: number, y: number) => {
     setLobbyOpen(false)
-    loadingTarget.current = { realm: loadingTarget.current?.realm ?? 'unknown', position: `${x},${y}` }
+    loadingTarget.current = { realm: currentRealm(DEFAULT_REALM), position: `${x},${y}` }
     driverRef.current?.send({ kind: 'teleport', x, y })
   }, [])
   const teleportToPlace = useCallback(
     (x: number, y: number) => {
       if (!isGenesisSatelliteView(satelliteView)) travel({ kind: 'teleport', realm: DEFAULT_REALM, x, y })
-      else driverRef.current?.send({ kind: 'teleport', x, y })
+      else teleport(x, y)
     },
-    [satelliteView, travel]
+    [satelliteView, teleport, travel]
   )
   // The in-world lobby: open it over the world (closing other pages), and travel from it the
   // way any in-world pick does — a runtime realm change or teleport, then close.
@@ -1795,7 +1796,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const launchEngine = useCallback(
     (driver: NonNullable<typeof driverRef.current>, realm: string, position?: string, host?: LaunchHostOptions): boolean => {
       bootPollStop.current = false
-      loadingTarget.current = { realm, position: position ?? 'unknown' }
       driver.clearEnginePanic?.() // start clean so the boot poll only sees THIS launch's panic
       try {
         driver.launch?.(realm, position, host)

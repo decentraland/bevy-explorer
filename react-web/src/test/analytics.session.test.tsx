@@ -63,4 +63,32 @@ describe('session analytics', () => {
     ])
     expect(tail(from).map(([, name]) => name)).toContain('WELCOME')
   })
+
+  it("after a link launch, a chat teleport's loading episode names its own parcel, not the link's", async () => {
+    history.replaceState(null, '', '/?position=1,2')
+    const driver = new LaunchingDriver()
+    const from = analytics.pending().length
+    const h = renderSession({ userId: null }, driver)
+    await waitFor(() => expect(h.session().login.status).toBe('sign-in-or-guest'))
+    act(() => h.session().login.exploreAsGuest())
+    await waitFor(() => expect(h.session().phase).toBe('entering'))
+    driver.emit({ kind: 'event', name: 'playerReady' })
+    driver.emit({ kind: 'sceneLoading', state: { visible: false, realmConnected: true, title: '', pendingAssets: null } })
+    await waitFor(() => expect(h.session().phase).toBe('world'))
+
+    act(() => h.session().chat.send('/goto 50,60'))
+    driver.emit({ kind: 'sceneLoading', state: { visible: true, realmConnected: true, title: '', pendingAssets: null } })
+    await waitFor(() => expect(h.session().phase).toBe('entering'))
+    driver.emit({ kind: 'sceneLoading', state: { visible: false, realmConnected: true, title: '', pendingAssets: null } })
+    await waitFor(() => expect(h.session().phase).toBe('world'))
+
+    expect(driver.sent).toContainEqual({ kind: 'teleport', x: 50, y: 60 })
+    const loading = tail(from).filter(([, name]) => name?.startsWith('LOADING_'))
+    expect(loading.map(([, , p]) => p)).toEqual([
+      { screen_name: 'LOADING_START', extra_properties: JSON.stringify({ position: '1,2', realm: DEFAULT_REALM, when: 'on_explorer_ready' }) },
+      { screen_name: 'LOADING_END', extra_properties: JSON.stringify({ position: '1,2', status: 'Success' }) },
+      { screen_name: 'LOADING_START', extra_properties: JSON.stringify({ position: '50,60', realm: DEFAULT_REALM, when: 'on_teleport' }) },
+      { screen_name: 'LOADING_END', extra_properties: JSON.stringify({ position: '50,60', status: 'Success' }) }
+    ])
+  })
 })

@@ -15,6 +15,11 @@ export function storedLoginType(stored: StoredLogin | null): LoginType {
 // Mobile gives up on a load after this long and reports it.
 export const LOADING_TIMEOUT_MS = 90_000
 
+/** The realm the page is in, as the engine keeps the url (`?realm=`) in step with it. */
+export function currentRealm(defaultRealm: string): string {
+  return new URLSearchParams(location.search).get('realm') ?? defaultRealm
+}
+
 export interface LoadingTarget {
   realm: string
   position: string
