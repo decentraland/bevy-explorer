@@ -20,6 +20,7 @@ use futures_lite::io::{AsyncReadExt, AsyncWriteExt};
 use input_manager::InputPriorities;
 use once_cell::sync::OnceCell;
 use scene_runner::vec3_to_parcel;
+use std::sync::atomic::{AtomicBool, Ordering};
 use system_bridge::{SystemApi, SystemBridge};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::js_sys;
@@ -36,6 +37,12 @@ static CONSOLE_BRIDGE_SENDER: OnceCell<tokio::sync::mpsc::UnboundedSender<System
 /// The options the page launched with; the url sync echoes them back with the live values
 /// (realm, position, …) swapped in.
 static LAUNCH_OPTIONS: OnceCell<EngineRunOptions> = OnceCell::new();
+static VIEWPORT_ACTIVE: AtomicBool = AtomicBool::new(true);
+
+#[wasm_bindgen]
+pub fn engine_set_viewport_active(active: bool) {
+    VIEWPORT_ACTIVE.store(active, Ordering::Relaxed);
+}
 
 // The page/engine-worker/render-worker split: the page owns the canvas and winit's DOM side,
 // the engine worker runs the app world and winit's event loop, and the render worker owns the
@@ -551,9 +558,18 @@ fn update_text_focus(priorities: Res<InputPriorities>, mut prev: Local<bool>, _j
     }
 }
 
-pub fn update_winit_fps(config: Res<AppConfig>, mut winit: ResMut<WinitSettings>) {
-    if config.is_changed() {
-        let target = config.graphics.fps_target;
+pub fn update_winit_fps(
+    config: Res<AppConfig>,
+    mut winit: ResMut<WinitSettings>,
+    mut last_target: Local<Option<usize>>,
+) {
+    let target = if VIEWPORT_ACTIVE.load(Ordering::Relaxed) {
+        config.graphics.fps_target.max(1)
+    } else {
+        config.graphics.fps_target.clamp(1, 5)
+    };
+    if *last_target != Some(target) {
+        *last_target = Some(target);
         let delay_micros = 1_000_000.0 / target as f32;
         winit.focused_mode = UpdateMode::Reactive {
             wait: std::time::Duration::from_micros((delay_micros) as u64),
