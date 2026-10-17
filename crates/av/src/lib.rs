@@ -51,6 +51,8 @@ use livestream_manager::{
     states::Transmitter, ActiveReceiver, ReceiverImage, ReceiverVolume, TransmissionStopped,
     TransmissionUpdated,
 };
+#[cfg(any(feature = "ffmpeg", feature = "html"))]
+use media::AVCommand;
 use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::{material::VideoTextureOutput, AddCrdtInterfaceExt},
@@ -106,6 +108,10 @@ pub struct AVSinks<T: AVPlayer> {
     #[cfg(feature = "ffmpeg")]
     pub audio: Option<AudioSink>,
     pub video: Option<VideoSink>,
+    pub command_sender: tokio::sync::mpsc::UnboundedSender<AVCommand>,
+    pub rate: Option<f64>,
+    /// The last volume sent, to send only changes.
+    pub sent_volume: Option<f32>,
     pub _phantom: PhantomData<T>,
 }
 
