@@ -261,7 +261,9 @@ fn main() -> AppExit {
         })
         .add_plugins(SceneBoundPlugin)
         .add_plugins(SceneRunnerPlugin)
-        .add_plugins(CommsPlugin)
+        .add_plugins(CommsPlugin {
+            handle_foreign_audio: false,
+        })
         .add_plugins(RestrictedActionsPlugin)
         .add_plugins(DclImposterPlugin {
             zip_output,

@@ -84,7 +84,10 @@ pub mod chat_marker_things {
     pub const ALL: [char; 3] = [EMOTE, '␑', '␆'];
 }
 
-pub struct CommsPlugin;
+pub struct CommsPlugin {
+    /// Subscribes to foreign player audio sources
+    pub handle_foreign_audio: bool,
+}
 
 impl Plugin for CommsPlugin {
     fn build(&self, app: &mut App) {
@@ -101,7 +104,9 @@ impl Plugin for CommsPlugin {
             SignedLoginPlugin,
             ArchipelagoPlugin,
             BroadcastPositionPlugin,
-            GlobalCrdtPlugin,
+            GlobalCrdtPlugin {
+                handle_foreign_audio: self.handle_foreign_audio,
+            },
             chat_reaction::ChatReactionPlugin,
             UserProfilePlugin,
             PreviewPlugin,
