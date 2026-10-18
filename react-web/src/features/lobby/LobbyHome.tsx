@@ -10,6 +10,7 @@ import notificationsIcon from '../../assets/lobby/notifications.png'
 import { Close, HeaderButton, MaskIcon, Rail } from '../../design'
 import { ProfileChip } from '../menu/ProfileChip'
 import { BACKDROP_EDGE_FADE, FLOOR, backdropRect, floorShadeGradient } from '../../engine/lobbyStage'
+import { clickButton } from '../../lib/analytics'
 import { userColor } from '../../lib/identity'
 import { clip } from '../backpack/BackpackModal'
 import { holeClip } from '../../lib/holeClip'
@@ -111,7 +112,10 @@ export function LobbyHome({
   const [tooltip, setTooltip] = useState<{ x: number; y: number } | null>(null)
   // a pick releases the held world, so none until sign-in has finished
   const waiting = session.login.busy
-  const pickPlace = (p: DiscoverPlace): void => onPick(placeTeleport(p))
+  const pickPlace = (p: DiscoverPlace): void => {
+    clickButton('JUMP_IN', 'LOBBY', { kind: 'place', place_id: p.id })
+    onPick(placeTeleport(p))
+  }
   // The landing card already offers its place; the rails don't repeat it.
   const notLanding = (list: DiscoverPlace[]): DiscoverPlace[] => list.filter((p) => p.id !== landing.data?.id)
   const recentPlaces = notLanding(recents.data)
@@ -147,6 +151,7 @@ export function LobbyHome({
         aria-label="Customize"
         disabled={!session.playerReady}
         onClick={() => {
+          clickButton('CUSTOMIZE', 'LOBBY')
           setTooltip(null)
           session.backpack.toggle()
         }}
@@ -157,7 +162,13 @@ export function LobbyHome({
       <header className={styles.header}>
         <img className={styles.logo} src={logo} alt="Decentraland" />
         <div className={styles.headerRight}>
-          <HeaderButton aria-label="Notifications" onClick={session.notifications.toggle}>
+          <HeaderButton
+            aria-label="Notifications"
+            onClick={() => {
+              clickButton('NOTIFICATIONS', 'LOBBY')
+              session.notifications.toggle()
+            }}
+          >
             <MaskIcon src={notificationsIcon} size={22} />
           </HeaderButton>
           <ProfileChip
@@ -170,7 +181,13 @@ export function LobbyHome({
             onSignOut={onClose ? undefined : session.logout}
           />
           {onClose && (
-            <HeaderButton aria-label="Close" onClick={onClose}>
+            <HeaderButton
+              aria-label="Close"
+              onClick={() => {
+                clickButton('CLOSE', 'LOBBY')
+                onClose()
+              }}
+            >
               <Close size={12} />
             </HeaderButton>
           )}
@@ -186,7 +203,10 @@ export function LobbyHome({
           count={landing.data ? placePlayers(landing.data) : null}
           loading={landing.loading || home == null}
           disabled={waiting}
-          onJumpIn={() => onPick(null)}
+          onJumpIn={() => {
+            clickButton('JUMP_IN', 'LOBBY', { kind: 'landing', place_id: landing.data?.id ?? homeParcel ?? '' })
+            onPick(null)
+          }}
         />
       </section>
 
@@ -221,7 +241,13 @@ export function LobbyHome({
               <Rail perPage={1} gap={8}>
                 {liveEvents.data.map((e) => {
                   const dest = eventDestination(e)
-                  const go = dest == null || waiting ? null : () => onPick(dest.kind === 'world' ? { kind: 'world', realm: dest.realm } : dest)
+                  const go =
+                    dest == null || waiting
+                      ? null
+                      : () => {
+                          clickButton('JUMP_IN', 'LOBBY', { kind: 'event', event_id: e.id })
+                          onPick(dest.kind === 'world' ? { kind: 'world', realm: dest.realm } : dest)
+                        }
                   return <LiveEventCard key={e.id} event={e} people={eventPeople(e)} onJumpIn={go} />
                 })}
               </Rail>

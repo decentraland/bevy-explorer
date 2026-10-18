@@ -108,6 +108,16 @@ pub struct ClientOptions {
     #[arg(long, help_heading = HOST)]
     pub hold_world: bool,
 
+    /// The host page's analytics session id (one per page load), so engine and page events
+    /// share a session; absent = the engine mints one
+    #[arg(long, value_name = "uuid", help_heading = HOST)]
+    pub session_id: Option<String>,
+
+    /// The landing page's Segment anonymous id, stamped on every analytics event so the
+    /// warehouse joins this session to the web visit it came from
+    #[arg(long, value_name = "uuid", help_heading = HOST)]
+    pub campaign_anon_user_id: Option<String>,
+
     /// A `decentraland://` link as the scheme handler or the launcher passes it: `realm`,
     /// `position` and `dclenv` fill the matching launch options (main.rs)
     #[arg(hide = true, value_name = "decentraland://…")]
@@ -159,6 +169,8 @@ impl EngineRunOptions {
             &mut self.client.system_scene,
             &mut self.client.portables,
             &mut self.client.imposter_source,
+            &mut self.client.session_id,
+            &mut self.client.campaign_anon_user_id,
         ] {
             if value.as_deref() == Some("") {
                 *value = None;

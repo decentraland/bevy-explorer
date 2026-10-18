@@ -9,6 +9,8 @@ import type { LaunchHostOptions } from '../../engine/engineRpc'
 import { recordVisit } from '../lobby/lobbyApi'
 import type { SatelliteView } from '../../engine/generated'
 import type { PreviewFocus } from '../../engine/protocol'
+import { clickButton, screenViewed, track } from '../../lib/analytics'
+import { storedLoginType, type LoginType } from './sessionAnalytics'
 import type { InteractableArea } from '../../lib/hudInset'
 import type { FatalError } from '../error/fatalError'
 import { createLoadingProgress } from './loadingProgress'
@@ -646,6 +648,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [status, setStatus] = useState<LoginStatus>('loading')
   // Same-domain SSO identity read from localStorage (null = no stored account).
   const [stored, setStored] = useState<StoredLogin | null>(null)
+  // How the pending login is reported once it resolves: 'stored' reads the stored identity's kind
+  // then (it loads alongside the status), null is a scene-owned login the page never ran.
+  const pendingLoginType = useRef<LoginType | 'stored' | null>(null)
+  const storedRef = useRef<StoredLogin | null>(null)
+  storedRef.current = stored
+  const welcomeRef = useRef<{ terms: boolean; newProfile: boolean } | null>(null)
   // The address of the engine's actual reusable previous login (drives "Welcome back").
   const [prevUserId, setPrevUserId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -1188,7 +1196,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         case 'travelResult':
           if (msg.travelId !== travelSeq.current) break
           setTravellingTo(null)
-          if (!msg.ok) setTravelError(`Couldn't travel to "${msg.realm}": ${msg.message ?? 'unknown error'}`)
+          if (!msg.ok) {
+            setTravelError(`Couldn't travel to "${msg.realm}": ${msg.message ?? 'unknown error'}`)
+          }
           if (lobbyRef.current) {
             if (msg.ok) setLobby(false)
             else setDestinationPicked(false)
@@ -1210,6 +1220,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
             fetchedRef.current.add('getProfile')
             driver.send({ kind: 'getProfile' })
           }
+          welcomeRef.current = { terms: msg.terms, newProfile: msg.newProfile }
+          screenViewed(msg.newProfile ? 'AVATAR_NAMING' : 'WELCOME')
           setWelcome({ terms: msg.terms, newProfile: msg.newProfile })
           break
         case 'welcomeAccepted': {
@@ -1220,6 +1232,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           }
           releaseLinkRef.current()
           setWelcome(null)
+          if (welcomeRef.current?.newProfile) screenViewed('AUTH_DEPLOY_SUCCESS')
+          welcomeRef.current = null
           break
         }
         case 'sceneInfo':
@@ -1665,9 +1679,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const teleportToPlace = useCallback(
     (x: number, y: number) => {
       if (!isGenesisSatelliteView(satelliteView)) travel({ kind: 'teleport', realm: DEFAULT_REALM, x, y })
-      else driverRef.current?.send({ kind: 'teleport', x, y })
+      else teleport(x, y)
     },
-    [satelliteView, travel]
+    [satelliteView, teleport, travel]
   )
   // The in-world lobby: open it over the world (closing other pages), and travel from it the
   // way any in-world pick does — a runtime realm change or teleport, then close.
@@ -1677,7 +1691,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setChatOpen(false)
     panelSetters.forEach((set) => set(false))
     setLobbyOpen(!closing)
-    if (!closing) setLobbyStageReady(false)
+    if (!closing) {
+      setLobbyStageReady(false)
+      screenViewed('LOBBY')
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lobbyOpen, anyPanelOpenExceptLobby])
   const homeScene = useCallback(() => driverRef.current?.homeScene?.() ?? home, [home])
@@ -1736,8 +1753,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const runPendingLogin = useCallback((driver: NonNullable<typeof driverRef.current>): void => {
     const login = pendingLogin.current
     pendingLogin.current = null
+    const type = pendingLoginType.current
+    pendingLoginType.current = null
     Promise.resolve(login?.(driver))
       .then(() => {
+        if (type != null) screenViewed('AUTH_SUCCESS', { login_type: type === 'stored' ? storedLoginType(storedRef.current) : type })
         welcomeLink.current = urlDestination.current
         urlDestination.current = null
         setBusy(false)
@@ -1748,6 +1768,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         // The engine driver rejects with a RAW STRING (wasm-bindgen JsValue), not an Error —
         // e.message would be undefined and the login screen would show no error at all.
         const msg = e instanceof Error ? e.message : String(e)
+        screenViewed('AUTH_ERROR', { error: msg })
         setError(msg !== '' ? msg : 'Login failed')
         setBusy(false)
         // Back to the LOGIN screen, not the picker or lobby: neither renders an error, and the
@@ -2120,8 +2141,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const dismissProfileSaveError = useCallback(() => setProfileSaveError(null), [])
   const friendAct = useCallback((op: FriendAction, address: string, message?: string) => {
     setFriendPending((prev) => new Set(prev).add(`${op}:${address.toLowerCase()}`))
+    // the social events mobile sends on the click, whatever the outcome
+    const receiver_id = address.toLowerCase()
+    if (op === 'request') track('Friend Request', { receiver_id })
+    else if (op === 'accept') track('Friend Accept', { receiver_id })
+    else if (op === 'delete') track('Unfriend', { receiver_id })
+    else if (op === 'block') track('Block User', { receiver_id, is_friend: friendsData.friends.some((f) => f.address.toLowerCase() === receiver_id) })
     driverRef.current?.send({ kind: 'friendAction', op, address, message })
-  }, [])
+  }, [friendsData.friends])
   const loadMutualFriends = useCallback((address: string) => {
     driverRef.current?.send({ kind: 'getMutualFriends', address })
   }, [])
@@ -2164,6 +2191,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     driverRef.current?.logout().catch((e: Error) => console.error('[session] logout failed', e))
     clearLogins() // drop the same-domain SSO identity for this origin
     setStored(null)
+    pendingLoginType.current = null
+    welcomeRef.current = null
     setStatus('sign-in-or-guest')
     closeAllPanels()
     setPlayerReady(false)
@@ -2228,14 +2257,15 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // engine_run briefly blocks the main thread, so the lobby (or the loader) paints first and the
   // launch runs behind it, never under the interactive sign-in screen. On failure, back to sign-in.
   const submitLogin = useCallback(
-    (loginCall: (driver: LoginDriver) => Promise<unknown>) => {
+    (loginCall: (driver: LoginDriver) => Promise<unknown>, loginType: LoginType | 'stored' | null): boolean => {
       const driver = driverRef.current
-      if (driver == null || busy || !engineReady) return
+      if (driver == null || busy || !engineReady) return false
       setError(null)
       pendingLogin.current = loginCall
+      pendingLoginType.current = loginType
       setSubmitted(true)
       // A ?position/?realm link launches straight there (pickDestination, from the url effect).
-      if (urlDestination.current != null) return
+      if (urlDestination.current != null) return true
       // Otherwise the lobby: launch now holding the world back, so signing in, the avatar and
       // friends work but no scene loads until a destination is picked (which releases it).
       setLobby(true)
@@ -2258,40 +2288,56 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       // Defer a paint so the lobby is on screen before engine_run's main-thread work.
       requestAnimationFrame(() => requestAnimationFrame(run))
       setTimeout(run, 60)
+      return true
     },
     [busy, engineReady, launchEngine, runPendingLogin]
   )
 
 
-  const rerollLook = useCallback(() => driverRef.current?.send({ kind: 'rerollLook' }), [])
+  const rerollLook = useCallback(() => {
+    clickButton('NAME_RANDOMIZE', 'AVATAR_NAMING')
+    driverRef.current?.send({ kind: 'rerollLook' })
+  }, [])
   const openLegal = useCallback((doc: 'terms' | 'privacy') => driverRef.current?.send({ kind: 'openLegal', doc }), [])
   const acceptWelcome = useCallback((name?: string) => {
+    clickButton('LETS_GO', welcomeRef.current?.newProfile ? 'AVATAR_NAMING' : 'WELCOME')
     setWelcomeSaving(true)
     setWelcomeError(null)
     driverRef.current?.send({ kind: 'acceptWelcome', name })
   }, [])
 
   // The button creates a guest account that persists; ?guest=1 stays a throwaway guest.
-  const exploreAsGuest = useCallback(() => submitLogin((d) => d.loginPersistentGuest?.() ?? d.loginGuest()), [submitLogin])
-  const autoGuest = useCallback(() => submitLogin((d) => d.loginGuest()), [submitLogin])
+  const exploreAsGuest = useCallback(() => {
+    clickButton('PLAY_GUEST', 'ACCOUNT_HOME')
+    const persistent = driverRef.current?.loginPersistentGuest != null
+    if (submitLogin((d) => d.loginPersistentGuest?.() ?? d.loginGuest(), 'guest') && persistent) screenViewed('ACCOUNT_GUEST_CREATE')
+  }, [submitLogin])
+  const autoGuest = useCallback(() => submitLogin((d) => d.loginGuest(), 'guest'), [submitLogin])
   // Reuse the existing login. The driver picks the path its backend supports (console
   // `/login_identity` for the engine, `loginPrevious` over the bridge).
-  const jumpIn = useCallback(() => submitLogin((d) => d.jumpIn()), [submitLogin])
+  const enterStored = useCallback((defaultOnError?: boolean) => submitLogin((d) => d.jumpIn(defaultOnError), 'stored'), [submitLogin])
+  const jumpIn = useCallback(() => {
+    clickButton('lets_go', 'COMEBACK')
+    enterStored()
+  }, [enterStored])
   // A stored session goes straight to the lobby, once per page: the lobby's profile menu is where
   // to sign out or switch accounts.
   const autoEntered = useRef(false)
   useEffect(() => {
     if (status !== 'reuse-login-or-new' || submitted || !engineReady || autoEntered.current) return
     autoEntered.current = true
-    jumpIn()
-  }, [status, submitted, engineReady, jumpIn])
+    enterStored()
+  }, [status, submitted, engineReady, enterStored])
   // The engine tags profile-fetch login failures (vs bad credentials etc.) with this marker —
   // mirrors PROFILE_FETCH_FAILED in system_bridge. Only then do we offer the destructive reset.
   const profileFetchFailed = error != null && error.includes('profile fetch failed')
   // Explicit recovery from an unfetchable/corrupt profile: retry, continuing with a default
   // profile if it still fails. The engine deploys that default, permanently replacing the
   // account's server-side profile — the button copy must carry that warning.
-  const resetProfileAndJumpIn = useCallback(() => submitLogin((d) => d.jumpIn(true)), [submitLogin])
+  const resetProfileAndJumpIn = useCallback(() => {
+    clickButton('try_again', 'AUTH_ERROR')
+    enterStored(true)
+  }, [enterStored])
 
   // Fresh sign-in (or signing in with a different account). Web: bounce to the same-domain
   // auth site, which writes the identity back to this origin's localStorage and redirects
@@ -2303,8 +2349,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // login left to run.
   const startWithAccount = useCallback(() => {
     if (busy) return
+    clickButton('SIGN_IN', 'ACCOUNT_HOME')
     const driver = driverRef.current
     if (driver?.loginNew == null) {
+      screenViewed('AUTH_BROWSER_OPEN', { method: 'sso' })
       redirectToAuth()
       return
     }
@@ -2352,6 +2400,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // returning user can reach Explore as Guest.
   const useDifferentAccount = useCallback(() => {
     if (busy) return
+    clickButton('use_another_account', 'COMEBACK')
     setStatus('sign-in-or-guest')
   }, [busy])
 
@@ -2365,7 +2414,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     if (boot.current.autoLogin == null || !engineReady || submitted) return
     if (boot.current.autoLogin === 'guest') autoGuest()
     // scene-owned: no React login at all — just boot the engine (a no-op deferred login).
-    else submitLogin(() => Promise.resolve())
+    else submitLogin(() => Promise.resolve(), null)
   }, [engineReady, submitted, autoGuest, submitLogin])
 
   // Render-settle. When the scene flips from loading → loaded (visible true→false), hold the loader
@@ -2441,6 +2490,33 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       : loaderActive
         ? 'entering'
         : 'world'
+
+  // The screens a phase shows (the loading screen's own are the engine's: LOADING_START / END /
+  // TIMEOUT come from `crates/analytics/src/loading.rs`).
+  const prevPhase = useRef<SessionPhase | null>(null)
+  useEffect(() => {
+    const prev = prevPhase.current
+    prevPhase.current = phase
+    if (prev === phase) return
+    if (phase === 'lobby') screenViewed('LOBBY')
+    else if (phase === 'picking') screenViewed('PLACES_PICKER')
+  }, [phase])
+  // The sign-in screens as mobile names them, once per showing (an error flip on the same screen
+  // is not a new view). The "welcome back" panel only shows after a failed sign-in: a stored login
+  // heads for the lobby under the splash.
+  const loginScreen = useRef<string | null>(null)
+  useEffect(() => {
+    const screen =
+      phase !== 'login' || boot.current.hideHud
+        ? null
+        : status === 'sign-in-or-guest'
+          ? 'ACCOUNT_HOME'
+          : status === 'reuse-login-or-new' && error != null
+            ? 'COMEBACK'
+            : null
+    if (screen != null && screen !== loginScreen.current) screenViewed(screen)
+    loginScreen.current = screen
+  }, [phase, status, error])
 
   // Once launched the bridge scene must exist, so from here on its absence is a fault. Not
   // 'picking': nothing is launched behind the picker.

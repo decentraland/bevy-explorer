@@ -81,6 +81,9 @@ pub fn apply_client(
         deep_link: _,
         editor,
         hold_world,
+        // seed the analytics common fields (lib.rs SegmentConfig)
+        session_id: _,
+        campaign_anon_user_id: _,
         imposter_source,
         gpu_bytes_per_frame,
         // sizes the task pool, which exists before plugins run (lib.rs desktop_default_plugins;

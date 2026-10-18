@@ -690,10 +690,16 @@ name = "analytics"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "bevy",
+ "bevy_console",
+ "chrono",
+ "clap",
  "common",
+ "console 0.1.0",
  "serde",
  "serde_json",
+ "wallet",
 ]
 
 [[package]]

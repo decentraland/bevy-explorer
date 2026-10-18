@@ -1503,6 +1503,17 @@ pub struct PlayerTeleported {
 #[derive(Component)]
 pub struct OutOfWorld;
 
+/// The player is let back into the world (`OutOfWorld` removed), and why: the parcel scene is
+/// ready (or there is none), or it never will be and they go in regardless.
+#[derive(Event, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReturnedToWorld {
+    SceneReady,
+    /// the parcel scene hung past the not-responding timeout, errored or was unreachable
+    SceneBroken,
+    /// the parcel scene failed to load
+    SceneLoadFailed,
+}
+
 /// Holds the world back for a lobby shown before it: the realm is resolved (so sign-in, profiles
 /// and wearables work) and system scenes run, but no realm scenes or realm comms load. Released
 /// by the first successful realm change request.

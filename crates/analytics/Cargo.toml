@@ -11,3 +11,9 @@ serde_json = { workspace = true }
 bevy = { workspace = true }
 anyhow = { workspace = true }
 common = { workspace = true }
+console = { workspace = true }
+bevy_console = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+base64 = { workspace = true }
+chrono = { workspace = true }
+wallet = { workspace = true }

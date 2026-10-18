@@ -1,3 +1,4 @@
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde::Serialize;
 
 /// The os natively; wasm32-unknown-unknown has no os name (`std::env::consts::OS` is empty).
@@ -13,10 +14,13 @@ pub struct SegmentMetricEventBody {
     event: String,
     #[serde(rename = "userId")]
     user_id: String,
+    // When it happened: the page's time for a page event (which can predate the engine), the
+    // queue time for the engine's own, as a batch can leave long after behind the consent gate.
+    timestamp: String,
     properties: serde_json::Value,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 // Same for all events sent from the explorer
 pub struct SegmentEventCommonExplorerFields {
     // User’s wallet id, even for guests.
@@ -33,20 +37,26 @@ pub struct SegmentEventCommonExplorerFields {
     pub session_id: String,
     // Explorer’s release used.
     pub renderer_version: String,
+    // The landing page's Segment anonymous id, handed over by the host so the warehouse joins
+    // this session to the web visit that led to it (as the launcher does for the desktop client).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub campaign_anon_user_id: Option<String>,
 }
 
 impl SegmentEventCommonExplorerFields {
-    pub fn new(session_id: String, version: String) -> Self {
+    pub fn new(session_id: String, version: String, campaign_anon_user_id: Option<String>) -> Self {
         let dcl_renderer_type = format!("dao-bevy-{PLATFORM}");
 
         Self {
-            dcl_eth_address: "".into(),
-            dcl_is_guest: true,
-            realm: "".into(),
-            position: "".into(),
+            // mobile's values until the engine knows better
+            dcl_eth_address: "unauthenticated".into(),
+            dcl_is_guest: false,
+            realm: "no-realm".into(),
+            position: "no-position".into(),
             dcl_renderer_type,
             session_id,
             renderer_version: version,
+            campaign_anon_user_id,
         }
     }
 }
@@ -58,6 +68,15 @@ pub enum SegmentEvent {
     ExplorerMoveToParcel(String, SegmentEventExplorerMoveToParcel),
     SystemInfoReport(SegmentEventSystemInfoReport),
     ChatMessageSent(SegmentEventChatMessageSent),
+    FirstMoveInWorld(SegmentEventFirstMoveInWorld),
+    TimeSpentInWorld(SegmentEventTimeSpentInWorld),
+    ScreenViewed(SegmentEventScreenViewed),
+    /// An event the host page reports through `/track`: its name, properties and time as sent.
+    Page {
+        name: String,
+        properties: serde_json::Map<String, serde_json::Value>,
+        timestamp: String,
+    },
 }
 
 #[derive(Serialize)]
@@ -182,12 +201,53 @@ impl SegmentEventChatMessageSent {
     }
 }
 
+/// The first frame of a login with the player moving in world; the common fields say where.
+#[derive(Serialize)]
+pub struct SegmentEventFirstMoveInWorld {}
+
+/// A chunk of time in world (`in_world.rs`), named and shaped as the desktop client's so one
+/// query sums the playtime of both.
+#[derive(Serialize)]
+pub struct SegmentEventTimeSpentInWorld {
+    pub time_spent: f32,
+    pub realm_name: String,
+}
+
+/// A screen of mobile's funnel the engine shows itself (the loading screen); the page reports
+/// its own with the same shape through `/track`.
+#[derive(Serialize)]
+pub struct SegmentEventScreenViewed {
+    pub screen_name: String,
+    // JSON with extra payload, in case we need to track additional metadata.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extra_properties: Option<String>,
+}
+
+impl SegmentEventScreenViewed {
+    pub fn new(screen_name: &str, extra: serde_json::Value) -> Self {
+        Self {
+            screen_name: screen_name.to_owned(),
+            extra_properties: Some(extra.to_string()),
+        }
+    }
+}
+
 pub fn build_segment_event_batch_item(
     user_id: String,
     common: &SegmentEventCommonExplorerFields,
     event_data: SegmentEvent,
+    queued_at: DateTime<Utc>,
 ) -> SegmentMetricEventBody {
+    let mut timestamp = queued_at.to_rfc3339_opts(SecondsFormat::Millis, true);
     let (event_name, event_properties, override_position) = match event_data {
+        SegmentEvent::Page {
+            name,
+            properties,
+            timestamp: at,
+        } => {
+            timestamp = at;
+            (name, serde_json::Value::Object(properties), None)
+        }
         SegmentEvent::PerformanceMetrics(event) => (
             "Performance Metrics".to_string(),
             serde_json::to_value(event).unwrap(),
@@ -218,6 +278,21 @@ pub fn build_segment_event_batch_item(
             serde_json::to_value(event).unwrap(),
             None,
         ),
+        SegmentEvent::FirstMoveInWorld(event) => (
+            "First Move In World".to_string(),
+            serde_json::to_value(event).unwrap(),
+            None,
+        ),
+        SegmentEvent::TimeSpentInWorld(event) => (
+            "time_spent_in_world".to_string(),
+            serde_json::to_value(event).unwrap(),
+            None,
+        ),
+        SegmentEvent::ScreenViewed(event) => (
+            "Screen Viewed".to_string(),
+            serde_json::to_value(event).unwrap(),
+            None,
+        ),
     };
 
     let mut properties = serde_json::to_value(common).unwrap();
@@ -234,6 +309,7 @@ pub fn build_segment_event_batch_item(
         r#type: "track".to_string(),
         event: event_name,
         user_id,
+        timestamp,
         properties,
     }
 }
