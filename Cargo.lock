@@ -693,6 +693,7 @@ dependencies = [
  "base64 0.22.1",
  "bevy",
  "bevy_console",
+ "chrono",
  "clap",
  "common",
  "console 0.1.0",

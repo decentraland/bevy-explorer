@@ -1,3 +1,4 @@
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde::Serialize;
 
 /// The os natively; wasm32-unknown-unknown has no os name (`std::env::consts::OS` is empty).
@@ -13,9 +14,9 @@ pub struct SegmentMetricEventBody {
     event: String,
     #[serde(rename = "userId")]
     user_id: String,
-    // A page event keeps the time it happened, which can predate the engine.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    timestamp: Option<String>,
+    // When it happened: the page's time for a page event (which can predate the engine), the
+    // queue time for the engine's own, as a batch can leave long after behind the consent gate.
+    timestamp: String,
     properties: serde_json::Value,
 }
 
@@ -215,15 +216,16 @@ pub fn build_segment_event_batch_item(
     user_id: String,
     common: &SegmentEventCommonExplorerFields,
     event_data: SegmentEvent,
+    queued_at: DateTime<Utc>,
 ) -> SegmentMetricEventBody {
-    let mut timestamp = None;
+    let mut timestamp = queued_at.to_rfc3339_opts(SecondsFormat::Millis, true);
     let (event_name, event_properties, override_position) = match event_data {
         SegmentEvent::Page {
             name,
             properties,
             timestamp: at,
         } => {
-            timestamp = Some(at);
+            timestamp = at;
             (name, serde_json::Value::Object(properties), None)
         }
         SegmentEvent::PerformanceMetrics(event) => (

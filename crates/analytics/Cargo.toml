@@ -15,3 +15,4 @@ console = { workspace = true }
 bevy_console = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 base64 = { workspace = true }
+chrono = { workspace = true }

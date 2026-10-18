@@ -18,6 +18,11 @@ as host-only web params:
   client. The warehouse joins the session to the web visit on it; nothing else about the
   campaign travels, the visit already has the UTMs.
 
+Nothing leaves before the user has accepted the terms (`AppConfig::terms_accepted()`, set on the
+welcome page). Events queue meanwhile (2000, the oldest dropped) and go out on the first tick
+after; each carries the time it was queued, so a held event keeps its place. A run that never
+shows the terms (preview, a throwaway `--guest` on a fresh install) never sends.
+
 The page side is `react-web/src/lib/analytics.ts` (events and sequences in
 `react-web/review.md`, "Analytics").
 

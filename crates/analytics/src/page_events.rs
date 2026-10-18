@@ -90,6 +90,7 @@ mod tests {
                 properties: item.properties,
                 timestamp: item.timestamp,
             },
+            chrono::Utc::now(),
         );
         let json = serde_json::to_value(&body).unwrap();
         assert_eq!(json["event"], "Screen Viewed");
