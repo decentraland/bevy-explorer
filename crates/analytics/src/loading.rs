@@ -126,14 +126,18 @@ pub fn report_loading_screen(
 mod tests {
     use super::*;
 
+    // keys sorted: serde_json's `preserve_order` is unified in by deno_core in the full
+    // workspace build, so the raw string's key order depends on what else is being built
     fn names(events: &[SegmentEventScreenViewed]) -> Vec<String> {
         events
             .iter()
             .map(|e| {
+                let props: std::collections::BTreeMap<String, serde_json::Value> =
+                    serde_json::from_str(e.extra_properties.as_deref().unwrap_or("{}")).unwrap();
                 format!(
                     "{} {}",
                     e.screen_name,
-                    e.extra_properties.as_deref().unwrap_or("")
+                    serde_json::to_string(&props).unwrap()
                 )
             })
             .collect()
