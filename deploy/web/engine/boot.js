@@ -17,7 +17,8 @@
 //     __engineTextFocus — true while an engine-rendered text field holds keyboard focus (the
 //       wasm keeps it current via __setEngineTextFocus); HUD hotkeys must not fire while set
 //     __onEngineCrash(message, source) — OPTIONAL host callback; the watchdog calls it instead of
-//       rendering any overlay (React owns the error UI)
+//       rendering any overlay (React owns the error UI). The watchdog also posts the engine's
+//       Explorer Error itself (engine_crash_event): the engine can no longer.
 //     window.engine / engine_console_command — the console RPC (built by engine.js post-launch)
 //     __bevyStartServer(options) — starts a headless scene server for a local preview beside the
 //       client (engine.js startServer): for the host that opened the preview. `options` are
@@ -32,7 +33,7 @@
 //       pinned), for the host's "Skip to Home"; set alongside __bevyReadyToLaunch
 //     __bevyTermsAccepted() — whether the persisted config has accepted the terms (null =
 //       unknown), so the host can hold a link's world for its welcome page; set alongside too
-import { initEngine, start, prepareRender, applyOptionsToUrlParams, engine_home_scene, engine_terms_accepted } from './engine.js'
+import { initEngine, start, prepareRender, applyOptionsToUrlParams, engine_home_scene, engine_terms_accepted, engine_crash_event } from './engine.js'
 
 // ---- boot progress (replaces ui.js's DOM loading steps) -----------------------------------------
 // Weight of each step in the overall bar (sums to 100). Step ids are read by the React login bar
@@ -113,6 +114,15 @@ publish()
     console.error('[crash watchdog]', source || 'error', err)
     try {
       window.__onEngineCrash?.(msg, source || 'error')
+    } catch (_) {}
+    // The engine prepared its own crash report (null before the terms are accepted); keepalive
+    // so it still goes if the host reloads the page.
+    try {
+      const event = engine_crash_event(msg, source || 'error')
+      if (event) {
+        const { url, body } = JSON.parse(event)
+        fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true }).catch(() => {})
+      }
     } catch (_) {}
   }
 

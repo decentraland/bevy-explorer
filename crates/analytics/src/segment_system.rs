@@ -54,9 +54,9 @@ const MAX_QUEUED_EVENTS: usize = 2000;
 
 // The browser build goes through the first-party proxy, which ad blockers leave alone.
 #[cfg(target_arch = "wasm32")]
-const SEGMENT_BATCH_URL: &str = "https://api.e.decentraland.org/v1/batch";
+pub(crate) const SEGMENT_BATCH_URL: &str = "https://api.e.decentraland.org/v1/batch";
 #[cfg(not(target_arch = "wasm32"))]
-const SEGMENT_BATCH_URL: &str = "https://api.segment.io/v1/batch";
+pub(crate) const SEGMENT_BATCH_URL: &str = "https://api.segment.io/v1/batch";
 const SEGMENT_EVENT_SIZE_LIMIT_BYTES: usize = 32000;
 const SEGMENT_BATCH_SIZE_LIMIT_BYTES: usize = 500000;
 
@@ -96,6 +96,14 @@ impl SegmentConfig {
 
     pub fn common(&self) -> &SegmentEventCommonExplorerFields {
         &self.common
+    }
+
+    pub(crate) fn user_id(&self) -> &str {
+        &self.user_id
+    }
+
+    pub(crate) fn write_key(&self) -> &str {
+        &self.write_key
     }
 
     pub fn update_realm(&mut self, realm: String) {
@@ -186,12 +194,16 @@ fn send_segment_metric_event(
     }
 }
 
-async fn send_segment_batch(write_key: &str, events: &[String]) -> Result<(), anyhow::Error> {
-    let json_body = format!(
+pub(crate) fn batch_body(write_key: &str, events: &[String]) -> String {
+    format!(
         "{{\"writeKey\":\"{}\",\"batch\":[{}]}}",
         write_key,
         events.join(",")
-    );
+    )
+}
+
+async fn send_segment_batch(write_key: &str, events: &[String]) -> Result<(), anyhow::Error> {
+    let json_body = batch_body(write_key, events);
 
     let response = reqwest_client()
         .post(SEGMENT_BATCH_URL)

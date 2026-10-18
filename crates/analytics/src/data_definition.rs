@@ -20,7 +20,7 @@ pub struct SegmentMetricEventBody {
     properties: serde_json::Value,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 // Same for all events sent from the explorer
 pub struct SegmentEventCommonExplorerFields {
     // User’s wallet id, even for guests.

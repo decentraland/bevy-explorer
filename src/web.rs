@@ -274,6 +274,16 @@ pub fn engine_terms_accepted() -> bool {
         .is_some_and(|config| config.terms_accepted())
 }
 
+/// The Segment request for an Explorer Error, as JSON `{ url, body }`, built on the page thread
+/// from the snapshot the engine keeps (`analytics::crash`): for boot.js's crash watchdog, once
+/// the engine worker can no longer send anything itself. Null before the terms are accepted, or
+/// while the engine holds the snapshot.
+#[wasm_bindgen]
+pub fn engine_crash_event(message: &str, source: &str) -> Option<String> {
+    analytics::crash::crash_batch(message, source)
+        .map(|(url, body)| serde_json::json!({ "url": url, "body": body }).to_string())
+}
+
 /// Round-trip the page's object through JSON rather than `serde_wasm_bindgen::from_value`: that
 /// only visits the struct's own fields, so `deny_unknown_fields` would never see a misspelt key.
 pub(crate) fn parse_options(options: &JsValue) -> Result<EngineRunOptions, JsValue> {

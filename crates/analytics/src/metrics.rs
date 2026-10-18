@@ -1,5 +1,6 @@
 use crate::{
-    frame::FrameMetricPlugin, in_world::report_in_world, loading::report_loading_screen,
+    crash::refresh_crash_snapshot, frame::FrameMetricPlugin, in_world::report_in_world,
+    loading::report_loading_screen,
     primary_player_parcel_position::primary_player_parcel_position_system,
     segment_system::SegmentMetricPlugin,
 };
@@ -18,6 +19,7 @@ impl Plugin for MetricsPlugin {
                 primary_player_parcel_position_system,
                 report_in_world,
                 report_loading_screen,
+                refresh_crash_snapshot,
             ),
         );
         crate::page_events::register(app);

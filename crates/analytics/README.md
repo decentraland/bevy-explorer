@@ -26,6 +26,12 @@ shows the terms (preview, a throwaway `--guest` on a fresh install) never sends.
 The page side is `react-web/src/lib/analytics.ts` (events and sequences in
 `react-web/review.md`, "Analytics").
 
+An engine crash on the web is reported by the page (`crash.rs`): the engine keeps a snapshot of
+what an Explorer Error batch needs (user id, write key, consent, the common fields) in a static,
+and boot.js's crash watchdog calls `engine_crash_event` on the page thread, which shares the
+wasm memory, to build the request and post it with `keepalive`. Nothing before the terms are
+accepted. Natively the next run reports the previous one's log (`crash_report.rs`).
+
 The loading screen is reported as mobile's funnel names it (`loading.rs`): `Screen Viewed`
 LOADING_START {position, realm, when: on_explorer_ready | on_changerealm | on_moveto} when it
 shows, LOADING_END {position, status} when it hides (Failed, with `error`, when the player was let
