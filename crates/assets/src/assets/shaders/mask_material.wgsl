@@ -88,6 +88,7 @@ fn fragment(
         vec3(1., 0., 0.),
         false,
         sample_index,
+        1.0,
     );
 
     // apply in-shader post processing (fog, alpha-premultiply, and also tonemapping, debanding if the camera is non-hdr)

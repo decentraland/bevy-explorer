@@ -80,7 +80,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 
     // shells are double sided so the inside of a hill shows; dither them out between the camera
     // and the player like scene materials
-    discard_dither(in.position.xy, in.world_position.xyz, view.user_value, true);
+    discard_dither(in.position.xy, in.world_position.xyz, view.user_value, true, 0.0, vec3(0.0), false);
     if beyond_coast(in.world_position.xz, terrain.coast) {
         discard;
     }

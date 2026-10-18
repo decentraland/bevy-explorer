@@ -1045,6 +1045,9 @@ pub struct AvatarMaterials(pub HashSet<AssetId<SceneMaterial>>);
 pub struct PreviousAvatar(Entity);
 
 const AVATAR_EMISSIVE_MULTIPLIER: f32 = 4.0;
+/// The camera-to-player dither's base opacity for avatars: an avatar fades as a whole, by the
+/// worst point of its capsule, so all of it shows the floor. Higher than text's for that reason.
+const AVATAR_DITHER_BASE_OPACITY: f32 = 0.5;
 
 // update materials and hide base parts
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
@@ -1351,7 +1354,9 @@ fn process_avatar(
                                         alpha_mode: AlphaMode::Blend,
                                         ..Default::default()
                                     },
-                                    extension: SceneBound::new(&def.bounds, config.graphics.oob),
+                                    extension: SceneBound::new(&def.bounds, config.graphics.oob)
+                                        .with_base_opacity(AVATAR_DITHER_BASE_OPACITY)
+                                        .with_capsule_dither(),
                                 });
                             commands.entity(scene_ent).try_insert((
                                 MeshMaterial3d(material),
@@ -1764,7 +1769,9 @@ fn derived_scene_material(
             depth_bias,
             ..mat.clone()
         },
-        extension: SceneBound::new(&def.bounds, oob),
+        extension: SceneBound::new(&def.bounds, oob)
+            .with_base_opacity(AVATAR_DITHER_BASE_OPACITY)
+            .with_capsule_dither(),
     })
 }
 
