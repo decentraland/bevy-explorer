@@ -10,7 +10,7 @@ import { recordVisit } from '../lobby/lobbyApi'
 import type { SatelliteView } from '../../engine/generated'
 import type { PreviewFocus } from '../../engine/protocol'
 import { clickButton, screenViewed, track } from '../../lib/analytics'
-import { createLoadingEpisode, currentRealm, loadingTargetOf, storedLoginType, type LoadingTarget, type LoginType } from './sessionAnalytics'
+import { storedLoginType, type LoginType } from './sessionAnalytics'
 import type { InteractableArea } from '../../lib/hudInset'
 import type { FatalError } from '../error/fatalError'
 import { createLoadingProgress } from './loadingProgress'
@@ -654,10 +654,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const storedRef = useRef<StoredLogin | null>(null)
   storedRef.current = stored
   const welcomeRef = useRef<{ terms: boolean; newProfile: boolean } | null>(null)
-  // The user-visible load being reported, and where the user last asked to go (null = the engine
-  // streaming on its own, which isn't reported).
-  const loading = useRef(createLoadingEpisode())
-  const loadingTarget = useRef<LoadingTarget | null>(null)
   // The address of the engine's actual reusable previous login (drives "Welcome back").
   const [prevUserId, setPrevUserId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -1200,10 +1196,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         case 'travelResult':
           if (msg.travelId !== travelSeq.current) break
           setTravellingTo(null)
-          loadingTarget.current = null
           if (!msg.ok) {
             setTravelError(`Couldn't travel to "${msg.realm}": ${msg.message ?? 'unknown error'}`)
-            loading.current.end('Failed')
           }
           if (lobbyRef.current) {
             if (msg.ok) setLobby(false)
@@ -1373,7 +1367,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // outcome (it validates the destination before leaving the current realm).
   const travel = useCallback((msg: ChangeRealmRequest | (TeleportRequest & { realm: string })) => {
     setLobbyOpen(false)
-    loadingTarget.current = { realm: msg.realm, position: msg.kind === 'teleport' ? `${msg.x},${msg.y}` : 'unknown' }
     const travelId = ++travelSeq.current
     setTravellingTo(msg.realm)
     driverRef.current?.send({ ...msg, travelId })
@@ -1392,7 +1385,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           if (cmd.text) driverRef.current?.send({ kind: 'sendChat', message: cmd.text, channel: channelRef.current })
           break
         case 'goto':
-          loadingTarget.current = { realm: currentRealm(DEFAULT_REALM), position: `${cmd.x},${cmd.y}` }
           driverRef.current?.send({ kind: 'teleport', x: cmd.x, y: cmd.y })
           break
         case 'genesis':
@@ -1682,7 +1674,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   }, [])
   const teleport = useCallback((x: number, y: number) => {
     setLobbyOpen(false)
-    loadingTarget.current = { realm: currentRealm(DEFAULT_REALM), position: `${x},${y}` }
     driverRef.current?.send({ kind: 'teleport', x, y })
   }, [])
   const teleportToPlace = useCallback(
@@ -2202,7 +2193,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setStored(null)
     pendingLoginType.current = null
     welcomeRef.current = null
-    loading.current.resetLogin()
     setStatus('sign-in-or-guest')
     closeAllPanels()
     setPlayerReady(false)
@@ -2501,29 +2491,16 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         ? 'entering'
         : 'world'
 
-  // The screens a phase shows, and the loading episode: opened by entering towards somewhere the
-  // user asked for, closed by the world (Success) or by falling back to the lobby or sign-in
-  // (Failed; a refused travel closes it where the engine reports it). A link's launch can stop
-  // for the welcome page midway: the same episode resumes once it is answered.
+  // The screens a phase shows (the loading screen's own are the engine's: LOADING_START / END /
+  // TIMEOUT come from `crates/analytics/src/loading.rs`).
   const prevPhase = useRef<SessionPhase | null>(null)
   useEffect(() => {
     const prev = prevPhase.current
     prevPhase.current = phase
     if (prev === phase) return
-    if (prev === 'entering') {
-      if (phase === 'welcome') loading.current.pause()
-      else loading.current.end(phase === 'world' ? 'Success' : 'Failed')
-    }
     if (phase === 'lobby') screenViewed('LOBBY')
     else if (phase === 'picking') screenViewed('PLACES_PICKER')
-    else if (phase === 'entering') {
-      // a link's destination enters before its launch names the target
-      const link = urlDestination.current
-      loading.current.start(loadingTarget.current ?? (link != null ? loadingTargetOf(link, DEFAULT_REALM) : null))
-      loadingTarget.current = null
-    }
   }, [phase])
-  useEffect(() => () => loading.current.dispose(), [])
   // The sign-in screens as mobile names them, once per showing (an error flip on the same screen
   // is not a new view). The "welcome back" panel only shows after a failed sign-in: a stored login
   // heads for the lobby under the splash.

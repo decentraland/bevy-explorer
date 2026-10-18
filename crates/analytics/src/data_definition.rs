@@ -70,6 +70,7 @@ pub enum SegmentEvent {
     ChatMessageSent(SegmentEventChatMessageSent),
     FirstMoveInWorld(SegmentEventFirstMoveInWorld),
     TimeSpentInWorld(SegmentEventTimeSpentInWorld),
+    ScreenViewed(SegmentEventScreenViewed),
     /// An event the host page reports through `/track`: its name, properties and time as sent.
     Page {
         name: String,
@@ -212,6 +213,25 @@ pub struct SegmentEventTimeSpentInWorld {
     pub realm_name: String,
 }
 
+/// A screen of mobile's funnel the engine shows itself (the loading screen); the page reports
+/// its own with the same shape through `/track`.
+#[derive(Serialize)]
+pub struct SegmentEventScreenViewed {
+    pub screen_name: String,
+    // JSON with extra payload, in case we need to track additional metadata.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extra_properties: Option<String>,
+}
+
+impl SegmentEventScreenViewed {
+    pub fn new(screen_name: &str, extra: serde_json::Value) -> Self {
+        Self {
+            screen_name: screen_name.to_owned(),
+            extra_properties: Some(extra.to_string()),
+        }
+    }
+}
+
 pub fn build_segment_event_batch_item(
     user_id: String,
     common: &SegmentEventCommonExplorerFields,
@@ -265,6 +285,11 @@ pub fn build_segment_event_batch_item(
         ),
         SegmentEvent::TimeSpentInWorld(event) => (
             "time_spent_in_world".to_string(),
+            serde_json::to_value(event).unwrap(),
+            None,
+        ),
+        SegmentEvent::ScreenViewed(event) => (
+            "Screen Viewed".to_string(),
             serde_json::to_value(event).unwrap(),
             None,
         ),

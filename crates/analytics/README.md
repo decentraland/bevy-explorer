@@ -26,9 +26,15 @@ shows the terms (preview, a throwaway `--guest` on a fresh install) never sends.
 The page side is `react-web/src/lib/analytics.ts` (events and sequences in
 `react-web/review.md`, "Analytics").
 
+The loading screen is reported as mobile's funnel names it (`loading.rs`): `Screen Viewed`
+LOADING_START {position, realm, when: on_explorer_ready | on_changerealm | on_moveto} when it
+shows, LOADING_END {position, status} when it hides (Failed, with `error`, when the player was let
+in because the scene broke or never loaded: `ReturnedToWorld`), LOADING_TIMEOUT once it has been
+up 90 s. The page reports every other screen.
+
 Two events answer the funnel's in-world questions (`in_world.rs`):
 
 - `First Move In World`: once per login, the first frame in world with the player moving.
 - `time_spent_in_world` (`time_spent` seconds, `realm_name`): the desktop client's event, sent in
-  chunks of up to 60 s and when the realm or the login changes, so the sum per session is the
+  chunks of up to 30 s and when the realm or the login changes, so the sum per session is the
   playtime. A page closed mid-chunk loses that chunk.

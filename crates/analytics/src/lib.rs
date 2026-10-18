@@ -1,6 +1,7 @@
 pub mod data_definition;
 pub mod frame;
 pub mod in_world;
+pub mod loading;
 pub mod metrics;
 pub mod page_events;
 pub mod primary_player_parcel_position;

@@ -240,8 +240,9 @@ back as `analyticsSession`). Expectations:
 - **Welcome / lobby**: WELCOME or AVATAR_NAMING, AUTH_DEPLOY_SUCCESS; clicks LETS_GO,
   NAME_RANDOMIZE; LOBBY, PLACES_PICKER; clicks JUMP_IN {kind, place_id|event_id}, CUSTOMIZE,
   NOTIFICATIONS, CLOSE (`LobbyHome.tsx`).
-- **Loading** (`sessionAnalytics.ts`): LOADING_START {position, realm, when} towards a destination
-  the user picked, LOADING_END {position, status}, LOADING_TIMEOUT after 90 s.
+- **Loading**: the engine's, not the page's. LOADING_START {position, realm, when}, LOADING_END
+  {position, status} and LOADING_TIMEOUT after 90 s follow its own loading screen
+  (`crates/analytics/src/loading.rs`), the one `sceneLoading` mirrors here.
 - **Social**: Friend Request, Friend Accept, Unfriend, Block User on the action.
 - Tests: `src/test/analytics.test.ts` (stamping, the handoff, the rejected send),
   `src/test/analytics.session.test.tsx` (the sequences above), `engineDriver.test.ts` (the session

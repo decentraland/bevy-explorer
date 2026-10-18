@@ -1,7 +1,7 @@
 use bevy::{math::Vec3Swizzles, prelude::*};
 use common::{
     rpc::{RpcCall, RpcCallEvent, RpcResultSender},
-    structs::{AvatarDynamicState, PermissionType, PrimaryUser},
+    structs::{AvatarDynamicState, PermissionType, PrimaryUser, ReturnedToWorld},
 };
 use comms::global_crdt::ForeignPlayer;
 use ipfs::{ChangeRealmEvent, RealmInitialLocation};
@@ -146,6 +146,7 @@ pub fn handle_out_of_world(
     live_scenes: Res<LiveScenes>,
     foreign_players: Query<&GlobalTransform, With<ForeignPlayer>>,
     wallet: Res<Wallet>,
+    mut returned: EventWriter<ReturnedToWorld>,
 ) {
     let Ok((player, mut t)) = player.single_mut() else {
         return;
@@ -168,6 +169,7 @@ pub fn handle_out_of_world(
             debug!("scene {parcel} doesn't exist, returning to world");
             debug!("everything: {:?}", pointers);
             commands.entity(player).remove::<OutOfWorld>();
+            returned.write(ReturnedToWorld::SceneReady);
             return;
         }
         None => {
@@ -269,6 +271,11 @@ pub fn handle_out_of_world(
             debug!("chose {best_position}");
             t.translation = best_position;
             commands.entity(player).remove::<OutOfWorld>();
+            returned.write(if context.broken() {
+                ReturnedToWorld::SceneBroken
+            } else {
+                ReturnedToWorld::SceneReady
+            });
         }
         return;
     }
@@ -277,6 +284,7 @@ pub fn handle_out_of_world(
         Some(SceneLoading::Failed) => {
             debug!("failed, returning to world");
             commands.entity(player).remove::<OutOfWorld>();
+            returned.write(ReturnedToWorld::SceneLoadFailed);
         }
         Some(_) => {
             debug!("scene not loaded");

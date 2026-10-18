@@ -25,8 +25,8 @@ use common::{
     sets::SceneSets,
     structs::{
         server_mode, AvatarDynamicState, CurrentRealm, EngineMovementControl, PermissionType,
-        PlayerTeleported, PreviewCommand, PreviewMode, PrimaryCamera, PrimaryUser, SceneMeta,
-        StartupScenes, ZOrder,
+        PlayerTeleported, PreviewCommand, PreviewMode, PrimaryCamera, PrimaryUser, ReturnedToWorld,
+        SceneMeta, StartupScenes, ZOrder,
     },
     util::{AsH160, TaskCompat, TaskExt, UrlLoopbackExt},
 };
@@ -70,6 +70,7 @@ pub struct RestrictedActionsPlugin;
 impl Plugin for RestrictedActionsPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<RpcCallEvent>();
+        app.add_event::<ReturnedToWorld>();
         app.add_systems(
             Update,
             (

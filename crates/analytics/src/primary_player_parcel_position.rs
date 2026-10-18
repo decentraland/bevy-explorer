@@ -8,6 +8,12 @@ use common::structs::PrimaryUser;
 // TODO: already defined in scene_runner
 const PARCEL_SIZE: f32 = 16.0;
 
+pub(crate) fn parcel_of(translation: Vec3) -> IVec2 {
+    ((translation.xz() * Vec2::new(1.0, -1.0)) / PARCEL_SIZE)
+        .floor()
+        .as_ivec2()
+}
+
 pub fn primary_player_parcel_position_system(
     player: Query<&GlobalTransform, With<PrimaryUser>>,
     mut last_parcel_position: Local<IVec2>,
@@ -17,9 +23,7 @@ pub fn primary_player_parcel_position_system(
     let Ok(player) = player.single() else {
         return;
     };
-    let parcel_position = ((player.translation().xz() * Vec2::new(1.0, -1.0)) / PARCEL_SIZE)
-        .floor()
-        .as_ivec2();
+    let parcel_position = parcel_of(player.translation());
     if parcel_position != *last_parcel_position {
         let current = format!("{},{}", last_parcel_position.x, last_parcel_position.y);
         let next = format!("{},{}", parcel_position.x, parcel_position.y);
