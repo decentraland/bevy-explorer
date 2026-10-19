@@ -2,8 +2,9 @@
 // engine's console, leave together as `/track <base64 batch>`, and a rejected send keeps them.
 
 import { beforeEach, describe, expect, it } from 'vitest'
-import { attachEngine, encodeBatch, pending, screenViewed, track, type QueuedEvent } from '../lib/analytics'
+import { attachEngine, dropAttributionParams, encodeBatch, pending, screenViewed, track, type QueuedEvent } from '../lib/analytics'
 import { PREF, setPref } from '../lib/prefs'
+import { authLoginUrl } from '../features/auth/sso'
 
 function decodeLine(line: string): QueuedEvent[] {
   const [command, payload] = line.split(' ')
@@ -57,5 +58,21 @@ describe('page analytics', () => {
     const token = encodeBatch(batch)
     expect(token).not.toMatch(/\s/)
     expect(decodeLine(`/track ${token}`)).toEqual(batch)
+  })
+
+  it('carries the entry UTMs on the sign-in link, after the return address', () => {
+    expect(authLoginUrl('https://play.decentraland.org/?realm=main', [['utm_source', 'ads'], ['utm_campaign', 'q4 launch']])).toBe(
+      '/auth/login?redirectTo=https%3A%2F%2Fplay.decentraland.org%2F%3Frealm%3Dmain&utm_source=ads&utm_campaign=q4%20launch'
+    )
+    expect(authLoginUrl('https://play.decentraland.org/', [])).toBe('/auth/login?redirectTo=https%3A%2F%2Fplay.decentraland.org%2F')
+  })
+
+  it('takes the attribution params and the resumed session off the address bar, keeping the rest', () => {
+    history.replaceState(null, '', '/?realm=main&utm_source=ads&anon_user_id=abc&analyticsSession=s1&position=0,0')
+    dropAttributionParams()
+    expect(location.search).toBe('?realm=main&position=0%2C0')
+    dropAttributionParams()
+    expect(location.search).toBe('?realm=main&position=0%2C0')
+    history.replaceState(null, '', '/')
   })
 })

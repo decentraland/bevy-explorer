@@ -115,6 +115,21 @@ export function isAttributionParam(name: string): boolean {
   return name === ANON_USER_ID_PARAM || name.startsWith('utm_')
 }
 
+/** Takes the attribution params, and the resumed session, off the address bar once read: a copied
+ *  link or a reload must not attribute again, and the engine's url sync echoes what is left. */
+export function dropAttributionParams(): void {
+  const q = new URLSearchParams(location.search)
+  for (const name of [...q.keys()]) if (isAttributionParam(name) || name === ANALYTICS_SESSION_PARAM) q.delete(name)
+  const search = q.size > 0 ? '?' + q.toString() : ''
+  if (search !== location.search) history.replaceState(null, '', location.pathname + search + location.hash)
+}
+
+/** The entry's `utm_*` params, for the sign-in page: its Segment calls read the campaign off
+ *  its own url and tie it to the address on sign-in. */
+export function attributionParams(): [string, string][] {
+  return [...entry].filter(([name]) => name.startsWith('utm_'))
+}
+
 /** What a page load reports before any screen shows, as mobile's app start does. The return from
  *  the sign-in redirect continues the session instead. */
 export function bootAnalytics(): void {
