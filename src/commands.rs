@@ -143,7 +143,7 @@ pub fn scene_threads(
     if let Some(Ok(command)) = input.take() {
         let threads = command.threads.unwrap_or(4);
         config.scene_threads = threads;
-        input.reply_ok("scene simultaneous thread count set to {threads}");
+        input.reply_ok(format!("scene simultaneous thread count set to {threads}"));
     }
 }
 
@@ -158,6 +158,6 @@ pub fn set_fps(mut input: ConsoleCommand<FpsCommand>, mut config: ResMut<AppConf
     if let Some(Ok(command)) = input.take() {
         let fps = command.fps;
         config.graphics.fps_target = fps;
-        input.reply_ok("target frame rate set to {fps}");
+        input.reply_ok(format!("target frame rate set to {fps}"));
     }
 }

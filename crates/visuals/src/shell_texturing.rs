@@ -15,10 +15,12 @@ use bevy::{
     },
     transform::TransformSystem,
 };
+use bevy_console::ConsoleCommand;
 use common::{
     sets::SetupSets,
     structs::{CurrentRealm, ParcelGrassConfig, PrimaryUser, GROUND_RENDERLAYER},
 };
+use console::DoAddConsoleCommand;
 use scene_runner::{
     initialize_scene::{PointerResult, ScenePointers},
     vec3_to_parcel,
@@ -118,6 +120,60 @@ pub struct ParcelGrassShell;
 #[derive(Component, PartialEq, Eq, Clone, Copy)]
 struct ParcelGrassFlat(bool);
 
+/// Console override of the shell counts. Blade height is kept by spreading the shells further apart,
+/// so fewer shells read as the same grass with coarser steps, at a fraction of the fill cost.
+#[derive(Resource, Default, Clone, Copy, PartialEq, Eq)]
+struct ShellLayerOverride {
+    parcel: Option<u32>,
+    ground: Option<u32>,
+}
+
+impl ShellLayerOverride {
+    fn parcel_shells(&self, config: &ParcelGrassConfig) -> (u32, f32) {
+        match self.parcel {
+            Some(layers) if config.layers > 0 => (
+                layers,
+                config.y_displacement * config.layers as f32 / layers as f32,
+            ),
+            _ => (config.layers, config.y_displacement),
+        }
+    }
+
+    fn ground_shells(&self) -> (u32, f32) {
+        let layers = self.ground.unwrap_or(GROUND_LAYERS);
+        (
+            layers,
+            GROUND_DISPLACEMENT * GROUND_LAYERS as f32 / layers as f32,
+        )
+    }
+}
+
+/// override the grass shell counts (parcel grass, then ground); no arguments restores the defaults
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/grass_layers")]
+struct GrassLayersCommand {
+    parcel: Option<u32>,
+    ground: Option<u32>,
+}
+
+fn set_grass_layers(
+    mut input: ConsoleCommand<GrassLayersCommand>,
+    mut layer_override: ResMut<ShellLayerOverride>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        layer_override.set_if_neq(ShellLayerOverride {
+            parcel: command.parcel.map(|layers| layers.max(1)),
+            ground: command.ground.map(|layers| layers.max(1)),
+        });
+        let show = |layers: Option<u32>| layers.map_or("default".to_owned(), |l| l.to_string());
+        input.reply_ok(format!(
+            "grass layers: parcel {}, ground {}",
+            show(layer_override.parcel),
+            show(layer_override.ground)
+        ));
+    }
+}
+
 /// Huge plane that covers a huge area
 #[derive(Component)]
 struct Ground;
@@ -195,6 +251,8 @@ impl Plugin for ShellTexturingPlugin {
 
         app.init_resource::<ParcelGrassMap>();
         app.init_resource::<ParcelGrassConfig>();
+        app.init_resource::<ShellLayerOverride>();
+        app.add_console_command::<GrassLayersCommand, _>(set_grass_layers);
 
         app.add_plugins(MaterialPlugin::<ShellTexture>::default());
 
@@ -207,10 +265,19 @@ impl Plugin for ShellTexturingPlugin {
         app.add_systems(
             PostUpdate,
             (
-                (state_change, update_parcel_grass_material)
-                    .run_if(resource_changed::<ParcelGrassConfig>),
-                parcel_grass_config_updated
-                    .run_if(resource_changed::<ParcelGrassConfig>.and(shells_need_updating)),
+                state_change.run_if(resource_changed::<ParcelGrassConfig>),
+                update_parcel_grass_material.run_if(
+                    resource_changed::<ParcelGrassConfig>
+                        .or(resource_changed::<ShellLayerOverride>),
+                ),
+                parcel_grass_config_updated.run_if(
+                    resource_changed::<ParcelGrassConfig>
+                        .or(resource_changed::<ShellLayerOverride>)
+                        .and(shells_need_updating),
+                ),
+                swap_ground.run_if(
+                    resource_changed::<ShellLayerOverride>.and(in_state(ParcelGrassState::On)),
+                ),
                 (update_terrain_params, refresh_parcel_grass_meshes).after(TerrainSet),
                 follow_player.before(TransformSystem::TransformPropagate),
             ),
@@ -378,6 +445,7 @@ fn swap_ground(
     mut commands: Commands,
     ground: Single<Entity, With<Ground>>,
     parcel_grass_state: Res<State<ParcelGrassState>>,
+    layer_override: Res<ShellLayerOverride>,
 ) {
     match parcel_grass_state.get() {
         ParcelGrassState::Waiting => {}
@@ -392,12 +460,14 @@ fn swap_ground(
                 .despawn_related::<Children>();
         }
         ParcelGrassState::On => {
+            let (shells, displacement) = layer_override.ground_shells();
             commands
                 .entity(*ground)
+                .despawn_related::<Children>()
                 .try_insert(Children::spawn(ParcelGrassShellSpawnList {
-                    shells: GROUND_LAYERS,
+                    shells,
                     lod: HIGH_LOD,
-                    displacement: GROUND_DISPLACEMENT,
+                    displacement,
                     mesh: GROUND_MESH.clone(),
                     material: GROUND_MATERIAL.clone(),
                     extras: (GROUND_RENDERLAYER, ground_aabb()),
@@ -411,6 +481,7 @@ fn update_parcel_grass_material(
     mut materials: ResMut<Assets<ShellTexture>>,
     parcel_grass_config: Res<ParcelGrassConfig>,
     surface: Res<TerrainSurface>,
+    layer_override: Res<ShellLayerOverride>,
 ) {
     debug!(
         target: "visuals::parcel_grass::update_material",
@@ -420,7 +491,7 @@ fn update_parcel_grass_material(
         PARCEL_GRASS_MATERIAL.id(),
         ShellTexture {
             subdivisions: parcel_grass_config.subdivisions,
-            layers: parcel_grass_config.layers,
+            layers: layer_override.parcel_shells(&parcel_grass_config).0,
             snap_anchor: Vec2::ZERO,
             root_color: parcel_grass_config.root_color.into(),
             tip_color: parcel_grass_config.tip_color.into(),
@@ -432,7 +503,7 @@ fn update_parcel_grass_material(
         GROUND_MATERIAL.id(),
         ShellTexture {
             subdivisions: parcel_grass_config.subdivisions,
-            layers: GROUND_LAYERS,
+            layers: layer_override.ground_shells().0,
             snap_anchor: Vec2::ZERO,
             root_color: parcel_grass_config.root_color.into(),
             tip_color: parcel_grass_config.tip_color.into(),
@@ -444,15 +515,11 @@ fn update_parcel_grass_material(
 
 fn shells_need_updating(
     parcel_grass_config: Res<ParcelGrassConfig>,
-    mut layers: Local<u32>,
-    mut displacement: Local<f32>,
+    layer_override: Res<ShellLayerOverride>,
+    mut shells: Local<(u32, f32)>,
 ) -> bool {
-    let old_layers = std::mem::replace(&mut *layers, parcel_grass_config.layers);
-    let old_displacement =
-        std::mem::replace(&mut *displacement, parcel_grass_config.y_displacement);
-
-    old_layers != parcel_grass_config.layers
-        || old_displacement != parcel_grass_config.y_displacement
+    let current = layer_override.parcel_shells(&parcel_grass_config);
+    std::mem::replace(&mut *shells, current) != current
 }
 
 fn parcel_grass_config_updated(
@@ -474,34 +541,21 @@ fn parcel_grass_lod_inserted(
     parcel_grasses: Query<(&ParcelGrass, &ParcelGrassLod)>,
     parcel_grass_config: Res<ParcelGrassConfig>,
     surface: Res<TerrainSurface>,
+    layer_override: Res<ShellLayerOverride>,
 ) {
     let entity = trigger.target();
     let Ok((parcel_grass, parcel_grass_lod)) = parcel_grasses.get(entity) else {
         unreachable!("Infallible query");
     };
 
-    let (lod, layers, displacement, material) = match parcel_grass_lod {
+    let (layers, displacement) = layer_override.parcel_shells(&parcel_grass_config);
+    let (lod, material) = match parcel_grass_lod {
         ParcelGrassLod::Off => {
             return;
         }
-        ParcelGrassLod::Low => (
-            LOW_LOD,
-            parcel_grass_config.layers,
-            parcel_grass_config.y_displacement,
-            &PARCEL_GRASS_MATERIAL,
-        ),
-        ParcelGrassLod::Mid => (
-            MID_LOD,
-            parcel_grass_config.layers,
-            parcel_grass_config.y_displacement,
-            &PARCEL_GRASS_MATERIAL,
-        ),
-        ParcelGrassLod::High => (
-            HIGH_LOD,
-            parcel_grass_config.layers,
-            parcel_grass_config.y_displacement,
-            &PARCEL_GRASS_MATERIAL,
-        ),
+        ParcelGrassLod::Low => (LOW_LOD, &PARCEL_GRASS_MATERIAL),
+        ParcelGrassLod::Mid => (MID_LOD, &PARCEL_GRASS_MATERIAL),
+        ParcelGrassLod::High => (HIGH_LOD, &PARCEL_GRASS_MATERIAL),
     };
     debug!(
         target: "visuals::parcel_grass::rebuild",

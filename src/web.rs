@@ -5,9 +5,9 @@ use bevy::{
     render::{render_resource::PipelineCompilationHandler, renderer::RenderDevice},
     tasks::BoxedFuture,
     web_worker::{WebWorkerConfig, WorkerSpec},
-    winit::{UpdateMode, WinitSettings},
+    winit::{EventLoopProxy, EventLoopProxyWrapper, UpdateMode, WakeUp, WinitSettings},
 };
-use bevy_console::ConsoleConfiguration;
+use bevy_console::{ConsoleCommand, ConsoleConfiguration};
 use common::{
     rpc::RpcResultSender,
     structs::{
@@ -15,6 +15,7 @@ use common::{
     },
     util::JsThread,
 };
+use console::DoAddConsoleCommand;
 use dcl_wasm::init_runtime;
 use futures_lite::io::{AsyncReadExt, AsyncWriteExt};
 use input_manager::InputPriorities;
@@ -465,7 +466,13 @@ pub fn engine_run(options: JsValue) -> Result<(), JsValue> {
     // The systems that call the page hooks take `JsThread` so the multi-threaded
     // executor keeps them on this thread, off the compute workers (see `JsThread`).
     app.insert_non_send_resource(());
+
+    app.init_resource::<FramePacing>()
+        .add_console_command::<RenderModeCommand, _>(set_render_mode)
+        .add_console_command::<FpsUnfocusedCommand, _>(set_fps_unfocused);
+
     app.add_systems(Update, update_winit_fps)
+        .add_systems(Update, keep_wake_proxy)
         .add_systems(Update, update_url_params)
         .add_systems(Update, update_text_focus)
         .add_systems(Last, engine_heartbeat_system);
@@ -510,6 +517,10 @@ pub async fn engine_console_command(command_line: String) -> Result<JsValue, JsV
     sender
         .send(SystemApi::ConsoleCommand(cmd, args, sx))
         .map_err(|_| JsValue::from_str("engine channel closed"))?;
+    // in reactive mode the loop may be asleep for the whole idle wait; the command shouldn't sit there
+    if let Some(proxy) = WAKE_LOOP.get() {
+        let _ = proxy.send_event(WakeUp);
+    }
 
     rx.await
         .map_err(|_| JsValue::from_str("command response dropped"))?
@@ -575,26 +586,110 @@ fn update_text_focus(priorities: Res<InputPriorities>, mut prev: Local<bool>, _j
     }
 }
 
+// set on the engine worker, used by `engine_console_command` on the page thread
+static WAKE_LOOP: OnceCell<EventLoopProxy<WakeUp>> = OnceCell::new();
+
+// the proxy only exists once the winit runner has started, so it is picked up from the world
+fn keep_wake_proxy(proxy: Option<Res<EventLoopProxyWrapper<WakeUp>>>) {
+    if let (None, Some(proxy)) = (WAKE_LOOP.get(), proxy) {
+        let _ = WAKE_LOOP.set((**proxy).clone());
+    }
+}
+
+/// Frame pacing knobs on top of `fps_target`. The defaults keep the fixed-rate loop.
+#[derive(Resource, Default)]
+pub struct FramePacing {
+    /// frame rate while the canvas is unfocused; `None` follows `fps_target`
+    unfocused_fps: Option<usize>,
+    /// `Some(idle)`: render on input / window events, otherwise once per `idle`
+    reactive_idle: Option<std::time::Duration>,
+}
+
+fn fixed_rate(fps: usize) -> UpdateMode {
+    UpdateMode::Reactive {
+        wait: std::time::Duration::from_micros(1_000_000 / fps.max(1) as u64),
+        react_to_device_events: false,
+        react_to_user_events: false,
+        react_to_window_events: false,
+    }
+}
+
 pub fn update_winit_fps(
     config: Res<AppConfig>,
+    pacing: Res<FramePacing>,
     mut winit: ResMut<WinitSettings>,
-    mut last_target: Local<Option<usize>>,
+    mut last_active: Local<Option<bool>>,
 ) {
-    let target = if VIEWPORT_ACTIVE.load(Ordering::Relaxed) {
-        config.graphics.fps_target.max(1)
-    } else {
-        config.graphics.fps_target.clamp(1, 5)
-    };
-    if *last_target != Some(target) {
-        *last_target = Some(target);
-        let delay_micros = 1_000_000.0 / target as f32;
-        winit.focused_mode = UpdateMode::Reactive {
-            wait: std::time::Duration::from_micros((delay_micros) as u64),
-            react_to_device_events: false,
-            react_to_user_events: false,
-            react_to_window_events: false,
-        };
+    // the viewport flag is an atomic set from the page, so it is polled rather than change-detected
+    let active = VIEWPORT_ACTIVE.load(Ordering::Relaxed);
+    if !config.is_changed() && !pacing.is_changed() && *last_active == Some(active) {
+        return;
+    }
+    *last_active = Some(active);
+    if !active {
+        // another preview covers the viewport: a slow fixed rate, whatever the pacing knobs say
+        winit.focused_mode = fixed_rate(config.graphics.fps_target.clamp(1, 5));
         winit.unfocused_mode = winit.focused_mode;
+        return;
+    }
+    winit.focused_mode = match pacing.reactive_idle {
+        // react_to_window_events wakes on cursor / keyboard / resize, so the viewport stays live
+        // while it is used; between events the loop sleeps up to `idle`, and engine work queued
+        // meanwhile (scene ticks, bus messages, console commands) waits for the next frame
+        Some(idle) => UpdateMode::Reactive {
+            wait: idle,
+            react_to_device_events: false,
+            react_to_user_events: true,
+            react_to_window_events: true,
+        },
+        None => fixed_rate(config.graphics.fps_target),
+    };
+    winit.unfocused_mode = match pacing.unfocused_fps {
+        Some(fps) => fixed_rate(fps),
+        None => winit.focused_mode,
+    };
+}
+
+/// render continuously at the target fps, or only on input/window events (else once per idle ms)
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/render_mode")]
+pub struct RenderModeCommand {
+    #[arg(value_parser = ["continuous", "reactive"])]
+    mode: String,
+    /// reactive only: longest wait between frames when nothing happens (default 250)
+    idle_ms: Option<u64>,
+}
+
+fn set_render_mode(mut input: ConsoleCommand<RenderModeCommand>, mut pacing: ResMut<FramePacing>) {
+    if let Some(Ok(command)) = input.take() {
+        if command.mode == "reactive" {
+            let idle_ms = command.idle_ms.unwrap_or(250).max(1);
+            pacing.reactive_idle = Some(std::time::Duration::from_millis(idle_ms));
+            input.reply_ok(format!("render mode: reactive, idle {idle_ms}ms"));
+        } else {
+            pacing.reactive_idle = None;
+            input.reply_ok("render mode: continuous");
+        }
+    }
+}
+
+/// set the frame rate while the canvas is unfocused; omit to follow /fps
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/fps_unfocused")]
+pub struct FpsUnfocusedCommand {
+    fps: Option<usize>,
+}
+
+fn set_fps_unfocused(
+    mut input: ConsoleCommand<FpsUnfocusedCommand>,
+    mut pacing: ResMut<FramePacing>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        pacing.unfocused_fps = command.fps;
+        match command.fps {
+            Some(fps) => input.reply_ok(format!("unfocused frame rate set to {fps}")),
+            None => input.reply_ok("unfocused frame rate follows /fps"),
+        }
     }
 }
 
