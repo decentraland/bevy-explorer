@@ -4,7 +4,7 @@
 // separate processes. The signed-in identity's key stays here: the app asks for the public
 // identity and for signatures, and never reads the origin's localStorage itself.
 import { authLoginUrl } from '../features/auth/sso'
-import { ANALYTICS_SESSION_PARAM, ANON_USER_ID_PARAM } from '../lib/analytics'
+import { ANALYTICS_SESSION_PARAM, ANON_USER_ID_PARAM, dropAttributionParams } from '../lib/analytics'
 import { migratePrefs } from '../lib/prefs'
 import { request } from './login'
 
@@ -55,6 +55,7 @@ function mountApp(): void {
   f.addEventListener('load', () => f.focus())
   document.body.appendChild(f)
   frame = f
+  dropAttributionParams()
 }
 
 // Shown instead of the app when the app would share this page's process.
