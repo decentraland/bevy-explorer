@@ -4,6 +4,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { attachEngine, encodeBatch, pending, screenViewed, track, type QueuedEvent } from '../lib/analytics'
 import { PREF, setPref } from '../lib/prefs'
+import { authLoginUrl } from '../features/auth/sso'
 
 function decodeLine(line: string): QueuedEvent[] {
   const [command, payload] = line.split(' ')
@@ -57,5 +58,12 @@ describe('page analytics', () => {
     const token = encodeBatch(batch)
     expect(token).not.toMatch(/\s/)
     expect(decodeLine(`/track ${token}`)).toEqual(batch)
+  })
+
+  it('carries the entry UTMs on the sign-in link, after the return address', () => {
+    expect(authLoginUrl('https://play.decentraland.org/?realm=main', [['utm_source', 'ads'], ['utm_campaign', 'q4 launch']])).toBe(
+      '/auth/login?redirectTo=https%3A%2F%2Fplay.decentraland.org%2F%3Frealm%3Dmain&utm_source=ads&utm_campaign=q4%20launch'
+    )
+    expect(authLoginUrl('https://play.decentraland.org/', [])).toBe('/auth/login?redirectTo=https%3A%2F%2Fplay.decentraland.org%2F')
   })
 })
