@@ -6,11 +6,11 @@ import { SkyboxMenu, formatHours } from '../features/skybox/SkyboxMenu'
 import { enterAsGuest, fakeSession, renderSession } from './harness'
 
 describe('skybox', () => {
-  it('sidebar has Skybox between Nearby Voice and Emotes, and it toggles the menu', async () => {
+  it('sidebar has Skybox between Nearby Voice and Scene permissions, and it toggles the menu', async () => {
     const s = fakeSession()
     render(<Sidebar session={s} />)
     const labels = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'))
-    expect(labels.slice(labels.indexOf('Nearby Voice'), labels.indexOf('Emotes') + 1)).toEqual(['Nearby Voice', 'Skybox', 'Emotes'])
+    expect(labels.slice(labels.indexOf('Nearby Voice'), labels.indexOf('Emotes') + 1)).toEqual(['Nearby Voice', 'Skybox', 'Scene permissions', 'Emotes'])
     await userEvent.click(screen.getByRole('button', { name: 'Skybox' }))
     expect(vi.mocked(s.skybox.toggle)).toHaveBeenCalledTimes(1)
   })

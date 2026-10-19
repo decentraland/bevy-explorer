@@ -52,16 +52,18 @@ export function NearbyVoiceWidget({
     setLeft(r.left + r.width / 2 + r.width)
   }, [anchor])
 
+  // pointerdown, not mousedown: the engine canvas prevents default on pointerdown, which drops
+  // the compatibility mouse events, so a click on the world would never reach a mousedown listener
   useEffect(() => {
-    const onDown = (e: MouseEvent): void => {
+    const onDown = (e: PointerEvent): void => {
       const t = e.target as Node
       if (ref.current?.contains(t) || anchor?.contains(t)) return
       onClose()
     }
-    document.addEventListener('mousedown', onDown)
+    document.addEventListener('pointerdown', onDown, true)
     const off = registerCancelLayer(onClose)
     return () => {
-      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('pointerdown', onDown, true)
       off()
     }
   }, [anchor, onClose])

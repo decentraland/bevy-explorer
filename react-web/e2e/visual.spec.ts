@@ -195,6 +195,20 @@ test.describe('visual — mock HUD', () => {
     await expect(page).toHaveScreenshot('permission-dialog.png')
   })
 
+  // Permissions popover — ?perm=1 also reports three used permissions; the review list beside the
+  // rail's padlock. The sample prompt is answered first (Deny once) so it can't cover it.
+  test('permissions popover', async ({ page }) => {
+    await page.goto('/app.html?mock=1&perm=1')
+    await page.getByRole('button', { name: /EXPLORE AS GUEST/i }).click()
+    await jumpInFromLobby(page)
+    await page.getByRole('alertdialog').waitFor()
+    await page.getByRole('button', { name: 'Deny' }).click()
+    await page.getByRole('button', { name: 'Scene permissions' }).click()
+    await page.getByRole('dialog', { name: 'Scene permissions' }).waitFor()
+    await settle(page)
+    await expect(page).toHaveScreenshot('permissions-popover.png')
+  })
+
   // Community modal — opened by clicking a community card from the Communities panel.
   test('community modal', async ({ page }) => {
     await enterWorld(page)

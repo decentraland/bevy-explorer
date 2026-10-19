@@ -36,6 +36,7 @@ import voiceSpeakingArt from '../../assets/sidebar-rail/voice-speaking.webp'
 import { bugReportUrl } from '../../lib/bugReport'
 import { registerCancelLayer } from '../../lib/cancelLayers'
 import { NearbyVoiceWidget } from '../voice/NearbyVoiceWidget'
+import { PermissionsPopover } from '../permissions/PermissionsPopover'
 import { useNearbyVoice, type NearbyVoice } from '../voice/useNearbyVoice'
 import { withUtm } from '../../lib/utm'
 
@@ -54,6 +55,7 @@ type Item =
   | { kind: 'places'; icon: IconName; label: string; hotkey?: string }
   | { kind: 'events'; icon: IconName; label: string }
   | { kind: 'skybox'; icon: IconName; label: string }
+  | { kind: 'permissions'; icon: IconName; label: string }
   | { kind: 'gallery'; icon: IconName; label: string; hotkey?: string }
   | { kind: 'create'; icon: IconName; label: string }
   | { kind: 'link'; icon: IconName; label: string; url: string | (() => string) }
@@ -105,6 +107,7 @@ const TOP: Item[] = [
 const BOTTOM: Item[] = [
   { kind: 'mic', icon: 'mic', label: 'Voice chat' },
   { kind: 'skybox', icon: 'skybox', label: 'Skybox' },
+  { kind: 'permissions', icon: 'permissions', label: 'Scene permissions' },
   { kind: 'divider' },
   { kind: 'emotes', icon: 'emotes', label: 'Emotes', hotkey: 'Emote' },
   { kind: 'divider' },
@@ -113,8 +116,9 @@ const BOTTOM: Item[] = [
 ]
 
 type VoiceProps = NearbyVoice & { onOpen: (button: HTMLElement) => void }
+type PermissionsProps = { open: boolean; onOpen: (button: HTMLElement) => void }
 
-function renderItem(item: Item, i: number, session: EngineSession, snap: BindingsSnapshot, liveEvents: number, voice: VoiceProps, create: boolean, onViewProfile?: () => void): React.JSX.Element | null {
+function renderItem(item: Item, i: number, session: EngineSession, snap: BindingsSnapshot, liveEvents: number, voice: VoiceProps, permissions: PermissionsProps, create: boolean, onViewProfile?: () => void): React.JSX.Element | null {
   if (item.kind === 'divider') return <div key={`d${i}`} className={styles.divider} />
   const shortcut = 'hotkey' in item && item.hotkey != null ? keyHintFor(snap, item.hotkey) : undefined
   if (item.kind === 'chat')
@@ -258,6 +262,19 @@ function renderItem(item: Item, i: number, session: EngineSession, snap: Binding
     return EDITOR_BUILD && create ? <RailButton key="create" icon={item.icon} label={item.label} active={session.create.open} onClick={session.create.toggle} /> : null
   if (item.kind === 'skybox')
     return <RailButton key="skybox" icon={item.icon} label={item.label} active={session.skybox.open} onClick={session.skybox.toggle} />
+  if (item.kind === 'permissions') {
+    // the badge counts refusals a stored rule decided that the player has not looked at
+    return (
+      <RailButton
+        key="permissions"
+        icon={item.icon}
+        label={item.label}
+        badge={session.permissions.unseenDenied}
+        active={permissions.open}
+        onClick={(e) => permissions.onOpen(e.currentTarget)}
+      />
+    )
+  }
   if (item.kind === 'events')
     return (
       <RailButton
@@ -313,21 +330,31 @@ export function Sidebar({
   const create = useContext(EditorOffered)
   const [configOpen, setConfigOpen] = useState(false)
   const [voiceAnchor, setVoiceAnchor] = useState<HTMLElement | null>(null)
-  const autoHide = useAutoHide(configOpen || voiceAnchor != null)
+  const [permissionsAnchor, setPermissionsAnchor] = useState<HTMLElement | null>(null)
+  const autoHide = useAutoHide(configOpen || voiceAnchor != null || permissionsAnchor != null)
   const nearby = useNearbyVoice(session)
   const voice: VoiceProps = { ...nearby, onOpen: (button) => setVoiceAnchor((a) => (a == null ? button : null)) }
   const closeVoice = useCallback(() => setVoiceAnchor(null), [])
+  const permissions: PermissionsProps = {
+    open: permissionsAnchor != null,
+    onOpen: (button) => {
+      session.permissions.markSeen()
+      session.permissions.loadRules()
+      setPermissionsAnchor((a) => (a == null ? button : null))
+    }
+  }
+  const closePermissions = useCallback(() => setPermissionsAnchor(null), [])
   // The "..." panel closes on an outside click or Cancel, like the other popovers.
   useEffect(() => {
     if (!configOpen) return
     const close = (): void => setConfigOpen(false)
-    const onDown = (e: MouseEvent): void => {
+    const onDown = (e: PointerEvent): void => {
       if (!(e.target instanceof Element && e.target.closest('[aria-label="Sidebar settings"]'))) close()
     }
-    document.addEventListener('mousedown', onDown)
+    document.addEventListener('pointerdown', onDown, true)
     const off = registerCancelLayer(close)
     return () => {
-      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('pointerdown', onDown, true)
       off()
     }
   }, [configOpen])
@@ -355,9 +382,9 @@ export function Sidebar({
           >
             <DotsGlyph />
           </ControlButton>
-          {TOP.map((item, i) => renderItem(item, i, session, snap, liveEvents, voice, create, onViewProfile))}
+          {TOP.map((item, i) => renderItem(item, i, session, snap, liveEvents, voice, permissions, create, onViewProfile))}
         </div>
-        <div className={styles.group}>{BOTTOM.map((item, i) => renderItem(item, i, session, snap, liveEvents, voice, create, onViewProfile))}</div>
+        <div className={styles.group}>{BOTTOM.map((item, i) => renderItem(item, i, session, snap, liveEvents, voice, permissions, create, onViewProfile))}</div>
       </nav>
       {voiceAnchor != null && (
         <NearbyVoiceWidget
@@ -375,6 +402,19 @@ export function Sidebar({
           onSpeakToggle={nearby.toggleSpeak}
           talkKey={keyHintFor(snap, 'Microphone')}
           onClose={closeVoice}
+        />
+      )}
+      {permissionsAnchor != null && (
+        <PermissionsPopover
+          anchor={permissionsAnchor}
+          visit={session.permissions.visit}
+          triggered={session.permissions.triggered}
+          rules={session.permissions.rules}
+          sceneName={session.minimap.sceneTitle}
+          setRule={session.permissions.setRule}
+          clearRule={session.permissions.clearRule}
+          resetDefaults={session.permissions.resetDefaults}
+          onClose={closePermissions}
         />
       )}
       {configOpen && (

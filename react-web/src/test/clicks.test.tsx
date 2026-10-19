@@ -40,7 +40,7 @@ describe('sidebar clicks', () => {
     const labels = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'))
     expect(labels).toEqual([
       'Sidebar settings', 'Profile', 'Notifications', 'Events', 'Places', 'Communities', 'Backpack', 'Shop', 'Gallery', 'Settings',
-      'Help & Support', 'Report a bug', 'Nearby Voice', 'Skybox', 'Emotes', 'Friends', 'Chat'
+      'Help & Support', 'Report a bug', 'Nearby Voice', 'Skybox', 'Scene permissions', 'Emotes', 'Friends', 'Chat'
     ])
   })
 

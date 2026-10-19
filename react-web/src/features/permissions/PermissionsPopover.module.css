@@ -1,0 +1,91 @@
+/* Laid out on the 1920×1080 canvas and scaled with the HUD; anchored on the button's centre line
+   (the nearby-voice popover's treatment). */
+.panel {
+  position: fixed;
+  z-index: calc(var(--z-hud) + 1);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 300px;
+  max-height: calc(85vh / var(--ui-scale));
+  overflow-y: auto;
+  padding: 16px 0 12px;
+  box-sizing: border-box;
+  border-radius: var(--r-md);
+  background: var(--panel);
+  color: var(--text);
+  transform: translateY(-50%) scale(var(--ui-scale));
+  transform-origin: left center;
+  animation: fade-in var(--dur-mid) linear both;
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+.title {
+  padding: 0 16px 12px;
+  font-size: var(--type-14);
+  font-weight: var(--fw-semibold);
+}
+.divider {
+  height: 1px;
+  margin: 8px 0;
+  background: var(--line);
+}
+.section {
+  padding: 6px 16px 2px;
+  font-size: var(--type-12);
+  font-weight: var(--fw-semibold);
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 8px;
+  padding: 8px;
+  border: none;
+  border-radius: var(--r-control);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--type-13);
+  text-align: left;
+  cursor: pointer;
+}
+.row:hover {
+  background: var(--row-hover);
+}
+/* a row the scene ran into this visit: the answer or rule that decided it */
+.row[data-hit] {
+  background: var(--fill-2);
+  box-shadow: inset 3px 0 0 var(--brand);
+}
+.empty,
+.hint {
+  padding: 4px 16px 0;
+  font-size: var(--type-12);
+  color: var(--text-dim);
+}
+.hint {
+  margin-top: 6px;
+}
+.reset {
+  align-self: flex-start;
+  margin: 0 16px;
+}
+.value {
+  margin-left: auto;
+  font-size: var(--type-11);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.value[data-value='Allow'] {
+  color: var(--green);
+}
+.value[data-value='Deny'] {
+  color: var(--red);
+}

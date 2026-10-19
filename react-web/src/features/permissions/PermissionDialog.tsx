@@ -2,11 +2,16 @@
 // asking to move you to a new realm) that the native Bevy HUD shows but the react-web HUD lost.
 // The engine relays the request over the bridge (domains/permissions.ts); the user's choice goes
 // back as a permissionResolve. Violet design-system treatment, matching the Create-a-Community
-// modal; wording + Once/Scene/Realm/Global scopes mirror unity-explorer / the native dialog.
+// modal; wording + Scene/Realm/Global scopes mirror unity-explorer / the native dialog, with
+// "This visit" (the page remembers the answer for the scene) in place of their "Once".
+// The same card, with the same scopes, reviews a permission the scene already used (the rail's
+// permissions list): there is no request to answer, so the choice only rewrites the rule
+// (permissionRule) for next time.
 
 import { useState } from 'react'
 import { Button, openPopup } from '../../design'
-import type { PermissionLevelChoice, PermissionRequestMessage } from '../../engine/protocol'
+import type { PermissionLevelChoice, PermissionRequestMessage, PermissionRuleLevel } from '../../engine/protocol'
+import type { PermissionSubject } from '../session/useEngineSession'
 import styles from './PermissionDialog.module.css'
 
 // PermissionType (serde enum name) → the "wants permission to {…}" clause. Mirrors the engine's
@@ -30,8 +35,13 @@ const PASSIVE: Record<string, string> = {
   OpenExplorerUi: 'open an explorer menu panel (map, backpack, settings, ...)'
 }
 
-const LEVELS: { value: PermissionLevelChoice; label: string }[] = [
-  { value: 'once', label: 'Once' },
+/** The "wants permission to …" clause for a permission type. */
+export function describePermission(ty: string): string {
+  return PASSIVE[ty] ?? 'perform a restricted action'
+}
+
+const LEVELS: { value: PermissionRuleLevel; label: string }[] = [
+  { value: 'visit', label: 'This visit' },
   { value: 'scene', label: 'Always for Scene' },
   { value: 'realm', label: 'Always for Realm' },
   { value: 'global', label: 'Always for Global' }
@@ -46,34 +56,34 @@ function LockIcon(): React.JSX.Element {
   )
 }
 
-export function PermissionDialog({
-  request,
-  onResolve
-}: {
-  request: PermissionRequestMessage
-  onResolve: (allow: boolean, level: PermissionLevelChoice) => void
-}): React.JSX.Element {
-  const [level, setLevel] = useState<PermissionLevelChoice>('once')
-  const passive = PASSIVE[request.ty] ?? 'perform a restricted action'
+type Mode =
+  | { kind: 'request'; request: PermissionRequestMessage; onResolve: (allow: boolean, level: PermissionLevelChoice) => void }
+  | { kind: 'review'; subject: PermissionSubject; initial: PermissionRuleLevel; onRule: (allow: boolean, level: PermissionRuleLevel) => void }
 
-  // Just the card — the popup layer draws the scrim, and dismissing it (Escape / scrim-click) denies
-  // once via openPermissionDialog's onClose. stopPropagation keeps a click on the card from dismissing.
+function Card({
+  label,
+  prompt,
+  additional,
+  initial,
+  onChoose
+}: {
+  label: string
+  prompt: React.ReactNode
+  additional?: string
+  initial: PermissionRuleLevel
+  onChoose: (allow: boolean, level: PermissionRuleLevel) => void
+}): React.JSX.Element {
+  const [level, setLevel] = useState<PermissionRuleLevel>(initial)
+
+  // Just the card — the popup layer draws the scrim, and dismissing it (Escape / scrim-click) is the
+  // opener's onClose. stopPropagation keeps a click on the card from dismissing.
   return (
-    <div
-      className={styles.modal}
-      role="alertdialog"
-      aria-modal="true"
-      aria-label="Scene permission request"
-      onClick={(e) => e.stopPropagation()}
-    >
+    <div className={styles.modal} role="alertdialog" aria-modal="true" aria-label={label} onClick={(e) => e.stopPropagation()}>
       <span className={styles.icon}>
         <LockIcon />
       </span>
-      <div className={styles.prompt}>
-        The scene <span className={styles.scene}>{request.sceneName || 'A scene'}</span> wants
-        permission to {passive}
-      </div>
-      {request.additional ? <div className={styles.additional}>{request.additional}</div> : null}
+      <div className={styles.prompt}>{prompt}</div>
+      {additional ? <div className={styles.additional}>{additional}</div> : null}
 
       <div className={styles.options} role="radiogroup" aria-label="Apply this decision">
         {LEVELS.map((opt) => (
@@ -94,14 +104,56 @@ export function PermissionDialog({
       </div>
 
       <div className={styles.actions}>
-        <Button variant="ghost" className={styles.deny} onClick={() => onResolve(false, level)}>
+        <Button variant="ghost" className={styles.deny} onClick={() => onChoose(false, level)}>
           Deny
         </Button>
-        <Button variant="primary" onClick={() => onResolve(true, level)}>
+        <Button variant="primary" onClick={() => onChoose(true, level)}>
           Allow
         </Button>
       </div>
     </div>
+  )
+}
+
+export function PermissionDialog(mode: Mode): React.JSX.Element {
+  if (mode.kind === 'request') {
+    const { request, onResolve } = mode
+    return (
+      <Card
+        label="Scene permission request"
+        prompt={
+          <>
+            The scene <span className={styles.scene}>{request.sceneName || 'A scene'}</span> wants permission to {describePermission(request.ty)}
+          </>
+        }
+        additional={request.additional}
+        initial="visit"
+        onChoose={onResolve}
+      />
+    )
+  }
+  const { subject, initial, onRule } = mode
+  return <Card label="Scene permission review" prompt={describeSubject(subject)} initial={initial} onChoose={onRule} />
+}
+
+/** A visit answer or a scene rule: "The scene X may / may not / asks before it can …" (a visit
+ *  answer, "… this visit"). A realm or global rule: "Scenes …". */
+function describeSubject(subject: PermissionSubject): React.ReactNode {
+  const passive = describePermission(subject.ty)
+  if (subject.scope === 'visit' || subject.scope === 'scene') {
+    const verb = subject.value === 'Allow' ? 'may' : subject.value === 'Deny' ? 'may not' : 'asks before it can'
+    return (
+      <>
+        The scene <span className={styles.scene}>{subject.sceneName || 'A scene'}</span> {verb} {passive}
+        {subject.scope === 'visit' ? ' this visit' : ''}
+      </>
+    )
+  }
+  const verb = subject.value === 'Allow' ? 'may' : subject.value === 'Deny' ? 'may not' : 'ask before they'
+  return (
+    <>
+      Scenes{subject.scope === 'realm' ? ' in this realm' : ''} {verb} {passive}
+    </>
   )
 }
 
@@ -120,6 +172,7 @@ export function openPermissionDialog(
   return openPopup(
     (close) => (
       <PermissionDialog
+        kind="request"
         request={request}
         onResolve={(allow, level) => {
           done(allow, level)
@@ -129,4 +182,24 @@ export function openPermissionDialog(
     ),
     { onClose: () => done(false, 'once') }
   )
+}
+
+/** Review a visit answer or a stored rule: the same card and scopes, applied to next time, opening
+ *  on `initial` (a stored rule's own level). Dismissing it changes nothing. */
+export function openPermissionReview(
+  subject: PermissionSubject,
+  setRule: (subject: PermissionSubject, allow: boolean, level: PermissionRuleLevel) => void,
+  initial: PermissionRuleLevel = 'visit'
+): () => void {
+  return openPopup((close) => (
+    <PermissionDialog
+      kind="review"
+      subject={subject}
+      initial={initial}
+      onRule={(allow, level) => {
+        setRule(subject, allow, level)
+        close()
+      }}
+    />
+  ))
 }

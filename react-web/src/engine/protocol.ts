@@ -211,6 +211,9 @@ export type PageToScene =
   | ChangeRealmRequest
   | MinimapConfigRequest
   | PermissionResolveRequest
+  | PermissionRuleRequest
+  | ResetPermissionsRequest
+  | GetPermissionRulesRequest
   | WorldPasswordResolveRequest
   | EditorSceneRequest
   | EngineViewportRequest
@@ -783,6 +786,8 @@ export interface SceneInfoMessage {
   /** The parcel the title was resolved for, and the realm it is in. */
   parcel?: { x: number; y: number }
   realm?: string
+  /** Hash of the scene on that parcel; absent when it has none. */
+  scene?: string
   /** Genesis City (it advertises the satellite map); anything else is a World or a local realm. */
   genesis?: boolean
   preview?: boolean
@@ -858,7 +863,7 @@ export interface EditorSceneResultMessage {
  *  to a new realm). Shown as the React permission dialog; resolved with permissionResolve. */
 export interface PermissionRequestMessage {
   kind: 'permissionRequest'
-  /** Engine-assigned request id (echoed back to resolve a "Once" decision). */
+  /** Engine-assigned request id (echoed back to resolve a single request). */
   id: number
   /** PermissionType serde name, e.g. 'ChangeRealm' — React maps it to the human prompt. */
   ty: string
@@ -877,6 +882,19 @@ export interface PermissionRequestMessage {
 export interface PermissionWithdrawnMessage {
   kind: 'permissionWithdrawn'
   id: number
+}
+
+/** A scene used a permission, allowed or refused (scene → page, from the engine's permission-used
+ *  stream). The HUD keeps the latest outcome per type for the scene the player stands in, so the
+ *  rail can highlight the answer or rule that decided it and count the refusals the player did
+ *  not click themselves. */
+export interface PermissionUsedMessage {
+  kind: 'permissionUsed'
+  ty: string
+  sceneName: string
+  scene: string
+  realm: string
+  allowed: boolean
 }
 
 /** The engine needs a password to enter the world the player is travelling to (scene → page).
@@ -903,8 +921,56 @@ export interface WorldPasswordResolveRequest {
   password: string | null
 }
 
-/** Which scope an Allow/Deny applies to. `once` = just this request; the rest persist a rule. */
-export type PermissionLevelChoice = 'once' | 'scene' | 'realm' | 'global'
+/** Which scope an Allow/Deny applies to. `once` = just this request (dismissing the prompt);
+ *  `visit` = this request, and the page answers the same scene's later requests of the type the
+ *  same way until the player leaves the scene or reloads it; the rest persist a rule in the engine. */
+export type PermissionLevelChoice = 'once' | 'visit' | 'scene' | 'realm' | 'global'
+
+/** Scope of a rule written from the permissions review (page → scene): the "Always for …" levels
+ *  store Allow/Deny in the engine; 'visit' forgets the stored rule at scene and realm level and
+ *  stores Ask at global, so the scene asks again and the page answers from its visit memory. */
+export type PermissionRuleLevel = Exclude<PermissionLevelChoice, 'once'>
+
+/** Rewrite the rule for one permission (page → scene → setPermanentPermission). Only the stored
+ *  defaults change: a request already granted or refused is not revisited. */
+export interface PermissionRuleRequest {
+  kind: 'permissionRule'
+  ty: string
+  level: PermissionRuleLevel
+  /** Ignored for 'visit' (the page keeps that answer); null clears the stored rule at `level`
+   *  (at 'global', stores Ask: the built-in default allows some types outright). */
+  allow: boolean | null
+  scene: string
+  realm: string
+}
+
+/** Forget every stored permission answer, at every level, back to the built-in defaults
+ *  (page → scene → /reset_permissions). */
+export interface ResetPermissionsRequest {
+  kind: 'resetPermissions'
+}
+
+export type PermissionRuleValue = 'Allow' | 'Deny' | 'Ask'
+
+/** One stored rule (PermanentPermissionItem). */
+export interface PermissionRuleItem {
+  ty: string
+  allow: PermissionRuleValue
+}
+
+/** Fetch the stored rules for a scene, the current realm and global (page → scene →
+ *  getPermanentPermissions ×3); answered with `permissionRules`. */
+export interface GetPermissionRulesRequest {
+  kind: 'getPermissionRules'
+  scene: string
+}
+
+export interface PermissionRulesMessage {
+  kind: 'permissionRules'
+  scene: string
+  realm: string
+  rules: { scene: PermissionRuleItem[]; realm: PermissionRuleItem[]; global: PermissionRuleItem[] }
+}
 
 /** The user's decision on a permission prompt (page → scene → SystemApi). */
 export interface PermissionResolveRequest {
@@ -1538,6 +1604,8 @@ export type SceneToPage =
   | GalleryPhotoMessage
   | PermissionRequestMessage
   | PermissionWithdrawnMessage
+  | PermissionUsedMessage
+  | PermissionRulesMessage
   | WorldPasswordRequestMessage
   | WorldPasswordWithdrawnMessage
   | EditorSceneResultMessage

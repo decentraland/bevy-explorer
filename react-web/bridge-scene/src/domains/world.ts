@@ -233,6 +233,7 @@ export function registerWorld(ctx: Ctx): void {
           kind: 'sceneInfo',
           title: current?.title ?? '',
           parcel: { x: px, y: py },
+          scene: current?.hash,
           realm: realmInfo?.realmName ?? '',
           genesis: satelliteView != null,
           preview: realmInfo?.isPreview ?? false
