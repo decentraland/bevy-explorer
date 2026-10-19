@@ -473,7 +473,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     reply({ kind: 'realmInfo', realm: 'https://realm-provider.decentraland.org/main', satelliteView: GENESIS_SATELLITE_VIEW })
     // The real bridge resolves this per parcel from the live scene list; the mock circles
     // inside one scene, so a single push is the whole story.
-    reply({ kind: 'sceneInfo', title: 'Genesis Plaza' })
+    reply({ kind: 'sceneInfo', title: 'Genesis Plaza', scene: 'bafkreigenesisplazahash' })
     let t = 0
     poseTimer = setInterval(() => {
       t += 0.05
@@ -562,8 +562,14 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     if (new URLSearchParams(location.search).get('worldpw') === '1') {
       setTimeout(() => reply({ kind: 'worldPasswordRequest', world: 'secret-garden.dcl.eth' }), 3000)
     }
-    // ?perm=1 → fire a sample scene permission prompt so the dialog is exercisable in the mock.
+    // ?perm=1 → fire a sample scene permission prompt so the dialog is exercisable in the mock, and
+    // a few used permissions so the rail's permissions list has something to review.
     if (new URLSearchParams(location.search).get('perm') === '1') {
+      const scene = 'bafkreigenesisplazahash'
+      const realm = 'https://realm-provider.decentraland.org/main'
+      for (const [ty, allowed] of [['Fetch', true], ['OpenUrl', false], ['MovePlayer', true]] as const) {
+        reply({ kind: 'permissionUsed', ty, sceneName: 'Genesis Plaza', scene, realm, allowed })
+      }
       setTimeout(
         () =>
           reply({
@@ -817,7 +823,16 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       return
     }
     // no engine to apply the decision in, and no editor in mock mode
-    if (msg.kind === 'permissionResolve' || msg.kind === 'editorScene') return
+    if (msg.kind === 'permissionResolve' || msg.kind === 'permissionRule' || msg.kind === 'resetPermissions' || msg.kind === 'editorScene') return
+    if (msg.kind === 'getPermissionRules') {
+      reply({
+        kind: 'permissionRules',
+        scene: msg.scene,
+        realm: 'https://realm-provider.decentraland.org/main',
+        rules: { scene: [{ ty: 'MovePlayer', allow: 'Allow' }], realm: [], global: [{ ty: 'OpenUrl', allow: 'Deny' }] }
+      })
+      return
+    }
     if (msg.kind === 'getCommunities') {
       reply({ kind: 'communities', communities: mockCommunities })
       return

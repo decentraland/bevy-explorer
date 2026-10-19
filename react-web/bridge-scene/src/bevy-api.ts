@@ -20,6 +20,7 @@ import type {
   HoverEvent,
   HomeScene,
   LiveSceneInfo,
+  PermanentPermissionItem,
   PermissionRequestEvent,
   ProfileChangedEvent,
   ProximityEvent,
@@ -105,6 +106,14 @@ export type SetPermanentPermissionBody = {
   ty: string
   allow: 'Allow' | 'Deny' | null
 }
+// A scene used a permission (common::structs::PermissionUsed, camelCase; not a ts-rs type).
+// `scene` is the scene HASH; `wasAllowed` false is a refused use.
+export type PermissionUsedRaw = {
+  ty: string
+  additional: string | null
+  scene: string
+  wasAllowed: boolean
+}
 
 export type BevyApiInterface = {
   getHomeScene: () => Promise<HomeScene>
@@ -163,6 +172,9 @@ export type BevyApiInterface = {
   /** Answer a password prompt; `password: null` = the player gave up. */
   setWorldPassword?: (body: { password: string | null }) => void
   setPermanentPermission: (body: SetPermanentPermissionBody) => void
+  getPermissionUsedStream: () => Promise<AsyncIterable<PermissionUsedRaw>>
+  /** The stored rules at one level: `value` is the scene hash (Scene) or realm url (Realm). */
+  getPermanentPermissions: (body: { level: 'Scene' | 'Realm' | 'Global'; value?: string }) => Promise<PermanentPermissionItem[]>
   /** Live scenes, for resolving a permission request's scene name (hash → title) and the current
    *  scene to reload — `/reload` uses `parcels`/`isSuper` to target the scene the player stands in,
    *  never the bridge. */

@@ -62,6 +62,10 @@ import type {
   OutfitsMetadata,
   PermissionLevelChoice,
   PermissionRequestMessage,
+  PermissionRuleLevel,
+  PermissionRulesMessage,
+  PermissionRuleValue,
+  PermissionUsedMessage,
   WorldPasswordRequestMessage,
   ProximityTip,
   Profile,
@@ -352,9 +356,57 @@ export interface MutualFriend {
   picture?: string
 }
 
+/** The stored rules for the scene the player stands in: its hash, the realm url they were read
+ *  under (what a rule row's subject carries), and the rules at each level. */
+export type PermissionRules = Omit<PermissionRulesMessage, 'kind'>
+
+/** A "This visit" answer the player gave for `ty` in `scene` (a prompt, or the review). */
+export type VisitAnswer = Omit<PermissionUsedMessage, 'kind'>
+
+/** The engine's latest outcome for a permission the scene used this visit. */
+export interface TriggeredPermission {
+  ty: string
+  allowed: boolean
+}
+
+/** What the review dialog is about: a visit answer ('visit') or a stored rule at its level; `value`
+ *  what the answer or the rule says. */
+export interface PermissionSubject {
+  ty: string
+  sceneName: string
+  scene: string
+  realm: string
+  scope: 'visit' | 'scene' | 'realm' | 'global'
+  value: PermissionRuleValue
+}
+
 export interface PermissionsState {
-  /** Outstanding scene permission prompts, oldest first (the HUD shows one at a time). */
+  /** Outstanding scene permission prompts, oldest first (the HUD shows one at a time). A request
+   *  the player already answered for 'visit' (same scene + type) is answered again without
+   *  being queued, until the player leaves the scene or reloads it. */
   pending: PermissionRequestMessage[]
+  /** The player's "This visit" answers for the scene they stand in, in order. Cleared when the
+   *  player moves to another scene or reloads it. */
+  visit: VisitAnswer[]
+  /** Permissions the scene used this visit, by type, with the engine's latest outcome. The list
+   *  highlights the row that decided each: a visit answer, or the stored rule in force. */
+  triggered: TriggeredPermission[]
+  /** Refusals the player did not click themselves — the HUD answering from a visit deny, or a stored
+   *  rule — by type, that the player has not opened the list for yet: the rail badge. */
+  unseenDenied: number
+  /** The list was opened: the badge clears until the next refused use. */
+  markSeen: () => void
+  /** The stored rules for the current scene, the realm and global, once `loadRules` answered. */
+  rules: PermissionRules | null
+  /** Ask the engine for the stored rules (the list is open). */
+  loadRules: () => void
+  /** Rewrite the rule for one permission and drop its uses from `used` — the next use reports the
+   *  new outcome. 'visit' forgets the engine's stored rule and answers here from now on. */
+  setRule: (subject: PermissionSubject, allow: boolean, level: PermissionRuleLevel) => void
+  /** Clear one stored rule (the subject's level) and this visit's answer for the type. */
+  clearRule: (subject: PermissionSubject) => void
+  /** Forget every stored answer at every level, and this visit's: scenes ask again. */
+  resetDefaults: () => void
   /** Allow/deny the request `id` at the chosen scope, then drop it from the queue. */
   resolve: (id: number, allow: boolean, level: PermissionLevelChoice) => void
 }
@@ -871,6 +923,22 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [permissionQueue, setPermissionQueue] = useState<PermissionRequestMessage[]>([])
+  const [visitAnswers, setVisitAnswers] = useState<VisitAnswer[]>([])
+  // the engine's latest outcome per permission the scene used this visit (scene hash + type)
+  const [triggeredPermissions, setTriggeredPermissions] = useState<(TriggeredPermission & { scene: string })[]>([])
+  // types the scene was refused without the player clicking Deny — by a visit deny or a stored rule
+  // — and those the player has seen. The engine reports the refusal of the request the player did
+  // click Deny (or Escape) on too: that one report is skipped.
+  const [refusedTypes, setRefusedTypes] = useState<string[]>([])
+  const [seenDenied, setSeenDenied] = useState<string[]>([])
+  const skipRefusal = useRef(new Set<string>())
+  const [permissionRules, setPermissionRules] = useState<PermissionRules | null>(null)
+  // hash of the scene the player stands in (sceneInfo), for the rules lookup
+  const currentScene = useRef<string | undefined>(undefined)
+  // The HUD's own answers this visit, by scene hash + type, until the player leaves the scene or
+  // reloads it: a boolean answers the scene's later requests too ('visit'); null does not (a
+  // dismissed prompt asks again; an "Always …" answer is the engine's stored rule from here on).
+  const answeredPermissions = useRef(new Map<string, boolean | null>())
   const [worldPassword, setWorldPassword] = useState<WorldPasswordRequestMessage | null>(null)
   const chatId = useRef(0)
   // The speed to restore when Time progression is turned back on (the last running speed seen).
@@ -1239,6 +1307,20 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         }
         case 'sceneInfo':
           setSceneTitle(msg.title)
+          // the scene's used permissions are only shown, and its visit answers only kept, while
+          // the player stands in it
+          setVisitAnswers((u) => (u.every((e) => e.scene === msg.scene) ? u : u.filter((e) => e.scene === msg.scene)))
+          setTriggeredPermissions((t) => (t.every((e) => e.scene === msg.scene) ? t : t.filter((e) => e.scene === msg.scene)))
+          for (const key of answeredPermissions.current.keys()) {
+            if (!key.startsWith(`${msg.scene}|`)) answeredPermissions.current.delete(key)
+          }
+          if (msg.scene !== currentScene.current) {
+            currentScene.current = msg.scene
+            setRefusedTypes([])
+            setSeenDenied([])
+            setPermissionRules(null)
+            skipRefusal.current.clear()
+          }
           if (msg.title !== '' && msg.parcel != null && msg.realm && !msg.preview && (msg.genesis || msg.realm.includes('.'))) {
             const key = `${msg.realm}|${msg.title}`
             if (key !== visitedTitle.current) {
@@ -1255,12 +1337,33 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         case 'galleryPhoto':
           setGalleryMetas((prev) => ({ ...prev, [msg.id]: msg.meta }))
           break
-        case 'permissionRequest':
+        case 'permissionRequest': {
+          const remembered = answeredPermissions.current.get(`${msg.scene}|${msg.ty}`)
+          if (typeof remembered === 'boolean') {
+            driverRef.current?.send({ kind: 'permissionResolve', id: msg.id, ty: msg.ty, allow: remembered, level: 'visit', scene: msg.scene, realm: msg.realm })
+            break
+          }
           setPermissionQueue((q) => (q.some((r) => r.id === msg.id) ? q : [...q, msg]))
           break
+        }
         case 'permissionWithdrawn':
           setPermissionQueue((q) => q.filter((r) => r.id !== msg.id))
           break
+        case 'permissionUsed':
+          setTriggeredPermissions((t) => {
+            const same = t.find((e) => e.scene === msg.scene && e.ty === msg.ty)
+            if (same?.allowed === msg.allowed) return t
+            return [...t.filter((e) => e !== same), { scene: msg.scene, ty: msg.ty, allowed: msg.allowed }]
+          })
+          if (!msg.allowed && !skipRefusal.current.delete(`${msg.scene}|${msg.ty}`)) {
+            setRefusedTypes((r) => (r.includes(msg.ty) ? r : [...r, msg.ty]))
+          }
+          break
+        case 'permissionRules': {
+          const { kind: _kind, ...rules } = msg
+          if (msg.scene === currentScene.current) setPermissionRules(rules)
+          break
+        }
         case 'worldPasswordRequest':
           setWorldPassword(msg)
           break
@@ -1396,6 +1499,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'reload':
           driverRef.current?.send({ kind: 'reloadScene' })
+          // the reloaded scene starts afresh, so this visit's answers and uses go too
+          answeredPermissions.current.clear()
+          setVisitAnswers([])
+          setTriggeredPermissions([])
+          setRefusedTypes([])
           break
         case 'commands':
           driverRef.current?.send({ kind: 'consoleCommand', command: 'help' })
@@ -1731,11 +1839,70 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     },
     []
   )
+  const loadPermissionRules = useCallback(() => {
+    const scene = currentScene.current
+    if (scene != null) driverRef.current?.send({ kind: 'getPermissionRules', scene })
+  }, [])
+
+  // The HUD answered for `scene` + `ty` (a prompt or the review): remember it; a 'visit' answer is
+  // listed, an "Always …" answer shows as the stored rule once refetched. What the scene did under
+  // the previous state no longer points at a row.
+  const answerPermission = (subject: Omit<VisitAnswer, 'allowed'>, allow: boolean, level: PermissionRuleLevel): void => {
+    const key = `${subject.scene}|${subject.ty}`
+    answeredPermissions.current.set(key, level === 'visit' ? allow : null)
+    const others = (u: VisitAnswer[]): VisitAnswer[] => u.filter((e) => !(e.scene === subject.scene && e.ty === subject.ty))
+    const answer: VisitAnswer = { ty: subject.ty, sceneName: subject.sceneName, scene: subject.scene, realm: subject.realm, allowed: allow }
+    setVisitAnswers((u) => (level === 'visit' ? [...others(u), answer] : others(u)))
+    setTriggeredPermissions((t) => t.filter((e) => !(e.scene === subject.scene && e.ty === subject.ty)))
+    setRefusedTypes((r) => r.filter((ty) => ty !== subject.ty))
+  }
+
+  const setPermissionRule = useCallback(
+    (subject: PermissionSubject, allow: boolean, level: PermissionRuleLevel) => {
+      driverRef.current?.send({ kind: 'permissionRule', ty: subject.ty, level, allow, scene: subject.scene, realm: subject.realm })
+      answerPermission(subject, allow, level)
+      loadPermissionRules()
+    },
+    [loadPermissionRules]
+  )
+
+  // the rule (or visit answer) is gone: the scene asks next time
+  const clearPermissionRule = useCallback(
+    (subject: PermissionSubject) => {
+      if (subject.scope !== 'visit') {
+        driverRef.current?.send({ kind: 'permissionRule', ty: subject.ty, level: subject.scope, allow: null, scene: subject.scene, realm: subject.realm })
+      }
+      answeredPermissions.current.delete(`${subject.scene}|${subject.ty}`)
+      setVisitAnswers((u) => u.filter((e) => !(e.scene === subject.scene && e.ty === subject.ty)))
+      setTriggeredPermissions((t) => t.filter((e) => !(e.scene === subject.scene && e.ty === subject.ty)))
+      setRefusedTypes((r) => r.filter((ty) => ty !== subject.ty))
+      loadPermissionRules()
+    },
+    [loadPermissionRules]
+  )
+
+  const resetPermissions = useCallback(() => {
+    driverRef.current?.send({ kind: 'resetPermissions' })
+    answeredPermissions.current.clear()
+    setVisitAnswers([])
+    setTriggeredPermissions([])
+    setRefusedTypes([])
+    loadPermissionRules()
+  }, [loadPermissionRules])
+
+  const markPermissionsSeen = useCallback(() => setSeenDenied(refusedTypes), [refusedTypes])
+  const unseenDenied = refusedTypes.filter((ty) => !seenDenied.includes(ty)).length
+
   const resolvePermission = useCallback(
     (id: number, allow: boolean, level: PermissionLevelChoice) => {
       setPermissionQueue((q) => {
         const req = q.find((r) => r.id === id)
         if (req) {
+          // a dismissed prompt ('once') is no answer: the scene asks again, its refusal has no row
+          if (level === 'once') answeredPermissions.current.set(`${req.scene}|${req.ty}`, null)
+          else answerPermission({ ty: req.ty, sceneName: req.sceneName, scene: req.scene, realm: req.realm }, allow, level)
+          // the player refused this one themselves: its report is not a silent refusal
+          if (!allow) skipRefusal.current.add(`${req.scene}|${req.ty}`)
           driverRef.current?.send({ kind: 'permissionResolve', id, ty: req.ty, allow, level, scene: req.scene, realm: req.realm })
         }
         return q.filter((r) => r.id !== id)
@@ -2871,7 +3038,19 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       loadPhoto: loadGalleryPhoto,
       remove: removeGalleryPhoto
     },
-    permissions: { pending: permissionQueue, resolve: resolvePermission },
+    permissions: {
+      pending: permissionQueue,
+      visit: visitAnswers,
+      triggered: triggeredPermissions,
+      unseenDenied,
+      markSeen: markPermissionsSeen,
+      rules: permissionRules,
+      loadRules: loadPermissionRules,
+      setRule: setPermissionRule,
+      clearRule: clearPermissionRule,
+      resetDefaults: resetPermissions,
+      resolve: resolvePermission
+    },
     worldPassword: { pending: worldPassword, resolve: resolveWorldPassword },
     editor: { mode: editorMode, setMode: setEditorMode },
     mic: { enabled: mic.enabled, available: mic.available, toggle: toggleMic },

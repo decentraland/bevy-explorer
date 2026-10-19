@@ -41,7 +41,7 @@ describe('sidebar auto-hide (Unity SidebarConfigPanel)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sidebar settings' }))
     fireEvent.pointerLeave(nav())
     fireEvent.click(screen.getByRole('switch', { name: 'Auto-hide sidebar' }))
-    fireEvent.mouseDown(document.body)
+    fireEvent.pointerDown(document.body)
     act(() => vi.advanceTimersByTime(350))
     expect(nav()).toHaveAttribute('data-hidden', 'true')
   })

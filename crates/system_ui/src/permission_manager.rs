@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use bevy::prelude::*;
+use bevy_console::ConsoleCommand;
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
@@ -11,6 +12,7 @@ use common::{
         ShowSettingsEvent, ZOrder,
     },
 };
+use console::DoAddConsoleCommand;
 use scene_runner::{
     initialize_scene::LiveScenes,
     permissions::{PermissionManager, PermissionRequest},
@@ -38,6 +40,26 @@ impl Plugin for PermissionPlugin {
         } else {
             app.add_systems(PostUpdate, handle_scene_permissions);
         }
+
+        app.add_console_command::<ResetPermissionsCommand, _>(reset_permissions_command);
+    }
+}
+
+/// forget every stored permission answer, at every level
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/reset_permissions")]
+struct ResetPermissionsCommand;
+
+fn reset_permissions_command(
+    mut input: ConsoleCommand<ResetPermissionsCommand>,
+    mut config: ResMut<AppConfig>,
+) {
+    if let Some(Ok(_)) = input.take() {
+        config.default_permissions.clear();
+        config.realm_permissions.clear();
+        config.scene_permissions.clear();
+        platform::write_config_file(&*config);
+        input.reply_ok("Permissions reset to default");
     }
 }
 
@@ -414,10 +436,15 @@ pub fn handle_scene_permissions(
                 } else {
                     store.remove(&result.ty);
                 }
+                platform::write_config_file(&*config);
             }
             SystemApi::GetPermanentPermissions(level, sender) => {
                 let perms = match level {
                     PermissionLevel::Scene(hash) => config.scene_permissions.get(hash),
+                    // stored under the current about_url (see SetPermanentPermission above)
+                    PermissionLevel::Realm(realm) if current_realm.about_url.starts_with(realm) => {
+                        config.realm_permissions.get(&current_realm.about_url)
+                    }
                     PermissionLevel::Realm(realm) => config.realm_permissions.get(realm),
                     PermissionLevel::Global => Some(&config.default_permissions),
                 };
