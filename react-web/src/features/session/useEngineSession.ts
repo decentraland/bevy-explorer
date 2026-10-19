@@ -16,6 +16,7 @@ import type { FatalError } from '../error/fatalError'
 import { createLoadingProgress } from './loadingProgress'
 import { DEFAULT_REALM } from '../../lib/baseDomain'
 import { checkRealm, realmCheckMessage } from '../../lib/realmCheck'
+import { entryRealm } from '../../lib/entryParams'
 import { color3ToHex, hexToColor3 } from '../../lib/color'
 import { closeTopPopup, hasOpenPopup, subscribePopups } from '../../design'
 import { emitFriendEvent } from '../friends/friendEvents'
@@ -2137,9 +2138,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       const raw = q.get('position')
       const [x, y] = raw?.split(',').map((n) => parseInt(n.trim(), 10)) ?? []
       const hasPosition = Number.isFinite(x) && Number.isFinite(y)
-      const realm = q.get('realm')
-      if (realm != null && realm !== '')
-        return { kind: 'world', realm, position: hasPosition ? `${x},${y}` : undefined }
+      const realm = entryRealm(q)
+      if (realm != null) return { kind: 'world', realm, position: hasPosition ? `${x},${y}` : undefined }
       if (hasPosition) return { kind: 'parcel', x, y }
       // A hidden HUD renders no picker — land at Genesis 0,0 so the boot doesn't strand on an
       // invisible screen (parity with the picker's "skip").

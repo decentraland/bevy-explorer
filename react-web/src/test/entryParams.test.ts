@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { WEB_PARAMS } from '../engine/generated'
-import { acceptedEntryParams, unrecognisedEntryParams } from '../lib/entryParams'
+import { acceptedEntryParams, entryRealm, unrecognisedEntryParams } from '../lib/entryParams'
 
 describe('acceptedEntryParams', () => {
   it('is every link-settable engine param plus the page switches, with a doc each', () => {
@@ -21,7 +21,7 @@ describe('acceptedEntryParams', () => {
 
 describe('unrecognisedEntryParams', () => {
   it('is empty for a link made of accepted params only', () => {
-    expect(unrecognisedEntryParams(new URLSearchParams('?realm=x&position=1,2&mock=1&preview'))).toEqual([])
+    expect(unrecognisedEntryParams(new URLSearchParams('?realm=x&position=1,2&mock=1&preview&world=boedo'))).toEqual([])
     expect(unrecognisedEntryParams(new URLSearchParams('?native=1&hud=0&gate=gpu&simerror=realm'))).toEqual([])
     // campaign links: Segment reads them, never called out
     expect(unrecognisedEntryParams(new URLSearchParams('?utm_source=x&utm_campaign=y&anon_user_id=abc&analyticsSession=s'))).toEqual([])
@@ -30,5 +30,15 @@ describe('unrecognisedEntryParams', () => {
   it('names each unknown key once, including the host-only editor flag', () => {
     const q = new URLSearchParams('?realm=x&reaml=y&editor&reaml=z&initialRealm=w')
     expect(unrecognisedEntryParams(q)).toEqual(['reaml', 'editor', 'initialRealm'])
+  })
+})
+
+describe('entryRealm', () => {
+  it('reads a world name as its .dcl.eth realm, with realm taking precedence', () => {
+    expect(entryRealm(new URLSearchParams('?world=boedo'))).toBe('boedo.dcl.eth')
+    expect(entryRealm(new URLSearchParams('?world=Boedo.dcl.eth'))).toBe('boedo.dcl.eth')
+    expect(entryRealm(new URLSearchParams('?world=boedo&realm=https://r'))).toBe('https://r')
+    expect(entryRealm(new URLSearchParams('?world=https://evil.example'))).toBeNull()
+    expect(entryRealm(new URLSearchParams('?position=1,2'))).toBeNull()
   })
 })

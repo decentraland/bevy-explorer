@@ -16,8 +16,20 @@ export interface AcceptedParam {
 
 // The page's own user-facing params — read by App / bootMode, never handed to the engine.
 const PAGE_PARAMS: Record<string, string> = {
+  world: 'A world by name: `world=boedo` is `realm=boedo.dcl.eth`.',
   guest: '`1` skips the sign-in screen with a guest login.',
   fps: '`1` shows the frame-rate overlay (Ctrl/Cmd+Shift+F toggles it).'
+}
+
+const WORLD_NAME = /^[a-z0-9-]+$/
+
+/** The realm a link names: `realm`, else `world`, a name under `.dcl.eth` given bare or in full.
+ *  Anything else as a world (a url, another ens) is no destination. */
+export function entryRealm(q: URLSearchParams): string | null {
+  const realm = q.get('realm')
+  if (realm != null && realm !== '') return realm
+  const world = q.get('world')?.trim().toLowerCase().replace(/\.dcl\.eth$/, '')
+  return world != null && WORLD_NAME.test(world) ? `${world}.dcl.eth` : null
 }
 
 // Also read by this page, but not a user's to set: forced by the host (native, hud), or debug /

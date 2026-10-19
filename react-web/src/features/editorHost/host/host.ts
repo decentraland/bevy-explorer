@@ -9,6 +9,7 @@ import { sceneIdFromAbout, stageEditorScene } from './editorScene'
 import type { Signer } from './signer'
 import type { SignMessage } from './sign'
 import { inShell, shellRequest } from '../../../lib/shell'
+import { entryRealm } from '../../../lib/entryParams'
 // Vite's worker pipeline is what bundles a file on its own; this one is loaded by script tag.
 import signerUrl from './signer.ts?worker&url'
 
@@ -375,7 +376,7 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
       if (!PROJECT_ID.test(projectId) || parcel == null) throw new Error('openPreview: invalid project id or position')
       readClock()
       const q = new URLSearchParams(location.search)
-      home ??= returning ?? { realm: q.get('realm'), position: q.get('position') }
+      home ??= returning ?? { realm: entryRealm(q), position: q.get('position') }
       previewing = projectId
       // no trailing slash: the engine appends /about
       const realm = `${pageDir}preview/${projectId}`
