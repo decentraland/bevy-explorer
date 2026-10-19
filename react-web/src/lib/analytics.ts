@@ -115,6 +115,12 @@ export function isAttributionParam(name: string): boolean {
   return name === ANON_USER_ID_PARAM || name.startsWith('utm_')
 }
 
+/** The entry's `utm_*` params, for the sign-in page: its Segment calls read the campaign off
+ *  its own url and tie it to the address on sign-in. */
+export function attributionParams(): [string, string][] {
+  return [...entry].filter(([name]) => name.startsWith('utm_'))
+}
+
 /** What a page load reports before any screen shows, as mobile's app start does. The return from
  *  the sign-in redirect continues the session instead. */
 export function bootAnalytics(): void {

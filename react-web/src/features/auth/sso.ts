@@ -7,7 +7,7 @@
 // redirect the browser to `/auth/login?redirectTo=<here>`; the auth site signs in and
 // redirects back, by which point the identity is already in localStorage.
 
-import { sessionId } from '../../lib/analytics'
+import { attributionParams, sessionId } from '../../lib/analytics'
 import { inShell, postToShell, shellRequest } from '../../lib/shell'
 import { GUEST_SESSION_KEY } from './thirdweb'
 
@@ -146,8 +146,9 @@ export function rootAddress(identity: AuthIdentity): string {
 
 // Same-origin auth site. Redirecting here keeps us on decentraland.org/.zone/.today so the
 // identity it writes lands in this origin's localStorage.
-export function authLoginUrl(redirectTo: string = location.href): string {
-  return `/auth/login?redirectTo=${encodeURIComponent(redirectTo)}`
+export function authLoginUrl(redirectTo: string = location.href, attribution = attributionParams()): string {
+  const campaign = attribution.map(([name, value]) => `&${name}=${encodeURIComponent(value)}`).join('')
+  return `/auth/login?redirectTo=${encodeURIComponent(redirectTo)}${campaign}`
 }
 
 // Send the browser to the auth site to sign in (fresh account or switch account). Inside the shell
