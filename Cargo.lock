@@ -1427,7 +1427,6 @@ dependencies = [
  "system_bridge",
  "texture_camera",
  "ui_core",
- "urn",
  "world_ui",
 ]
 
