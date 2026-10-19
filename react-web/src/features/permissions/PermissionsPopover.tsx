@@ -63,7 +63,7 @@ export function PermissionsPopover({
     const half = ref.current.getBoundingClientRect().height / 2
     setTop(Math.max(half + 8, Math.min(r.top + r.height / 2, window.innerHeight - half - 8)))
     setLeft(r.left + r.width / 2 + r.width)
-  }, [anchor, visit, rules])
+  }, [anchor, visit, rules, triggered])
 
   // pointerdown so a click on the world closes it too (the canvas suppresses mousedown)
   useEffect(() => {

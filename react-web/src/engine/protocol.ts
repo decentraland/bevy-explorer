@@ -885,8 +885,9 @@ export interface PermissionWithdrawnMessage {
 }
 
 /** A scene used a permission, allowed or refused (scene → page, from the engine's permission-used
- *  stream). The HUD keeps one entry per scene + type + outcome for the scene the player stands in,
- *  so the rail can show what it has been granted or refused and let the player revisit either. */
+ *  stream). The HUD keeps the latest outcome per type for the scene the player stands in, so the
+ *  rail can highlight the answer or rule that decided it and count the refusals the player did
+ *  not click themselves. */
 export interface PermissionUsedMessage {
   kind: 'permissionUsed'
   ty: string
@@ -926,8 +927,8 @@ export interface WorldPasswordResolveRequest {
 export type PermissionLevelChoice = 'once' | 'visit' | 'scene' | 'realm' | 'global'
 
 /** Scope of a rule written from the permissions review (page → scene): the "Always for …" levels
- *  store Allow/Deny in the engine; 'visit' forgets the stored rule at every level, so the scene
- *  asks again and the page answers from its visit memory. */
+ *  store Allow/Deny in the engine; 'visit' forgets the stored rule at scene and realm level and
+ *  stores Ask at global, so the scene asks again and the page answers from its visit memory. */
 export type PermissionRuleLevel = Exclude<PermissionLevelChoice, 'once'>
 
 /** Rewrite the rule for one permission (page → scene → setPermanentPermission). Only the stored
@@ -936,7 +937,8 @@ export interface PermissionRuleRequest {
   kind: 'permissionRule'
   ty: string
   level: PermissionRuleLevel
-  /** Ignored for 'visit' (the page keeps that answer); null clears the stored rule at `level`. */
+  /** Ignored for 'visit' (the page keeps that answer); null clears the stored rule at `level`
+   *  (at 'global', stores Ask: the built-in default allows some types outright). */
   allow: boolean | null
   scene: string
   realm: string

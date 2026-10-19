@@ -99,12 +99,12 @@ export type KernelFetchResponse = { ok: boolean; status: number; statusText?: st
 // `type: 'cancelled'` when the engine resolved an earlier request itself.
 export type PermissionRequestRaw = PermissionRequestEvent
 // Persist a permission at a level. `value` is the scene hash (Scene) or realm url (Realm),
-// unused for Global. `allow: null` clears the stored value.
+// unused for Global. `allow: null` clears the stored value; 'Ask' stores an explicit prompt.
 export type SetPermanentPermissionBody = {
   level: 'Scene' | 'Realm' | 'Global'
   value?: string
   ty: string
-  allow: 'Allow' | 'Deny' | null
+  allow: 'Allow' | 'Deny' | 'Ask' | null
 }
 // A scene used a permission (common::structs::PermissionUsed, camelCase; not a ts-rs type).
 // `scene` is the scene HASH; `wasAllowed` false is a refused use.

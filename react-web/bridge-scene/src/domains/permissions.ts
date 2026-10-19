@@ -11,7 +11,8 @@ import { relay } from '../system-helpers'
 import type { Ctx } from '../bridge'
 
 // A scene exercising a permission every frame (Fetch, MovePlayer) reports a use every frame; the
-// HUD keeps one entry per scene + type + outcome, so repeats within this window are not sent.
+// HUD keeps one entry per scene + type, so repeated allows within this window are not sent. Every
+// refusal is: the HUD skips the one the player clicked and counts the rest.
 const USED_REPEAT_MS = 2000
 
 export function registerPermissions(ctx: Ctx): void {
@@ -76,11 +77,13 @@ export function registerPermissions(ctx: Ctx): void {
 
   const lastSent = new Map<string, number>()
   relay('permissionsUsed', async () => await BevyApi.getPermissionUsedStream(), async (use) => {
-    const key = `${use.scene}|${use.ty}|${use.wasAllowed}`
-    const now = Date.now()
-    const last = lastSent.get(key)
-    if (last != null && now - last < USED_REPEAT_MS) return
-    lastSent.set(key, now)
+    if (use.wasAllowed) {
+      const key = `${use.scene}|${use.ty}`
+      const now = Date.now()
+      const last = lastSent.get(key)
+      if (last != null && now - last < USED_REPEAT_MS) return
+      lastSent.set(key, now)
+    }
     ctx.send({
       kind: 'permissionUsed',
       ty: use.ty,
@@ -93,7 +96,8 @@ export function registerPermissions(ctx: Ctx): void {
 
   // The review dialog only rewrites stored rules — there is no request to resolve. 'visit'
   // forgets the type at every level (the page answers from then on), so an accidental "Always deny
-  // for Global" is one click to undo.
+  // for Global" is one click to undo. Below Global sits only the built-in default, Allow for some
+  // types, so a cleared Global rule is stored as Ask: the scene asks, rather than silently acting.
   ctx.on('getPermissionRules', async (msg) => {
     const realm = await realmProvider()
     const at = async (level: 'Scene' | 'Realm' | 'Global', value?: string): Promise<Array<{ ty: string; allow: 'Allow' | 'Deny' | 'Ask' }>> =>
@@ -114,12 +118,13 @@ export function registerPermissions(ctx: Ctx): void {
     if (msg.level === 'visit') {
       BevyApi.setPermanentPermission({ level: 'Scene', value: msg.scene, ty: msg.ty, allow: null })
       BevyApi.setPermanentPermission({ level: 'Realm', value: msg.realm, ty: msg.ty, allow: null })
-      BevyApi.setPermanentPermission({ level: 'Global', ty: msg.ty, allow: null })
+      BevyApi.setPermanentPermission({ level: 'Global', ty: msg.ty, allow: 'Ask' })
       return
     }
     const level = msg.level === 'scene' ? 'Scene' : msg.level === 'realm' ? 'Realm' : 'Global'
     const value = msg.level === 'scene' ? msg.scene : msg.level === 'realm' ? msg.realm : undefined
-    BevyApi.setPermanentPermission({ level, value, ty: msg.ty, allow: msg.allow == null ? null : msg.allow ? 'Allow' : 'Deny' })
+    const cleared = level === 'Global' ? 'Ask' : null
+    BevyApi.setPermanentPermission({ level, value, ty: msg.ty, allow: msg.allow == null ? cleared : msg.allow ? 'Allow' : 'Deny' })
   })
 
   // 'once' and 'visit' resolve just this request (the page keeps the visit memory); the

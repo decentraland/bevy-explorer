@@ -385,8 +385,8 @@ export interface PermissionsState {
    *  the player already answered for 'visit' (same scene + type) is answered again without
    *  being queued, until the player leaves the scene or reloads it. */
   pending: PermissionRequestMessage[]
-  /** The player's "This visit" answers for the scene they stand in, in order. Cleared when the
-   *  player moves to another scene or reloads it. */
+  /** The player's "This visit" answers for the scene they stand in, in order. A scene's answers
+   *  are forgotten when the player leaves it or reloads it. */
   visit: VisitAnswer[]
   /** Permissions the scene used this visit, by type, with the engine's latest outcome. The list
    *  highlights the row that decided each: a visit answer, or the stored rule in force. */
@@ -935,6 +935,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [permissionRules, setPermissionRules] = useState<PermissionRules | null>(null)
   // hash of the scene the player stands in (sceneInfo), for the rules lookup
   const currentScene = useRef<string | undefined>(undefined)
+  const [sceneHash, setSceneHash] = useState<string | undefined>(undefined)
   // The HUD's own answers this visit, by scene hash + type, until the player leaves the scene or
   // reloads it: a boolean answers the scene's later requests too ('visit'); null does not (a
   // dismissed prompt asks again; an "Always …" answer is the engine's stored rule from here on).
@@ -1307,15 +1308,19 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         }
         case 'sceneInfo':
           setSceneTitle(msg.title)
-          // the scene's used permissions are only shown, and its visit answers only kept, while
-          // the player stands in it
-          setVisitAnswers((u) => (u.every((e) => e.scene === msg.scene) ? u : u.filter((e) => e.scene === msg.scene)))
-          setTriggeredPermissions((t) => (t.every((e) => e.scene === msg.scene) ? t : t.filter((e) => e.scene === msg.scene)))
-          for (const key of answeredPermissions.current.keys()) {
-            if (!key.startsWith(`${msg.scene}|`)) answeredPermissions.current.delete(key)
-          }
+          // Leaving a scene forgets its visit answers (a neighbour's are kept until the player leaves
+          // that one); the used permissions and the badge are the current scene's only.
           if (msg.scene !== currentScene.current) {
+            const left = currentScene.current
+            if (left != null) {
+              setVisitAnswers((u) => u.filter((e) => e.scene !== left))
+              for (const key of answeredPermissions.current.keys()) {
+                if (key.startsWith(`${left}|`)) answeredPermissions.current.delete(key)
+              }
+            }
             currentScene.current = msg.scene
+            setSceneHash(msg.scene)
+            setTriggeredPermissions([])
             setRefusedTypes([])
             setSeenDenied([])
             setPermissionRules(null)
@@ -1350,6 +1355,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           setPermissionQueue((q) => q.filter((r) => r.id !== msg.id))
           break
         case 'permissionUsed':
+          // a neighbouring scene's or a portable's use is not this scene's
+          if (msg.scene !== currentScene.current) break
           setTriggeredPermissions((t) => {
             const same = t.find((e) => e.scene === msg.scene && e.ty === msg.ty)
             if (same?.allowed === msg.allowed) return t
@@ -1504,6 +1511,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           setVisitAnswers([])
           setTriggeredPermissions([])
           setRefusedTypes([])
+          setSeenDenied([])
+          skipRefusal.current.clear()
           break
         case 'commands':
           driverRef.current?.send({ kind: 'consoleCommand', command: 'help' })
@@ -1855,6 +1864,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setVisitAnswers((u) => (level === 'visit' ? [...others(u), answer] : others(u)))
     setTriggeredPermissions((t) => t.filter((e) => !(e.scene === subject.scene && e.ty === subject.ty)))
     setRefusedTypes((r) => r.filter((ty) => ty !== subject.ty))
+    setSeenDenied((s) => s.filter((ty) => ty !== subject.ty))
   }
 
   const setPermissionRule = useCallback(
@@ -1876,6 +1886,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       setVisitAnswers((u) => u.filter((e) => !(e.scene === subject.scene && e.ty === subject.ty)))
       setTriggeredPermissions((t) => t.filter((e) => !(e.scene === subject.scene && e.ty === subject.ty)))
       setRefusedTypes((r) => r.filter((ty) => ty !== subject.ty))
+      setSeenDenied((s) => s.filter((ty) => ty !== subject.ty))
       loadPermissionRules()
     },
     [loadPermissionRules]
@@ -1887,6 +1898,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setVisitAnswers([])
     setTriggeredPermissions([])
     setRefusedTypes([])
+    setSeenDenied([])
+    skipRefusal.current.clear()
     loadPermissionRules()
   }, [loadPermissionRules])
 
@@ -1904,6 +1917,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           // the player refused this one themselves: its report is not a silent refusal
           if (!allow) skipRefusal.current.add(`${req.scene}|${req.ty}`)
           driverRef.current?.send({ kind: 'permissionResolve', id, ty: req.ty, allow, level, scene: req.scene, realm: req.realm })
+          // a visit answer settles the scene's other queued requests for the type as well
+          if (level === 'visit') {
+            const same = q.filter((r) => r.id !== id && r.scene === req.scene && r.ty === req.ty)
+            for (const r of same) driverRef.current?.send({ kind: 'permissionResolve', id: r.id, ty: r.ty, allow, level, scene: r.scene, realm: r.realm })
+            return q.filter((r) => r.id !== id && !same.includes(r))
+          }
         }
         return q.filter((r) => r.id !== id)
       })
@@ -3040,7 +3059,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     },
     permissions: {
       pending: permissionQueue,
-      visit: visitAnswers,
+      visit: visitAnswers.filter((e) => e.scene === sceneHash),
       triggered: triggeredPermissions,
       unseenDenied,
       markSeen: markPermissionsSeen,

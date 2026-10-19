@@ -33,11 +33,17 @@ const RULES = { scene: [], realm: [{ ty: 'Fetch', allow: 'Allow' as const }], gl
 // a visit answer's review subject
 const SUBJECT: PermissionSubject = { ty: 'OpenUrl', sceneName: 'Genesis Plaza', scene: 'bafkscenehash', realm: USED.realm, scope: 'visit', value: 'Deny' }
 
+// enter the world standing in SCENE_INFO's scene: answers, uses and rules are scoped to it
+const enter = async (h: ReturnType<typeof renderSession>): Promise<void> => {
+  await enterAsGuest(h)
+  h.driver.emit(SCENE_INFO)
+}
+
 // DOMAIN: permissions — a scene's prompt is queued, and the user's decision is posted back.
 describe('permissions domain', () => {
   it('queues an incoming permission request', async () => {
     const h = renderSession()
-    await enterAsGuest(h)
+    await enter(h)
     h.driver.emit(REQ)
     expect(h.session().permissions.pending).toHaveLength(1)
     expect(h.session().permissions.pending[0]).toMatchObject({ id: 7, ty: 'ChangeRealm' })
@@ -45,7 +51,7 @@ describe('permissions domain', () => {
 
   it('a re-sent request with the same id does not double-queue', async () => {
     const h = renderSession()
-    await enterAsGuest(h)
+    await enter(h)
     h.driver.emit(REQ)
     h.driver.emit(REQ)
     expect(h.session().permissions.pending).toHaveLength(1)
@@ -53,7 +59,7 @@ describe('permissions domain', () => {
 
   it('resolving "visit" posts the decision and clears the queue', async () => {
     const h = renderSession()
-    await enterAsGuest(h)
+    await enter(h)
     h.driver.emit(REQ)
     act(() => h.session().permissions.resolve(7, true, 'visit'))
     expect(h.driver.last('permissionResolve')).toEqual({
@@ -70,7 +76,7 @@ describe('permissions domain', () => {
 
   it('a "visit" answer is repeated for the same scene + type without queueing; other scenes still ask', async () => {
     const h = renderSession()
-    await enterAsGuest(h)
+    await enter(h)
     h.driver.emit(REQ)
     act(() => h.session().permissions.resolve(7, false, 'visit'))
     h.driver.emit({ ...REQ, id: 8 })
@@ -81,9 +87,45 @@ describe('permissions domain', () => {
     expect(h.session().permissions.pending.map((r) => r.id)).toEqual([9, 10])
   })
 
+  it('a "visit" answer settles the scene\'s other queued requests for the type; other types stay', async () => {
+    const h = renderSession()
+    await enter(h)
+    h.driver.emit(REQ)
+    h.driver.emit({ ...REQ, id: 8 })
+    h.driver.emit({ ...REQ, id: 9, ty: 'OpenUrl' })
+    h.driver.emit({ ...REQ, id: 11, scene: 'bafkotherhash' })
+    act(() => h.session().permissions.resolve(7, false, 'visit'))
+    expect(h.driver.sentOf('permissionResolve').map((m) => m.id)).toEqual([7, 8])
+    expect(h.driver.last('permissionResolve')).toMatchObject({ id: 8, allow: false, level: 'visit' })
+    expect(h.session().permissions.pending.map((r) => r.id)).toEqual([9, 11])
+    // the player clicked one refusal; the HUD gave the other
+    h.driver.emit({ ...USED, ty: 'ChangeRealm' })
+    h.driver.emit({ ...USED, ty: 'ChangeRealm' })
+    expect(h.session().permissions.unseenDenied).toBe(1)
+  })
+
+  it('a neighbour\'s "visit" answer is kept while the player walks the current scene, and until that scene is left', async () => {
+    const h = renderSession()
+    await enter(h)
+    h.driver.emit({ ...REQ, id: 20, scene: 'bafkneighbourhash', sceneName: 'Next door' })
+    act(() => h.session().permissions.resolve(20, true, 'visit'))
+    // the neighbour's answer is not this scene's row
+    expect(h.session().permissions.visit).toHaveLength(0)
+    h.driver.emit(SCENE_INFO)
+    h.driver.emit({ ...SCENE_INFO, scene: 'bafkotherhash', title: 'Across the road' })
+    h.driver.emit({ ...REQ, id: 21, scene: 'bafkneighbourhash', sceneName: 'Next door' })
+    expect(h.session().permissions.pending).toHaveLength(0)
+    expect(h.driver.last('permissionResolve')).toMatchObject({ id: 21, allow: true, level: 'visit' })
+    h.driver.emit({ ...SCENE_INFO, scene: 'bafkneighbourhash', title: 'Next door' })
+    expect(h.session().permissions.visit.map((v) => v.scene)).toEqual(['bafkneighbourhash'])
+    h.driver.emit(SCENE_INFO)
+    h.driver.emit({ ...REQ, id: 22, scene: 'bafkneighbourhash', sceneName: 'Next door' })
+    expect(h.session().permissions.pending.map((r) => r.id)).toEqual([22])
+  })
+
   it('a "visit" answer is forgotten when the player leaves the scene or reloads it', async () => {
     const h = renderSession()
-    await enterAsGuest(h)
+    await enter(h)
     h.driver.emit(REQ)
     act(() => h.session().permissions.resolve(7, true, 'visit'))
     h.driver.emit({ kind: 'sceneInfo', title: 'Genesis Plaza', scene: 'bafkscenehash' })
@@ -100,7 +142,7 @@ describe('permissions domain', () => {
 
   it('a dismissed prompt has no row: its refusal is not counted', async () => {
     const h = renderSession()
-    await enterAsGuest(h)
+    await enter(h)
     h.driver.emit(REQ)
     act(() => h.session().permissions.resolve(7, false, 'once'))
     h.driver.emit({ ...USED, ty: 'ChangeRealm' })
@@ -111,7 +153,7 @@ describe('permissions domain', () => {
 
   it('a "visit" deny is listed; the refusal the player clicked is not badged, the ones the HUD then gives are; an "Always …" answer is left to the stored rule', async () => {
     const h = renderSession()
-    await enterAsGuest(h)
+    await enter(h)
     h.driver.emit(REQ)
     act(() => h.session().permissions.resolve(7, false, 'visit'))
     expect(h.session().permissions.visit).toEqual([{ ty: 'ChangeRealm', sceneName: 'Genesis Plaza', scene: 'bafkscenehash', realm: REQ.realm, allowed: false }])
@@ -130,7 +172,7 @@ describe('permissions domain', () => {
 
   it('an "Always for Scene" deny: the clicked refusal is not badged, later refusals by the stored rule are', async () => {
     const h = renderSession()
-    await enterAsGuest(h)
+    await enter(h)
     h.driver.emit(REQ)
     act(() => h.session().permissions.resolve(7, false, 'scene'))
     h.driver.emit({ ...USED, ty: 'ChangeRealm' })
@@ -141,7 +183,7 @@ describe('permissions domain', () => {
 
   it('dismissing ("once") and a stored-rule answer do not become visit answers', async () => {
     const h = renderSession()
-    await enterAsGuest(h)
+    await enter(h)
     h.driver.emit(REQ)
     act(() => h.session().permissions.resolve(7, false, 'once'))
     h.driver.emit({ ...REQ, id: 8 })
@@ -152,7 +194,7 @@ describe('permissions domain', () => {
 
   it('a review answer replaces the visit answer: "visit" is remembered here, "Always …" is not', async () => {
     const h = renderSession()
-    await enterAsGuest(h)
+    await enter(h)
     h.driver.emit(REQ)
     act(() => h.session().permissions.resolve(7, true, 'visit'))
     act(() => h.session().permissions.setRule({ ...SUBJECT, ty: 'ChangeRealm', value: 'Allow' }, false, 'visit'))
@@ -166,7 +208,7 @@ describe('permissions domain', () => {
 
   it('a withdrawn request is dropped from the queue without a decision', async () => {
     const h = renderSession()
-    await enterAsGuest(h)
+    await enter(h)
     h.driver.emit(REQ)
     h.driver.emit({ ...REQ, id: 8 })
     h.driver.emit({ kind: 'permissionWithdrawn', id: 8 })
@@ -176,7 +218,7 @@ describe('permissions domain', () => {
 
   it('a permanent-level deny carries the chosen scope back', async () => {
     const h = renderSession()
-    await enterAsGuest(h)
+    await enter(h)
     h.driver.emit(REQ)
     act(() => h.session().permissions.resolve(7, false, 'realm'))
     expect(h.driver.last('permissionResolve')).toMatchObject({ allow: false, level: 'realm' })
@@ -212,7 +254,7 @@ describe('PermissionDialog', () => {
 describe('triggered uses + badge', () => {
   it('keeps the latest outcome per type, counts refusals a stored rule decided until the list is opened', async () => {
     const h = renderSession()
-    await enterAsGuest(h)
+    await enter(h)
     h.driver.emit(USED)
     h.driver.emit(USED)
     h.driver.emit({ ...USED, ty: 'Fetch', allowed: true })
@@ -235,7 +277,7 @@ describe('triggered uses + badge', () => {
 
   it('is cleared with the visit answers when the player moves to another scene or reloads', async () => {
     const h = renderSession()
-    await enterAsGuest(h)
+    await enter(h)
     h.driver.emit(USED)
     h.driver.emit(REQ)
     act(() => h.session().permissions.resolve(7, true, 'visit'))
@@ -251,10 +293,38 @@ describe('triggered uses + badge', () => {
   })
 })
 
+describe('badge after the list was opened', () => {
+  it('a refusal by a rule set after opening the list is badged; so is one after /reload', async () => {
+    const h = renderSession()
+    await enter(h)
+    h.driver.emit(USED)
+    act(() => h.session().permissions.markSeen())
+    expect(h.session().permissions.unseenDenied).toBe(0)
+    h.driver.emit({ ...REQ, ty: 'OpenUrl' })
+    act(() => h.session().permissions.resolve(7, false, 'scene'))
+    h.driver.emit(USED)
+    expect(h.session().permissions.unseenDenied).toBe(0)
+    h.driver.emit(USED)
+    expect(h.session().permissions.unseenDenied).toBe(1)
+    act(() => h.session().permissions.markSeen())
+    act(() => h.session().chat.send('/reload'))
+    h.driver.emit(USED)
+    expect(h.session().permissions.unseenDenied).toBe(1)
+  })
+
+  it('a use reported for another scene neither badges nor highlights this one', async () => {
+    const h = renderSession()
+    await enter(h)
+    h.driver.emit({ ...USED, scene: 'bafkotherhash', sceneName: 'Next door' })
+    expect(h.session().permissions.triggered).toHaveLength(0)
+    expect(h.session().permissions.unseenDenied).toBe(0)
+  })
+})
+
 describe('stored rules', () => {
   it('are fetched for the scene the player stands in on request, and dropped on leaving', async () => {
     const h = renderSession()
-    await enterAsGuest(h)
+    await enterAsGuest(h) // no scene known yet
     act(() => h.session().permissions.loadRules())
     expect(h.driver.last('getPermissionRules')).toBeUndefined()
     h.driver.emit(SCENE_INFO)
@@ -271,7 +341,7 @@ describe('stored rules', () => {
 
   it('setRule posts the rule, lists a "visit" answer, and refetches', async () => {
     const h = renderSession()
-    await enterAsGuest(h)
+    await enter(h)
     h.driver.emit(SCENE_INFO)
     h.driver.emit(USED)
     expect(h.session().permissions.unseenDenied).toBe(1)
@@ -292,7 +362,7 @@ describe('stored rules', () => {
 
   it('a stored scene rule → "This visit": later requests are answered here without a prompt', async () => {
     const h = renderSession()
-    await enterAsGuest(h)
+    await enter(h)
     h.driver.emit(SCENE_INFO)
     h.driver.emit({ kind: 'permissionRules', scene: 'bafkscenehash', realm: REQ.realm, rules: { ...RULES, scene: [{ ty: 'ChangeRealm', allow: 'Deny' }] } })
     const stored = h.session().permissions.rules!
@@ -307,7 +377,7 @@ describe('stored rules', () => {
 
   it('clearRule on a visit answer forgets it without an engine write; the scene asks again', async () => {
     const h = renderSession()
-    await enterAsGuest(h)
+    await enter(h)
     h.driver.emit(REQ)
     act(() => h.session().permissions.resolve(7, true, 'visit'))
     act(() => h.session().permissions.clearRule({ ...SUBJECT, ty: 'ChangeRealm' }))
@@ -321,7 +391,7 @@ describe('stored rules', () => {
 describe('reset defaults', () => {
   it("posts the reset and forgets this visit's answers and uses", async () => {
     const h = renderSession()
-    await enterAsGuest(h)
+    await enter(h)
     h.driver.emit(REQ)
     act(() => h.session().permissions.resolve(7, true, 'visit'))
     h.driver.emit(USED)
