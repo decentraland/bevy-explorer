@@ -21,7 +21,14 @@ as host-only web params:
 Nothing leaves before the user has accepted the terms (`AppConfig::terms_accepted()`, set on the
 welcome page). Events queue meanwhile (2000, the oldest dropped) and go out on the first tick
 after; each carries the time it was queued, so a held event keeps its place. A run that never
-shows the terms (preview, a throwaway `--guest` on a fresh install) never sends.
+shows the terms (a throwaway `--guest` on a fresh install) never sends.
+
+A scene being developed still reports, flagged `is_local_scene` on every event as the desktop
+client does, so the warehouse filters previews out of visits while keeping their crashes and
+usage. The flag is `preview=true` / `--preview` (the sdk's `--bevy-web` opens one on
+decentraland.org, where play's accepted terms already apply), or a realm served by a local dev
+server (`CurrentRealm::is_local`, so an editor host that omits the flag is covered), re-evaluated
+every tick so a realm change updates it.
 
 The page side is `react-web/src/lib/analytics.ts` (events and sequences in
 `react-web/review.md`, "Analytics").
