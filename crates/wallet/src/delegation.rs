@@ -2,9 +2,13 @@
 // headless authoritative server sign world-storage requests without ever holding the
 // authoritative key. Wire envelope (base64 JSON, mirrors hammurabi-headless):
 // { "v": 1, "ephemeral": { "privateKey", "publicKey", "address" },
-//   "scope": { "payload", "signature" } }
+//   "scope": { "payload", "signature" },
+//   "badges"?: { "ephemeral": { ... }, "scope": { ... } } }
 // The scene-scope fields (World/SceneId/Parcel/Expiration) are derived from the signed
 // scope.payload lines — the single source of truth — never from unsigned copies.
+// `badges` is a second credential for the badges service: its own ephemeral and an
+// `Audience: badges` claim for the same scene. Badge awards are signed with it only, and
+// the storage claim never goes to the badges service.
 
 use std::{collections::HashMap, str::FromStr};
 
@@ -19,9 +23,21 @@ use crate::Wallet;
 pub const STORAGE_HOSTS: [&str; 2] = ["storage.decentraland.org", "storage.decentraland.zone"];
 pub const BADGES_HOSTS: [&str; 2] = ["badges.decentraland.org", "badges.decentraland.zone"];
 
+/// First line of an audience-bound claim (`@dcl/authoritative-delegation`).
+const AUDIENCE_DELEGATION_PREFIX: &str = "Decentraland Authoritative Delegation";
+const BADGES_AUDIENCE: &str = "badges";
+
 #[derive(Deserialize)]
 struct DelegationEnvelope {
     v: u32,
+    ephemeral: DelegationEphemeral,
+    scope: DelegationScope,
+    #[serde(default)]
+    badges: Option<DelegationPair>,
+}
+
+#[derive(Deserialize)]
+struct DelegationPair {
     ephemeral: DelegationEphemeral,
     scope: DelegationScope,
 }
@@ -39,6 +55,49 @@ pub struct DelegationScope {
     pub signature: String,
 }
 
+/// An ephemeral signer plus the claim that authorizes it, ready to attach to a request.
+#[derive(Clone)]
+pub struct DelegationCredential {
+    /// standalone ephemeral signer (owner = ephemeral address; authorized only by the claim)
+    pub wallet: Wallet,
+    /// pre-encoded `x-authoritative-scope` header value: base64(json(scope))
+    pub scope_header: String,
+}
+
+impl DelegationCredential {
+    fn from_parts(
+        ephemeral: &DelegationEphemeral,
+        scope: &DelegationScope,
+    ) -> Result<Self, anyhow::Error> {
+        let local_wallet =
+            PrivateKeySigner::from_str(ephemeral.private_key.trim_start_matches("0x"))
+                .map_err(|_| anyhow::anyhow!("delegation ephemeral key is invalid"))?;
+        let claimed = ephemeral.address.to_lowercase();
+        let derived = format!("{:#x}", local_wallet.address());
+        if claimed != derived {
+            anyhow::bail!("delegation ephemeral address does not match its key");
+        }
+        let mut wallet = Wallet::default();
+        wallet.finalize(local_wallet.address(), local_wallet, Vec::default());
+
+        let scope_header =
+            base64::engine::general_purpose::STANDARD.encode(serde_json::to_string(scope)?);
+
+        Ok(Self {
+            wallet,
+            scope_header,
+        })
+    }
+}
+
+/// The value of the first `prefix` line of a claim payload, if any.
+fn claim_value(payload: &str, prefix: &str) -> Option<String> {
+    payload
+        .lines()
+        .find(|l| l.starts_with(prefix))
+        .map(|l| l[prefix.len()..].trim().to_owned())
+}
+
 #[derive(Clone)]
 pub struct StorageDelegation {
     /// standalone ephemeral signer (owner = ephemeral address; authorized only by the scope claim)
@@ -52,6 +111,9 @@ pub struct StorageDelegation {
     pub parcel: String,
     /// unix millis
     pub expiration: i64,
+    /// the badges credential, when the orchestrator minted one for this scene; badge awards
+    /// are signed with it and never with the storage credential above
+    pub badges: Option<DelegationCredential>,
 }
 
 impl StorageDelegation {
@@ -68,14 +130,7 @@ impl StorageDelegation {
             anyhow::bail!("unsupported storage delegation version {}", envelope.v);
         }
 
-        let value_for = |prefix: &str| -> Option<String> {
-            envelope
-                .scope
-                .payload
-                .lines()
-                .find(|l| l.starts_with(prefix))
-                .map(|l| l[prefix.len()..].trim().to_owned())
-        };
+        let value_for = |prefix: &str| claim_value(&envelope.scope.payload, prefix);
         let world = value_for("World:")
             .map(|w| w.to_lowercase())
             .ok_or_else(|| anyhow::anyhow!("delegation claim missing World"))?;
@@ -89,19 +144,18 @@ impl StorageDelegation {
             .map_err(|_| anyhow::anyhow!("delegation claim has unparseable Expiration"))?
             .timestamp_millis();
 
-        let local_wallet =
-            PrivateKeySigner::from_str(envelope.ephemeral.private_key.trim_start_matches("0x"))
-                .map_err(|_| anyhow::anyhow!("delegation ephemeral key is invalid"))?;
-        let claimed = envelope.ephemeral.address.to_lowercase();
-        let derived = format!("{:#x}", local_wallet.address());
-        if claimed != derived {
-            anyhow::bail!("delegation ephemeral address does not match its key");
-        }
-        let mut wallet = Wallet::default();
-        wallet.finalize(local_wallet.address(), local_wallet, Vec::default());
+        let DelegationCredential {
+            wallet,
+            scope_header,
+        } = DelegationCredential::from_parts(&envelope.ephemeral, &envelope.scope)?;
 
-        let scope_header = base64::engine::general_purpose::STANDARD
-            .encode(serde_json::to_string(&envelope.scope)?);
+        // A bad badges pair only costs badge awards (they fall back to the guest wallet, which
+        // the badges service rejects); storage keeps working.
+        let badges = envelope.badges.as_ref().and_then(|pair| {
+            Self::parse_badges(pair, &world, &scene_id, &parcel)
+                .inspect_err(|e| warn!("ignoring the badges delegation: {e}"))
+                .ok()
+        });
 
         // deliberately the DELEGATION's world/sceneId/parcel — the storage service derives
         // the placeId the scope claim is bound to from these (hammurabi parity, including
@@ -125,7 +179,33 @@ impl StorageDelegation {
             scene_id,
             parcel,
             expiration,
+            badges,
         })
+    }
+
+    /// The badges credential, accepted only when its claim is for the badges audience and the
+    /// same scene as the storage claim: the request metadata ([`Self::meta`]) is built from the
+    /// storage claim, so a badges claim for any other scene could never verify.
+    fn parse_badges(
+        pair: &DelegationPair,
+        world: &str,
+        scene_id: &str,
+        parcel: &str,
+    ) -> Result<DelegationCredential, anyhow::Error> {
+        let payload = &pair.scope.payload;
+        if payload.lines().next() != Some(AUDIENCE_DELEGATION_PREFIX) {
+            anyhow::bail!("badges claim is not an audience-bound delegation");
+        }
+        if claim_value(payload, "Audience:").as_deref() != Some(BADGES_AUDIENCE) {
+            anyhow::bail!("badges claim is for another audience");
+        }
+        if claim_value(payload, "World:").as_deref() != Some(world)
+            || claim_value(payload, "SceneId:").as_deref() != Some(scene_id)
+            || claim_value(payload, "Parcel:").as_deref() != Some(parcel)
+        {
+            anyhow::bail!("badges claim is for another scene than the storage claim");
+        }
+        DelegationCredential::from_parts(&pair.ephemeral, &pair.scope)
     }
 
     pub fn is_expired(&self, now_millis: i64) -> bool {
@@ -186,14 +266,16 @@ pub fn is_storage_request(uri: &http::Uri) -> bool {
 }
 
 /// True when a signed fetch to `uri` targets the badges service and may be signed with the
-/// scene's delegation: exact-match badges hosts over https, or the resolved badges service
+/// scene's badges credential: exact-match badges hosts over https, or the resolved badges service
 /// (host and port). Unlike storage, a *loopback* http override is accepted, so a local badges
 /// service can be driven from a preview run; any other http origin is never signed for.
 pub fn is_badges_request(uri: &http::Uri) -> bool {
     fn origin(u: &http::Uri) -> Option<(String, String, u16)> {
         let scheme = u.scheme_str()?.to_owned();
         let host = u.host()?.to_lowercase();
-        let port = u.port_u16().unwrap_or(if scheme == "https" { 443 } else { 80 });
+        let port = u
+            .port_u16()
+            .unwrap_or(if scheme == "https" { 443 } else { 80 });
         Some((scheme, host, port))
     }
     let Some((scheme, host, port)) = origin(uri) else {
@@ -246,7 +328,9 @@ pub fn award_target(uri: &http::Uri) -> Option<Address> {
 fn is_badge_id(id: &str) -> bool {
     id.strip_prefix("bdg_").is_some_and(|hex| {
         (8..=32).contains(&hex.len())
-            && hex.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            && hex
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
     })
 }
 
@@ -255,11 +339,30 @@ mod test {
     use super::*;
 
     fn mint(expiration: &str) -> String {
+        mint_with_badges(expiration, None)
+    }
+
+    /// A badges pair for the test scene, `audience` and `scene` overridable. Throwaway key #2.
+    fn badges_pair(audience: &str, scene: &str) -> serde_json::Value {
+        let payload = format!(
+            "Decentraland Authoritative Delegation\nAudience: {audience}\nEphemeral: 0x2b5ad5c4795c026514f8317c7a215e218dccd6cf\nWorld: boedo.dcl.eth\nSceneId: {scene}\nParcel: 0,0\nExpiration: 2030-01-01T00:00:00.000Z"
+        );
+        serde_json::json!({
+            "ephemeral": {
+                "privateKey": "0000000000000000000000000000000000000000000000000000000000000002",
+                "publicKey": "unused",
+                "address": "0x2b5ad5c4795c026514f8317c7a215e218dccd6cf",
+            },
+            "scope": { "payload": payload, "signature": "0xbadgessig" },
+        })
+    }
+
+    fn mint_with_badges(expiration: &str, badges: Option<serde_json::Value>) -> String {
         // throwaway key
         let payload = format!(
             "Decentraland Authoritative Storage Delegation\nEphemeral: 0x63f9a92d8d61b48a9fff8d58080425a3012d05c8\nWorld: Boedo.dcl.eth\nSceneId: bafkreitest\nParcel: 0,0\nExpiration: {expiration}"
         );
-        let envelope = serde_json::json!({
+        let mut envelope = serde_json::json!({
             "v": 1,
             "ephemeral": {
                 "privateKey": "0000000000000000000000000000000000000000000000000000000000000001",
@@ -268,6 +371,9 @@ mod test {
             },
             "scope": { "payload": payload, "signature": "0xsig" },
         });
+        if let Some(badges) = badges {
+            envelope["badges"] = badges;
+        }
         base64::engine::general_purpose::STANDARD.encode(envelope.to_string())
     }
 
@@ -279,6 +385,53 @@ mod test {
         assert_eq!(d.parcel, "0,0");
         assert!(!d.is_expired(chrono::Utc::now().timestamp_millis()));
         assert!(d.meta.contains("\"signer\":\"dcl:authoritative-server\""));
+    }
+
+    #[test]
+    fn parses_the_badges_credential_separately_from_storage() {
+        let d = StorageDelegation::parse(
+            &mint_with_badges(
+                "2030-01-01T00:00:00Z",
+                Some(badges_pair("badges", "bafkreitest")),
+            ),
+            "https://realm",
+        )
+        .unwrap();
+        let badges = d.badges.expect("badges credential");
+        assert_ne!(badges.scope_header, d.scope_header);
+        let scope: serde_json::Value = serde_json::from_slice(
+            &base64::engine::general_purpose::STANDARD
+                .decode(&badges.scope_header)
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(scope["signature"], "0xbadgessig");
+        assert!(scope["payload"]
+            .as_str()
+            .unwrap()
+            .contains("Audience: badges"));
+    }
+
+    #[test]
+    fn no_badges_credential_without_a_badges_pair() {
+        let d = StorageDelegation::parse(&mint("2030-01-01T00:00:00Z"), "https://realm").unwrap();
+        assert!(d.badges.is_none());
+    }
+
+    #[test]
+    fn ignores_a_badges_pair_for_another_audience_or_scene_but_keeps_storage() {
+        for pair in [
+            badges_pair("storage", "bafkreitest"),
+            badges_pair("badges", "bafkreiother"),
+        ] {
+            let d = StorageDelegation::parse(
+                &mint_with_badges("2030-01-01T00:00:00Z", Some(pair)),
+                "https://realm",
+            )
+            .unwrap();
+            assert!(d.badges.is_none());
+            assert_eq!(d.scene_id, "bafkreitest");
+        }
     }
 
     #[test]
@@ -338,7 +491,9 @@ mod test {
             &"http://badges.decentraland.org/x".parse().unwrap()
         ));
         assert!(!is_badges_request(
-            &"https://badges.decentraland.org.evil.com/x".parse().unwrap()
+            &"https://badges.decentraland.org.evil.com/x"
+                .parse()
+                .unwrap()
         ));
         // storage is not badges and vice versa
         assert!(!is_badges_request(
@@ -424,10 +579,14 @@ mod test {
         // a loopback http badges override is signed for (local badges service); the known hosts
         // stay signed for alongside it; a non-loopback http origin never is
         assert!(is_badges_request(
-            &"http://localhost:4000/badges/bdg_00000001/awards/0x1".parse().unwrap()
+            &"http://localhost:4000/badges/bdg_00000001/awards/0x1"
+                .parse()
+                .unwrap()
         ));
         assert!(!is_badges_request(
-            &"http://localhost:4001/badges/bdg_00000001/awards/0x1".parse().unwrap()
+            &"http://localhost:4001/badges/bdg_00000001/awards/0x1"
+                .parse()
+                .unwrap()
         ));
         assert!(is_badges_request(
             &"https://badges.decentraland.org/x".parse().unwrap()

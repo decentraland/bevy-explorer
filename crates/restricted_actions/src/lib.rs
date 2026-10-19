@@ -2175,8 +2175,9 @@ fn handle_sign_request(
                 continue;
             };
 
-            // world-storage and badges requests from a delegated scene are signed with the
-            // delegation's ephemeral key + scope header instead of the engine wallet
+            // world-storage and badges requests from a delegated scene are signed with that
+            // service's delegation credential (ephemeral key + scope header) instead of the
+            // engine wallet
             let is_storage = wallet::delegation::is_storage_request(&uri);
             let is_badges = !is_storage && wallet::delegation::is_badges_request(&uri);
             if let Some((delegation, scene_hash)) = delegations
@@ -2195,27 +2196,33 @@ fn handle_sign_request(
                 // a badge award is signed only for a player currently present in this scene's
                 // room: scene JS chooses the URL, the engine decides whether the named player
                 // gets signed for. Anything else (not an award path, player absent or in
-                // another scene's room) falls through to the guest wallet, which the badges
-                // service does not trust. `targetAddress` goes inside the signed metadata so
-                // the service can compare it to the path.
-                let badges_meta = if is_badges {
+                // another scene's room, or no badges credential minted) falls through to the
+                // guest wallet, which the badges service does not trust. `targetAddress` goes
+                // inside the signed metadata so the service can compare it to the path. The
+                // storage credential is never sent to the badges service.
+                let badges = if is_badges {
                     // a scene whose room context isn't registered has nobody present
                     let context = contexts.try_for_scene_hash(scene_hash);
-                    wallet::delegation::award_target(&uri)
-                        .filter(|player| {
-                            context.is_some_and(|context| {
-                                players.iter().any(|p| {
-                                    p.context == context
-                                        && p.address == *player
-                                        && !p.transports.is_empty()
-                                })
+                    let target = wallet::delegation::award_target(&uri).filter(|player| {
+                        context.is_some_and(|context| {
+                            players.iter().any(|p| {
+                                p.context == context
+                                    && p.address == *player
+                                    && !p.transports.is_empty()
                             })
                         })
-                        .map(|player| delegation.meta_with_target(player))
+                    });
+                    delegation
+                        .badges
+                        .as_ref()
+                        .zip(target)
+                        .map(|(credential, player)| {
+                            (credential, delegation.meta_with_target(player))
+                        })
                 } else {
                     None
                 };
-                if is_badges && badges_meta.is_none() {
+                if is_badges && badges.is_none() {
                     let method = method.clone();
                     let meta = meta.to_owned().unwrap_or_default();
                     let wallet = wallet.clone();
@@ -2227,9 +2234,18 @@ fn handle_sign_request(
                 }
 
                 let method = method.clone();
-                let meta = badges_meta.unwrap_or_else(|| delegation.meta.clone());
-                let scope_header = delegation.scope_header.clone();
-                let ephemeral = delegation.wallet.clone();
+                let (ephemeral, scope_header, meta) = match badges {
+                    Some((credential, meta)) => (
+                        credential.wallet.clone(),
+                        credential.scope_header.clone(),
+                        meta,
+                    ),
+                    None => (
+                        delegation.wallet.clone(),
+                        delegation.scope_header.clone(),
+                        delegation.meta.clone(),
+                    ),
+                };
                 let task = IoTaskPool::get().spawn_compat(async move {
                     let mut headers = sign_request(&method, &uri, &ephemeral, meta).await?;
                     headers.push(("x-authoritative-scope".to_owned(), scope_header));
