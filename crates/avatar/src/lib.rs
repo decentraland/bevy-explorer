@@ -80,7 +80,6 @@ use scene_runner::{
     util::ConsoleRelay,
     ContainingScene, SceneEntity,
 };
-use system_bridge::NativeUi;
 use world_ui::{spawn_world_ui_view, WorldUi};
 
 use crate::{
@@ -578,7 +577,6 @@ fn update_render_avatar(
     mut wearable_loader: CollectibleManager<Wearable>,
     scenes: Query<&RendererSceneContext>,
     ipfas: IpfsAssetServer,
-    native_ui: Res<NativeUi>,
 ) {
     // remove renderable entities when avatar selection is removed
     for entity in removed_selections.read() {
@@ -754,24 +752,7 @@ fn update_render_avatar(
                 Transform::from_rotation(Quat::from_rotation_y(PI)),
                 Visibility::default(),
                 AvatarDefinition {
-                    label: native_ui
-                        .nametags
-                        .then(|| {
-                            selection.shape.0.name.as_ref().and_then(|name| {
-                                (!name.is_empty()).then_some(format!(
-                                    "{}#{}",
-                                    name,
-                                    selection
-                                        .shape
-                                        .0
-                                        .id
-                                        .chars()
-                                        .skip(selection.shape.0.id.len().saturating_sub(4))
-                                        .collect::<String>()
-                                ))
-                            })
-                        })
-                        .flatten(),
+                    label: None,
                     body,
                     body_shape: body_urn.as_str().to_owned(),
                     wearables,
