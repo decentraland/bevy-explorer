@@ -13,7 +13,6 @@ pub mod profile;
 pub mod profile_detail;
 pub mod sysinfo;
 pub mod toasts;
-pub mod tooltip;
 pub mod version_check;
 
 use bevy::prelude::*;
@@ -22,7 +21,7 @@ use change_realm::ChangeRealmPlugin;
 use common::{
     inputs::SystemAction,
     sets::SetupSets,
-    structs::{ActiveDialog, StartupScenes, UiRoot, ZOrder},
+    structs::{ActiveDialog, StartupScenes, ToolTips, UiRoot, ZOrder},
 };
 use foreign_profile::ForeignProfilePlugin;
 use input_manager::{InputManager, InputPriority, MouseInteractionComponent};
@@ -34,7 +33,6 @@ use profile_detail::ProfileDetailPlugin;
 use scene_runner::Toaster;
 use system_bridge::NativeUi;
 use toasts::ToastsPlugin;
-use tooltip::ToolTipPlugin;
 
 use self::{chat::ChatPanelPlugin, profile::ProfileEditPlugin, sysinfo::SysInfoPanelPlugin};
 
@@ -43,7 +41,8 @@ pub struct SystemUiPlugin;
 impl Plugin for SystemUiPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(SystemUiRoot(Entity::PLACEHOLDER))
-            .init_resource::<ActiveDialog>();
+            .init_resource::<ActiveDialog>()
+            .init_resource::<ToolTips>();
         app.add_systems(
             Startup,
             setup.in_set(SetupSets::Init).before(SetupSets::Main),
@@ -55,7 +54,6 @@ impl Plugin for SystemUiPlugin {
             ChatPanelPlugin,
             ProfileEditPlugin,
             ToastsPlugin,
-            ToolTipPlugin,
             LoginPlugin,
             ChangeRealmPlugin,
             ProfileDetailPlugin,
