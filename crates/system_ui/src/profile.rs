@@ -29,7 +29,6 @@ use crate::{
     emotes::EmoteSettingsPlugin,
     permissions::{PermissionSettingsDetail, PermissionSettingsPlugin},
     profile_detail::ProfileDetail,
-    wearables::WearableSettingsPlugin,
     SystemUiRoot,
 };
 
@@ -42,7 +41,6 @@ impl Plugin for ProfileEditPlugin {
         app.add_systems(Update, (show_settings, process_profile));
         app.add_plugins((
             DiscoverSettingsPlugin,
-            WearableSettingsPlugin,
             EmoteSettingsPlugin,
             AppSettingsPlugin,
             PermissionSettingsPlugin,
@@ -326,11 +324,10 @@ pub fn show_settings(
     let title_initial = match tab {
         SettingsTab::Discover => 0usize,
         SettingsTab::ProfileDetail => 1,
-        SettingsTab::Wearables => 2,
-        SettingsTab::Emotes => 3,
-        SettingsTab::Map => 4,
-        SettingsTab::Settings => 5,
-        SettingsTab::Permissions => 6,
+        SettingsTab::Emotes => 2,
+        SettingsTab::Map => 3,
+        SettingsTab::Settings => 4,
+        SettingsTab::Permissions => 5,
     };
 
     let Some(profile) = &current_profile.profile.as_ref() else {
@@ -365,10 +362,6 @@ pub fn show_settings(
         DuiButton {
             label: Some("Profile".to_owned()),
             enabled: true,
-            ..Default::default()
-        },
-        DuiButton {
-            label: Some("Wearables".to_owned()),
             ..Default::default()
         },
         DuiButton {
@@ -421,11 +414,10 @@ pub fn show_settings(
                     match selected.get(caller.0).unwrap().selected.unwrap() {
                         0 => SettingsTab::Discover,
                         1 => SettingsTab::ProfileDetail,
-                        2 => SettingsTab::Wearables,
-                        3 => SettingsTab::Emotes,
-                        4 => SettingsTab::Map,
-                        5 => SettingsTab::Settings,
-                        6 => SettingsTab::Permissions,
+                        2 => SettingsTab::Emotes,
+                        3 => SettingsTab::Map,
+                        4 => SettingsTab::Settings,
+                        5 => SettingsTab::Permissions,
                         _ => panic!(),
                     }
             },

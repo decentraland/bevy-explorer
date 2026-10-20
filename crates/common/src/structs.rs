@@ -1318,9 +1318,8 @@ impl DialogPermit {
 
 #[derive(Component, Default, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsTab {
-    ProfileDetail,
     #[default]
-    Wearables,
+    ProfileDetail,
     Emotes,
     Map,
     Discover,
