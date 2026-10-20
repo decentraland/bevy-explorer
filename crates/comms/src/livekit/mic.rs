@@ -105,8 +105,7 @@ impl Plugin for MicPlugin {
             tear_down_microphone,
         );
 
-        app.add_systems(OnEnter(MicrophoneState::Enabled), ping_enabled);
-        app.add_systems(OnEnter(MicrophoneState::Disabled), ping_disabled);
+        app.add_systems(Startup, add_ping_systems);
 
         #[cfg(not(target_arch = "wasm32"))]
         app.insert_state(MicrophonePermission::Granted);
@@ -155,6 +154,16 @@ struct MicrophoneLocalTrack(LocalAudioTrack);
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Default, Deref, DerefMut)]
 struct MicStream(Option<cpal::Stream>);
+
+fn add_ping_systems(world: &mut World) {
+    // This stops the ping being played during startup
+    world.schedule_scope(OnEnter(MicrophoneState::Enabled), |_, schedule| {
+        schedule.add_systems(ping_enabled);
+    });
+    world.schedule_scope(OnEnter(MicrophoneState::Disabled), |_, schedule| {
+        schedule.add_systems(ping_disabled);
+    });
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 fn verify_availability(mut commands: Commands, mut mic_state: ResMut<MicState>) {
