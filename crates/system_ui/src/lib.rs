@@ -3,7 +3,6 @@ pub mod chat;
 pub mod crash_report;
 pub mod login;
 pub mod oow;
-pub mod profile;
 pub mod sysinfo;
 pub mod version_check;
 
@@ -33,7 +32,7 @@ use system_bridge::{
 
 use crate::oow::OowUiPlugin;
 
-use self::{chat::ChatPanelPlugin, profile::ProfileEditPlugin, sysinfo::SysInfoPanelPlugin};
+use self::{chat::ChatPanelPlugin, sysinfo::SysInfoPanelPlugin};
 
 pub struct SystemUiPlugin;
 
@@ -54,7 +53,6 @@ impl Plugin for SystemUiPlugin {
         app.add_plugins((
             SysInfoPanelPlugin,
             ChatPanelPlugin,
-            ProfileEditPlugin,
             LoginPlugin,
             ChangeRealmPlugin,
             OowUiPlugin,
