@@ -2,6 +2,7 @@ pub mod change_realm;
 pub mod chat;
 pub mod crash_report;
 pub mod login;
+pub mod oow;
 pub mod permissions;
 pub mod profile;
 pub mod profile_detail;
@@ -18,6 +19,7 @@ use common::{
 };
 use input_manager::{InputManager, InputPriority, MouseInteractionComponent};
 use login::LoginPlugin;
+use oow::OowUiPlugin;
 use profile_detail::ProfileDetailPlugin;
 use scene_runner::{permissions::PermissionManager, Toaster};
 use system_bridge::NativeUi;
@@ -46,6 +48,7 @@ impl Plugin for SystemUiPlugin {
             LoginPlugin,
             ChangeRealmPlugin,
             ProfileDetailPlugin,
+            OowUiPlugin,
         ));
     }
 }
