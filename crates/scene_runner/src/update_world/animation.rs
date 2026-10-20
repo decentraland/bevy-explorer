@@ -89,10 +89,16 @@ fn update_animations(
 
         for (ix, (duration, state)) in targets.into_iter() {
             let playing = state.playing.unwrap_or(true);
+            // clamp: bevy normalizes by the summed weight, so negative weights extrapolate
             let new_weight = if !playing {
                 0.0
             } else {
-                state.weight.unwrap_or(1.0)
+                let weight = state.weight.unwrap_or(1.0);
+                if weight.is_nan() {
+                    0.0
+                } else {
+                    weight.clamp(0.0, 1.0)
+                }
             };
             let new_speed = if !playing {
                 0.0
