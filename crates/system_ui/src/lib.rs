@@ -6,7 +6,6 @@ pub mod discover;
 pub mod foreign_profile;
 pub mod login;
 pub mod map;
-pub mod oow;
 pub mod permission_manager;
 pub mod permissions;
 pub mod profile;
@@ -26,7 +25,6 @@ use foreign_profile::ForeignProfilePlugin;
 use input_manager::{InputManager, InputPriority, MouseInteractionComponent};
 use login::LoginPlugin;
 use map::MapPlugin;
-use oow::OowUiPlugin;
 use permission_manager::PermissionPlugin;
 use profile_detail::ProfileDetailPlugin;
 use scene_runner::Toaster;
@@ -54,7 +52,6 @@ impl Plugin for SystemUiPlugin {
             LoginPlugin,
             ChangeRealmPlugin,
             ProfileDetailPlugin,
-            OowUiPlugin,
             PermissionPlugin,
             ForeignProfilePlugin,
         ));
