@@ -22,7 +22,6 @@ use ui_core::{
 };
 
 use crate::{
-    app_settings::{AppSettingsDetail, AppSettingsPlugin},
     change_realm::{ChangeRealmDialog, UpdateRealmText},
     chat::BUTTON_SCALE,
     permissions::{PermissionSettingsDetail, PermissionSettingsPlugin},
@@ -37,7 +36,7 @@ impl Plugin for ProfileEditPlugin {
         app.add_event::<ShowSettingsEvent>();
         app.add_systems(Startup, setup.in_set(SetupSets::Main));
         app.add_systems(Update, (show_settings, process_profile));
-        app.add_plugins((AppSettingsPlugin, PermissionSettingsPlugin));
+        app.add_plugins(PermissionSettingsPlugin);
     }
 }
 
@@ -116,7 +115,6 @@ fn save_settings(
             Entity,
             Option<&AvatarShape>,
             Option<&ProfileDetail>,
-            Option<&AppSettingsDetail>,
             Option<&PermissionSettingsDetail>,
         ),
         With<SettingsDialog>,
@@ -127,16 +125,10 @@ fn save_settings(
         return;
     };
 
-    let Ok((dialog_ent, maybe_avatar, maybe_detail, maybe_settings, maybe_perms)) =
-        modified.single()
-    else {
+    let Ok((dialog_ent, maybe_avatar, maybe_detail, maybe_perms)) = modified.single() else {
         error!("no dialog");
         return;
     };
-
-    if let Some(settings) = maybe_settings {
-        *config = settings.0.clone();
-    }
 
     if let Some(perms) = maybe_perms {
         config
@@ -316,8 +308,7 @@ pub fn show_settings(
 
     let title_initial = match tab {
         SettingsTab::ProfileDetail => 0usize,
-        SettingsTab::Settings => 1,
-        SettingsTab::Permissions => 2,
+        SettingsTab::Permissions => 1,
     };
 
     let Some(profile) = &current_profile.profile.as_ref() else {
@@ -346,11 +337,6 @@ pub fn show_settings(
     let tabs = vec![
         DuiButton {
             label: Some("Profile".to_owned()),
-            enabled: true,
-            ..Default::default()
-        },
-        DuiButton {
-            label: Some("Settings".to_owned()),
             enabled: true,
             ..Default::default()
         },
@@ -389,8 +375,7 @@ pub fn show_settings(
                 *content.single_mut().unwrap() =
                     match selected.get(caller.0).unwrap().selected.unwrap() {
                         0 => SettingsTab::ProfileDetail,
-                        1 => SettingsTab::Settings,
-                        2 => SettingsTab::Permissions,
+                        1 => SettingsTab::Permissions,
                         _ => panic!(),
                     }
             },
