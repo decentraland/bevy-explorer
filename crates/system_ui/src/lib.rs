@@ -3,7 +3,6 @@ pub mod change_realm;
 pub mod chat;
 pub mod crash_report;
 pub mod discover;
-pub mod emote_select;
 pub mod emotes;
 pub mod foreign_profile;
 pub mod login;
@@ -26,7 +25,6 @@ use common::{
     sets::SetupSets,
     structs::{ActiveDialog, StartupScenes, UiRoot, ZOrder},
 };
-use emote_select::EmoteUiPlugin;
 use foreign_profile::ForeignProfilePlugin;
 use input_manager::{InputManager, InputPriority, MouseInteractionComponent};
 use login::LoginPlugin;
@@ -60,7 +58,6 @@ impl Plugin for SystemUiPlugin {
             ToastsPlugin,
             ToolTipPlugin,
             LoginPlugin,
-            EmoteUiPlugin,
             ChangeRealmPlugin,
             ProfileDetailPlugin,
             OowUiPlugin,
