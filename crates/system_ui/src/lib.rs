@@ -2,7 +2,6 @@ pub mod change_realm;
 pub mod chat;
 pub mod crash_report;
 pub mod login;
-pub mod permission_manager;
 pub mod permissions;
 pub mod profile;
 pub mod profile_detail;
@@ -15,13 +14,12 @@ use change_realm::ChangeRealmPlugin;
 use common::{
     inputs::SystemAction,
     sets::SetupSets,
-    structs::{ActiveDialog, ToolTips, UiRoot, ZOrder},
+    structs::{ActiveDialog, PermissionUsed, ToolTips, UiRoot, ZOrder},
 };
 use input_manager::{InputManager, InputPriority, MouseInteractionComponent};
 use login::LoginPlugin;
-use permission_manager::PermissionPlugin;
 use profile_detail::ProfileDetailPlugin;
-use scene_runner::Toaster;
+use scene_runner::{permissions::PermissionManager, Toaster};
 use system_bridge::NativeUi;
 
 use self::{chat::ChatPanelPlugin, profile::ProfileEditPlugin, sysinfo::SysInfoPanelPlugin};
@@ -32,7 +30,9 @@ impl Plugin for SystemUiPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(SystemUiRoot(Entity::PLACEHOLDER))
             .init_resource::<ActiveDialog>()
-            .init_resource::<ToolTips>();
+            .init_resource::<ToolTips>()
+            .init_resource::<PermissionManager>()
+            .add_event::<PermissionUsed>();
         app.add_systems(
             Startup,
             setup.in_set(SetupSets::Init).before(SetupSets::Main),
@@ -46,7 +46,6 @@ impl Plugin for SystemUiPlugin {
             LoginPlugin,
             ChangeRealmPlugin,
             ProfileDetailPlugin,
-            PermissionPlugin,
         ));
     }
 }
