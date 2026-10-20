@@ -12,7 +12,6 @@ pub mod permissions;
 pub mod profile;
 pub mod profile_detail;
 pub mod sysinfo;
-pub mod toasts;
 pub mod version_check;
 
 use bevy::prelude::*;
@@ -32,7 +31,6 @@ use permission_manager::PermissionPlugin;
 use profile_detail::ProfileDetailPlugin;
 use scene_runner::Toaster;
 use system_bridge::NativeUi;
-use toasts::ToastsPlugin;
 
 use self::{chat::ChatPanelPlugin, profile::ProfileEditPlugin, sysinfo::SysInfoPanelPlugin};
 
@@ -53,7 +51,6 @@ impl Plugin for SystemUiPlugin {
             SysInfoPanelPlugin,
             ChatPanelPlugin,
             ProfileEditPlugin,
-            ToastsPlugin,
             LoginPlugin,
             ChangeRealmPlugin,
             ProfileDetailPlugin,
