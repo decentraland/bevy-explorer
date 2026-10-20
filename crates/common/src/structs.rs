@@ -1316,15 +1316,6 @@ impl DialogPermit {
     }
 }
 
-#[derive(Component, Default, Clone, Copy, PartialEq, Eq)]
-pub enum SettingsTab {
-    #[default]
-    ProfileDetail,
-}
-
-#[derive(Event, Clone)]
-pub struct ShowSettingsEvent(pub SettingsTab);
-
 #[derive(Event, Clone)]
 pub struct ShowProfileEvent(pub Address);
 
