@@ -1,6 +1,5 @@
 // kuruk 0x481bed8645804714Efd1dE3f25467f78E7Ba07d6
 
-use avatar::AvatarShape;
 use bevy::prelude::*;
 use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
@@ -24,7 +23,6 @@ use ui_core::{
 use crate::{
     change_realm::{ChangeRealmDialog, UpdateRealmText},
     chat::BUTTON_SCALE,
-    profile_detail::ProfileDetail,
     SystemUiRoot,
 };
 
@@ -103,66 +101,6 @@ pub enum OnCloseEvent {
     SomethingElse,
 }
 
-#[allow(clippy::type_complexity)]
-fn save_settings(
-    mut commands: Commands,
-    mut current_profile: ResMut<CurrentUserProfile>,
-    modified: Query<(Entity, Option<&AvatarShape>, Option<&ProfileDetail>), With<SettingsDialog>>,
-) {
-    let Some(profile) = current_profile.profile.as_mut() else {
-        error!("can't amend missing profile");
-        return;
-    };
-
-    let Ok((dialog_ent, maybe_avatar, maybe_detail)) = modified.single() else {
-        error!("no dialog");
-        return;
-    };
-
-    if maybe_detail.is_some() || maybe_avatar.is_some() {
-        if let Some(detail) = maybe_detail {
-            profile.content = detail.0.clone();
-        }
-
-        if let Some(avatar) = maybe_avatar {
-            profile
-                .content
-                .avatar
-                .body_shape
-                .clone_from(&avatar.0.body_shape);
-            profile.content.avatar.hair = avatar.0.hair_color.map(AvatarColor::new);
-            profile.content.avatar.eyes = avatar.0.eye_color.map(AvatarColor::new);
-            profile.content.avatar.skin = avatar.0.skin_color.map(AvatarColor::new);
-            profile.content.avatar.wearables = avatar.0.wearables.to_vec();
-            profile.content.avatar.emotes = Some(
-                avatar
-                    .0
-                    .emotes
-                    .iter()
-                    .enumerate()
-                    .flat_map(|(ix, e)| {
-                        (!e.is_empty()).then_some(AvatarEmote {
-                            slot: ix as u32,
-                            urn: if e.starts_with("urn:decentraland:off-chain:base-emotes") {
-                                e.rsplit_once(':').unwrap().1.to_string()
-                            } else {
-                                e.clone()
-                            },
-                        })
-                    })
-                    .collect(),
-            );
-        }
-
-        profile.version += 1;
-        profile.content.version = profile.version as i64;
-
-        current_profile.is_deployed = false;
-    }
-
-    commands.entity(dialog_ent).despawn();
-}
-
 fn really_close_settings(
     mut commands: Commands,
     modified: Query<Entity, With<SettingsDialog>>,
@@ -221,7 +159,7 @@ pub fn close_settings(
                         vec![
                             DuiButton::new_enabled_and_close_happy(
                                 "Save Changes",
-                                save_settings.pipe(send_onclose.clone()),
+                                send_onclose.clone(),
                             ),
                             DuiButton::new_enabled_and_close_sad(
                                 "Discard",

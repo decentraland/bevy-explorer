@@ -4,7 +4,6 @@ pub mod crash_report;
 pub mod login;
 pub mod oow;
 pub mod profile;
-pub mod profile_detail;
 pub mod sysinfo;
 pub mod version_check;
 
@@ -24,7 +23,6 @@ use common::{
 };
 use input_manager::{InputManager, InputPriority, MouseInteractionComponent};
 use login::LoginPlugin;
-use profile_detail::ProfileDetailPlugin;
 use scene_runner::{
     permissions::PermissionManager, renderer_context::RendererSceneContext, Toaster,
 };
@@ -59,7 +57,6 @@ impl Plugin for SystemUiPlugin {
             ProfileEditPlugin,
             LoginPlugin,
             ChangeRealmPlugin,
-            ProfileDetailPlugin,
             OowUiPlugin,
         ));
 
