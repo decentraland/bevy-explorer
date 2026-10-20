@@ -8,8 +8,6 @@ pub mod emotes;
 pub mod foreign_profile;
 pub mod login;
 pub mod map;
-#[cfg(feature = "livekit")]
-pub mod mic;
 pub mod oow;
 pub mod permission_manager;
 pub mod permissions;
@@ -61,8 +59,6 @@ impl Plugin for SystemUiPlugin {
             ChatPanelPlugin,
             ProfileEditPlugin,
             ToastsPlugin,
-            #[cfg(feature = "livekit")]
-            mic::MicUiPlugin,
             ToolTipPlugin,
             LoginPlugin,
             EmoteUiPlugin,

@@ -3518,6 +3518,7 @@ dependencies = [
  "gloo-timers 0.4.0",
  "http 1.5.0",
  "image",
+ "input_manager",
  "ipfs",
  "js-sys",
  "kira",

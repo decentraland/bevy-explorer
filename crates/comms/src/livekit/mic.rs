@@ -2,7 +2,10 @@
 use std::{borrow::Cow, sync::Arc};
 
 use bevy::prelude::*;
-use common::{debug_panic, structs::MicState};
+use common::{
+    debug_panic,
+    structs::{MicState, SystemAudio},
+};
 use tokio::task::JoinHandle;
 #[cfg(target_arch = "wasm32")]
 use {
@@ -101,6 +104,9 @@ impl Plugin for MicPlugin {
             OnExit(MicrophoneAvailability::Available),
             tear_down_microphone,
         );
+
+        app.add_systems(OnEnter(MicrophoneState::Enabled), ping_enabled);
+        app.add_systems(OnEnter(MicrophoneState::Disabled), ping_disabled);
 
         #[cfg(not(target_arch = "wasm32"))]
         app.insert_state(MicrophonePermission::Granted);
@@ -640,4 +646,16 @@ async fn build_audio_local_track() -> LocalAudioTrack {
         error!("Failed to create local audio track due to '{err}'.");
         LocalAudioTrack::unavailable()
     })
+}
+
+fn ping_enabled(mut commands: Commands) {
+    commands.send_event(SystemAudio(
+        "embedded://sounds/ui/voice_chat_mic_on.wav".to_owned(),
+    ));
+}
+
+fn ping_disabled(mut commands: Commands) {
+    commands.send_event(SystemAudio(
+        "embedded://sounds/ui/voice_chat_mic_off.wav".to_owned(),
+    ));
 }

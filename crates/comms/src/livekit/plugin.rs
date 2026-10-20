@@ -1,12 +1,16 @@
 use bevy::prelude::*;
 use common::{
     debug_panic,
+    inputs::SystemAction,
     rpc::{RpcCall, RpcCallEvent, RpcOrigin},
+    structs::MicState,
 };
 use dcl_component::proto_components::kernel::apis::{
     VideoTrackSourceType, VideoTracksActiveStreamsData, VideoTracksActiveStreamsResponse,
 };
+use input_manager::{InputManager, InputPriority};
 use livestream_manager::ActiveTransmitter;
+use system_bridge::SystemApi;
 use tokio::{sync::mpsc, task::JoinHandle};
 #[cfg(not(target_arch = "wasm32"))]
 use {
@@ -81,7 +85,10 @@ impl Plugin for LivekitPlugin {
 
         app.add_event::<StartLivekit>();
 
-        app.add_systems(Update, respond_to_rpc_calls);
+        app.add_systems(
+            Update,
+            (handle_input, respond_to_system_api, respond_to_rpc_calls),
+        );
 
         #[cfg(feature = "room_debug")]
         app.add_plugins(RoomDebugPlugin);
@@ -185,6 +192,36 @@ fn respond_to_audio_settings_change(
     livekit_audio_manager
         .main_track()
         .set_volume(audio_settings.scene() as f64, Tween::default());
+}
+
+fn handle_input(
+    input_manager: InputManager,
+    mut mic_state: ResMut<MicState>,
+    mut pressed: Local<bool>,
+) {
+    if *pressed {
+        if input_manager.just_up(SystemAction::Microphone) {
+            *pressed = false;
+            mic_state.enabled = !mic_state.enabled;
+        }
+    } else if input_manager.just_down(SystemAction::Microphone, InputPriority::None) {
+        *pressed = true;
+        mic_state.enabled = !mic_state.enabled;
+    }
+}
+
+fn respond_to_system_api(mut events: EventReader<SystemApi>, mut mic: ResMut<MicState>) {
+    for ev in events.read() {
+        match ev {
+            SystemApi::GetMicState(rpc_result_sender) => {
+                rpc_result_sender.send(mic.clone());
+            }
+            SystemApi::SetMicEnabled(enabled) => {
+                mic.enabled = mic.available && *enabled;
+            }
+            _ => (),
+        }
+    }
 }
 
 #[expect(clippy::type_complexity, reason = "Queries are complex")]
