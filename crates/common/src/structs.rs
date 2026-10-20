@@ -1320,7 +1320,6 @@ impl DialogPermit {
 pub enum SettingsTab {
     #[default]
     ProfileDetail,
-    Emotes,
     Map,
     Discover,
     Settings,

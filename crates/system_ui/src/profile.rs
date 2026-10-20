@@ -26,7 +26,6 @@ use crate::{
     change_realm::{ChangeRealmDialog, UpdateRealmText},
     chat::BUTTON_SCALE,
     discover::DiscoverSettingsPlugin,
-    emotes::EmoteSettingsPlugin,
     permissions::{PermissionSettingsDetail, PermissionSettingsPlugin},
     profile_detail::ProfileDetail,
     SystemUiRoot,
@@ -41,7 +40,6 @@ impl Plugin for ProfileEditPlugin {
         app.add_systems(Update, (show_settings, process_profile));
         app.add_plugins((
             DiscoverSettingsPlugin,
-            EmoteSettingsPlugin,
             AppSettingsPlugin,
             PermissionSettingsPlugin,
         ));
@@ -324,10 +322,9 @@ pub fn show_settings(
     let title_initial = match tab {
         SettingsTab::Discover => 0usize,
         SettingsTab::ProfileDetail => 1,
-        SettingsTab::Emotes => 2,
-        SettingsTab::Map => 3,
-        SettingsTab::Settings => 4,
-        SettingsTab::Permissions => 5,
+        SettingsTab::Map => 2,
+        SettingsTab::Settings => 3,
+        SettingsTab::Permissions => 4,
     };
 
     let Some(profile) = &current_profile.profile.as_ref() else {
@@ -362,10 +359,6 @@ pub fn show_settings(
         DuiButton {
             label: Some("Profile".to_owned()),
             enabled: true,
-            ..Default::default()
-        },
-        DuiButton {
-            label: Some("Emotes".to_owned()),
             ..Default::default()
         },
         DuiButton {
@@ -414,10 +407,9 @@ pub fn show_settings(
                     match selected.get(caller.0).unwrap().selected.unwrap() {
                         0 => SettingsTab::Discover,
                         1 => SettingsTab::ProfileDetail,
-                        2 => SettingsTab::Emotes,
-                        3 => SettingsTab::Map,
-                        4 => SettingsTab::Settings,
-                        5 => SettingsTab::Permissions,
+                        2 => SettingsTab::Map,
+                        3 => SettingsTab::Settings,
+                        4 => SettingsTab::Permissions,
                         _ => panic!(),
                     }
             },

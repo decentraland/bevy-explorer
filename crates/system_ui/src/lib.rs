@@ -3,7 +3,6 @@ pub mod change_realm;
 pub mod chat;
 pub mod crash_report;
 pub mod discover;
-pub mod emotes;
 pub mod foreign_profile;
 pub mod login;
 pub mod map;
