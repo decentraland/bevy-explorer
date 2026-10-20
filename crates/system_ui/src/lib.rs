@@ -3,7 +3,6 @@ pub mod change_realm;
 pub mod chat;
 pub mod crash_report;
 pub mod discover;
-pub mod foreign_profile;
 pub mod login;
 pub mod map;
 pub mod permission_manager;
@@ -21,7 +20,6 @@ use common::{
     sets::SetupSets,
     structs::{ActiveDialog, StartupScenes, ToolTips, UiRoot, ZOrder},
 };
-use foreign_profile::ForeignProfilePlugin;
 use input_manager::{InputManager, InputPriority, MouseInteractionComponent};
 use login::LoginPlugin;
 use map::MapPlugin;
@@ -53,7 +51,6 @@ impl Plugin for SystemUiPlugin {
             ChangeRealmPlugin,
             ProfileDetailPlugin,
             PermissionPlugin,
-            ForeignProfilePlugin,
         ));
 
         if app.world().get_resource::<StartupScenes>().is_none() {
