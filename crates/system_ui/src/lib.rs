@@ -2,7 +2,6 @@ pub mod app_settings;
 pub mod change_realm;
 pub mod chat;
 pub mod crash_report;
-pub mod discover;
 pub mod login;
 pub mod map;
 pub mod permission_manager;

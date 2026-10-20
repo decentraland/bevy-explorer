@@ -25,7 +25,6 @@ use crate::{
     app_settings::{AppSettingsDetail, AppSettingsPlugin},
     change_realm::{ChangeRealmDialog, UpdateRealmText},
     chat::BUTTON_SCALE,
-    discover::DiscoverSettingsPlugin,
     permissions::{PermissionSettingsDetail, PermissionSettingsPlugin},
     profile_detail::ProfileDetail,
     SystemUiRoot,
@@ -38,11 +37,7 @@ impl Plugin for ProfileEditPlugin {
         app.add_event::<ShowSettingsEvent>();
         app.add_systems(Startup, setup.in_set(SetupSets::Main));
         app.add_systems(Update, (show_settings, process_profile));
-        app.add_plugins((
-            DiscoverSettingsPlugin,
-            AppSettingsPlugin,
-            PermissionSettingsPlugin,
-        ));
+        app.add_plugins((AppSettingsPlugin, PermissionSettingsPlugin));
     }
 }
 
@@ -66,7 +61,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, ui_root: Res<Sy
                     target.scene = None;
                     target.ty = None;
                 })
-                .pipe(ShowSettingsEvent(SettingsTab::Discover).send_value())
+                .pipe(ShowSettingsEvent(SettingsTab::ProfileDetail).send_value())
                 .pipe(
                     SystemAudio("embedded://sounds/ui/mainmenu_widget_open.wav".to_owned())
                         .send_value(),
@@ -320,11 +315,10 @@ pub fn show_settings(
     };
 
     let title_initial = match tab {
-        SettingsTab::Discover => 0usize,
-        SettingsTab::ProfileDetail => 1,
-        SettingsTab::Map => 2,
-        SettingsTab::Settings => 3,
-        SettingsTab::Permissions => 4,
+        SettingsTab::ProfileDetail => 0usize,
+        SettingsTab::Map => 1,
+        SettingsTab::Settings => 2,
+        SettingsTab::Permissions => 3,
     };
 
     let Some(profile) = &current_profile.profile.as_ref() else {
@@ -351,11 +345,6 @@ pub fn show_settings(
     );
 
     let tabs = vec![
-        DuiButton {
-            label: Some("Discover".to_owned()),
-            enabled: true,
-            ..Default::default()
-        },
         DuiButton {
             label: Some("Profile".to_owned()),
             enabled: true,
@@ -405,11 +394,10 @@ pub fn show_settings(
              mut content: Query<&mut SettingsTab>| {
                 *content.single_mut().unwrap() =
                     match selected.get(caller.0).unwrap().selected.unwrap() {
-                        0 => SettingsTab::Discover,
-                        1 => SettingsTab::ProfileDetail,
-                        2 => SettingsTab::Map,
-                        3 => SettingsTab::Settings,
-                        4 => SettingsTab::Permissions,
+                        0 => SettingsTab::ProfileDetail,
+                        1 => SettingsTab::Map,
+                        2 => SettingsTab::Settings,
+                        3 => SettingsTab::Permissions,
                         _ => panic!(),
                     }
             },

@@ -1321,7 +1321,6 @@ pub enum SettingsTab {
     #[default]
     ProfileDetail,
     Map,
-    Discover,
     Settings,
     Permissions,
 }

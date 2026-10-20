@@ -1,18 +1,16 @@
 use std::path::PathBuf;
 
-use anyhow::anyhow;
 use bevy::{
     platform::collections::{hash_map::Entry, HashMap},
     prelude::*,
-    tasks::{IoTaskPool, Task},
     window::{PrimaryWindow, WindowResized},
 };
 use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     structs::{PrimaryUser, SettingsTab},
-    util::{ModifyComponentExt, TaskCompat, TaskExt, TryPushChildrenEx},
+    util::{ModifyComponentExt, TryPushChildrenEx},
 };
-use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer};
+use ipfs::ipfs_path::IpfsPath;
 use scene_runner::{initialize_scene::PARCEL_SIZE, vec3_to_parcel};
 use ui_core::{
     bound_node::{BoundedNode, BoundedNodeBundle},
@@ -20,10 +18,7 @@ use ui_core::{
     ui_actions::{ClickNoDrag, DragData, Dragged, MouseWheelData, MouseWheeled, On, UiCaller},
 };
 
-use crate::{
-    discover::{spawn_discover_popup, DiscoverPage, DiscoverPages},
-    profile::SettingsDialog,
-};
+use crate::profile::SettingsDialog;
 
 #[derive(Component)]
 pub struct MapTexture {
@@ -38,14 +33,7 @@ impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            (
-                set_map_content,
-                touch_map,
-                render_map,
-                update_map_data,
-                handle_map_task,
-            )
-                .chain(),
+            (set_map_content, touch_map, render_map, update_map_data).chain(),
         );
     }
 }
@@ -61,15 +49,10 @@ pub struct MapData {
     tile_entities: HashMap<(usize, i32, i32), Entity>,
 }
 
-#[derive(Component, Default)]
-pub struct MapSettings {
-    task: Option<(IVec2, Task<Result<DiscoverPages, anyhow::Error>>)>,
-}
-
 fn set_map_content(
     mut commands: Commands,
     dialog: Query<(Entity, Ref<SettingsDialog>)>,
-    mut q: Query<(Entity, &SettingsTab, Option<&mut MapSettings>), Changed<SettingsTab>>,
+    mut q: Query<(Entity, &SettingsTab), Changed<SettingsTab>>,
     mut prev_tab: Local<Option<SettingsTab>>,
     dui: Res<DuiRegistry>,
     player: Query<&GlobalTransform, With<PrimaryUser>>,
@@ -78,7 +61,7 @@ fn set_map_content(
         *prev_tab = None;
     }
 
-    for (ent, tab, maybe_map_settings) in q.iter_mut() {
+    for (ent, tab) in q.iter_mut() {
         if *prev_tab == Some(*tab) {
             continue;
         }
@@ -89,10 +72,6 @@ fn set_map_content(
         }
 
         commands.entity(ent).despawn_related::<Children>();
-
-        if maybe_map_settings.is_none() {
-            commands.entity(ent).try_insert(MapSettings::default());
-        }
 
         let components = commands
             .entity(ent)
@@ -168,14 +147,8 @@ fn set_map_content(
             ),
             On::<ClickNoDrag>::new(
                 |caller: Res<UiCaller>,
-                 mut q: Query<&mut MapSettings>,
                  window: Query<&Window, With<PrimaryWindow>>,
-                 map: Query<(&GlobalTransform, &MapTexture, &MapData)>,
-                 ipfas: IpfsAssetServer| {
-                    let Ok(mut settings) = q.single_mut() else {
-                        warn!("no settings");
-                        return;
-                    };
+                 map: Query<(&GlobalTransform, &MapTexture, &MapData)>| {
                     let Ok(window) = window.single() else {
                         warn!("no window");
                         return;
@@ -191,28 +164,6 @@ fn set_map_content(
                     let cursor_parcel = map.center + cursor_rel_position / data.pixels_per_parcel;
                     let parcel = cursor_parcel.floor().as_ivec2() + IVec2::Y;
                     debug!("click parcel {}", parcel);
-
-                    let url = common::base_domain::url(
-                        common::base_domain::Service::Places,
-                        &format!("/api/places?positions={},{}", parcel.x, parcel.y),
-                    );
-
-                    let client = ipfas.ipfs().client();
-                    settings.task = Some((
-                        parcel,
-                        IoTaskPool::get().spawn_compat(async move {
-                            debug!("url: {url}");
-                            let response = client
-                                .get(url)
-                                .timeout(std::time::Duration::from_secs(10))
-                                .send()
-                                .await?;
-                            response
-                                .json::<DiscoverPages>()
-                                .await
-                                .map_err(|e| anyhow!(e))
-                        }),
-                    ));
                 },
             ),
         ));
@@ -514,29 +465,6 @@ fn render_map(
 
         if let Some(new_data) = new_data {
             commands.entity(map_entity).try_insert(new_data);
-        }
-    }
-}
-
-fn handle_map_task(
-    mut q: Query<&mut MapSettings>,
-    mut commands: Commands,
-    dui: Res<DuiRegistry>,
-    asset_server: Res<AssetServer>,
-) {
-    for mut settings in q.iter_mut() {
-        if let Some((coords, mut task)) = settings.task.take() {
-            match task.complete() {
-                Some(Ok(mut pages)) => {
-                    let page = pages
-                        .data
-                        .pop()
-                        .unwrap_or_else(|| DiscoverPage::dummy(coords));
-                    spawn_discover_popup(&mut commands, &dui, &asset_server, &page);
-                }
-                Some(Err(e)) => warn!("places task error: {e}"),
-                None => settings.task = Some((coords, task)),
-            }
         }
     }
 }
