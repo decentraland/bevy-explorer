@@ -316,9 +316,8 @@ pub fn show_settings(
 
     let title_initial = match tab {
         SettingsTab::ProfileDetail => 0usize,
-        SettingsTab::Map => 1,
-        SettingsTab::Settings => 2,
-        SettingsTab::Permissions => 3,
+        SettingsTab::Settings => 1,
+        SettingsTab::Permissions => 2,
     };
 
     let Some(profile) = &current_profile.profile.as_ref() else {
@@ -347,11 +346,6 @@ pub fn show_settings(
     let tabs = vec![
         DuiButton {
             label: Some("Profile".to_owned()),
-            enabled: true,
-            ..Default::default()
-        },
-        DuiButton {
-            label: Some("Map".to_owned()),
             enabled: true,
             ..Default::default()
         },
@@ -395,9 +389,8 @@ pub fn show_settings(
                 *content.single_mut().unwrap() =
                     match selected.get(caller.0).unwrap().selected.unwrap() {
                         0 => SettingsTab::ProfileDetail,
-                        1 => SettingsTab::Map,
-                        2 => SettingsTab::Settings,
-                        3 => SettingsTab::Permissions,
+                        1 => SettingsTab::Settings,
+                        2 => SettingsTab::Permissions,
                         _ => panic!(),
                     }
             },
