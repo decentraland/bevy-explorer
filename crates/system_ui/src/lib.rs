@@ -3,7 +3,6 @@ pub mod chat;
 pub mod crash_report;
 pub mod login;
 pub mod oow;
-pub mod permissions;
 pub mod profile;
 pub mod profile_detail;
 pub mod sysinfo;
@@ -15,7 +14,7 @@ use change_realm::ChangeRealmPlugin;
 use common::{
     inputs::SystemAction,
     sets::SetupSets,
-    structs::{ActiveDialog, PermissionUsed, ToolTips, UiRoot, ZOrder},
+    structs::{ActiveDialog, PermissionTarget, PermissionUsed, ToolTips, UiRoot, ZOrder},
 };
 use input_manager::{InputManager, InputPriority, MouseInteractionComponent};
 use login::LoginPlugin;
@@ -34,6 +33,7 @@ impl Plugin for SystemUiPlugin {
             .init_resource::<ActiveDialog>()
             .init_resource::<ToolTips>()
             .init_resource::<PermissionManager>()
+            .init_resource::<PermissionTarget>()
             .add_event::<PermissionUsed>();
         app.add_systems(
             Startup,

@@ -24,7 +24,6 @@ use ui_core::{
 use crate::{
     change_realm::{ChangeRealmDialog, UpdateRealmText},
     chat::BUTTON_SCALE,
-    permissions::{PermissionSettingsDetail, PermissionSettingsPlugin},
     profile_detail::ProfileDetail,
     SystemUiRoot,
 };
@@ -36,7 +35,6 @@ impl Plugin for ProfileEditPlugin {
         app.add_event::<ShowSettingsEvent>();
         app.add_systems(Startup, setup.in_set(SetupSets::Main));
         app.add_systems(Update, (show_settings, process_profile));
-        app.add_plugins(PermissionSettingsPlugin);
     }
 }
 
@@ -109,38 +107,17 @@ pub enum OnCloseEvent {
 fn save_settings(
     mut commands: Commands,
     mut current_profile: ResMut<CurrentUserProfile>,
-    mut config: ResMut<AppConfig>,
-    modified: Query<
-        (
-            Entity,
-            Option<&AvatarShape>,
-            Option<&ProfileDetail>,
-            Option<&PermissionSettingsDetail>,
-        ),
-        With<SettingsDialog>,
-    >,
+    modified: Query<(Entity, Option<&AvatarShape>, Option<&ProfileDetail>), With<SettingsDialog>>,
 ) {
     let Some(profile) = current_profile.profile.as_mut() else {
         error!("can't amend missing profile");
         return;
     };
 
-    let Ok((dialog_ent, maybe_avatar, maybe_detail, maybe_perms)) = modified.single() else {
+    let Ok((dialog_ent, maybe_avatar, maybe_detail)) = modified.single() else {
         error!("no dialog");
         return;
     };
-
-    if let Some(perms) = maybe_perms {
-        config
-            .scene_permissions
-            .clone_from(&perms.0.scene_permissions);
-        config
-            .realm_permissions
-            .clone_from(&perms.0.realm_permissions);
-        config
-            .default_permissions
-            .clone_from(&perms.0.default_permissions);
-    }
 
     if maybe_detail.is_some() || maybe_avatar.is_some() {
         if let Some(detail) = maybe_detail {
@@ -308,7 +285,6 @@ pub fn show_settings(
 
     let title_initial = match tab {
         SettingsTab::ProfileDetail => 0usize,
-        SettingsTab::Permissions => 1,
     };
 
     let Some(profile) = &current_profile.profile.as_ref() else {
@@ -334,18 +310,11 @@ pub fn show_settings(
         InfoDialog::click("Not implemented".to_owned(), "Not implemented".to_owned()),
     );
 
-    let tabs = vec![
-        DuiButton {
-            label: Some("Profile".to_owned()),
-            enabled: true,
-            ..Default::default()
-        },
-        DuiButton {
-            label: Some("Permissions".to_owned()),
-            enabled: true,
-            ..Default::default()
-        },
-    ];
+    let tabs = vec![DuiButton {
+        label: Some("Profile".to_owned()),
+        enabled: true,
+        ..Default::default()
+    }];
 
     props.insert_prop(
         "realm",
@@ -375,7 +344,6 @@ pub fn show_settings(
                 *content.single_mut().unwrap() =
                     match selected.get(caller.0).unwrap().selected.unwrap() {
                         0 => SettingsTab::ProfileDetail,
-                        1 => SettingsTab::Permissions,
                         _ => panic!(),
                     }
             },
