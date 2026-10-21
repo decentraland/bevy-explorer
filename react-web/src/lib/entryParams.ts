@@ -18,7 +18,9 @@ export interface AcceptedParam {
 const PAGE_PARAMS: Record<string, string> = {
   world: 'A world by name: `world=boedo` is `realm=boedo.dcl.eth`.',
   guest: '`1` skips the sign-in screen with a guest login.',
-  fps: '`1` shows the frame-rate overlay (Ctrl/Cmd+Shift+F toggles it).'
+  fps: '`1` shows the frame-rate overlay (Ctrl/Cmd+Shift+F toggles it).',
+  pulseCertificateHash:
+    'SHA-256 (hex or base64) of a self-signed Pulse server certificate to trust, for a local or test server named by `pulseServer=` (e.g. `pulseServer=127.0.0.1:7743`).'
 }
 
 const WORLD_NAME = /^[a-z0-9-]+$/

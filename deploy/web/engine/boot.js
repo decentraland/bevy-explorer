@@ -8,6 +8,10 @@
 //                            param table: systemScene, portables, preview, the
 //                            host-resolved baseDomain and service overrides …) minus
 //                            realm/position, forwarded verbatim by __bevyLaunch
+//                          window.__bevyPulseCertificateHash — OPTIONAL: the SHA-256 (hex or
+//                            base64) of a self-signed Pulse server's certificate, pinned in the
+//                            wasm before the engine can connect (not a launch option: a page-only
+//                            switch, like ?guest=)
 //   provided by this module:
 //     __bevyLoadProgress / __bevyLoadStep  — weighted boot progress for the login bar
 //     __bevyReadyToLaunch / __bevyLaunch(realm?, position?, host?) — deferred engine_run; `host`
@@ -33,7 +37,7 @@
 //       pinned), for the host's "Skip to Home"; set alongside __bevyReadyToLaunch
 //     __bevyTermsAccepted() — whether the persisted config has accepted the terms (null =
 //       unknown), so the host can hold a link's world for its welcome page; set alongside too
-import { initEngine, start, prepareRender, applyOptionsToUrlParams, engine_home_scene, engine_terms_accepted, engine_crash_event } from './engine.js'
+import { initEngine, start, prepareRender, applyOptionsToUrlParams, engine_home_scene, engine_terms_accepted, engine_crash_event, engine_set_pulse_certificate_hash } from './engine.js'
 
 // ---- boot progress (replaces ui.js's DOM loading steps) -----------------------------------------
 // Weight of each step in the overall bar (sums to 100). Step ids are read by the React login bar
@@ -380,6 +384,9 @@ window.addEventListener('keydown', (event) => {
 // ---- boot: compile WASM + warm the GPU cache, then wait for the host to launch -------------------
 initEngine()
   .then(() => {
+    // An invalid hash throws here and fails the boot, rather than the engine quietly connecting
+    // on CA trust.
+    if (window.__bevyPulseCertificateHash) engine_set_pulse_certificate_hash(window.__bevyPulseCertificateHash)
     window.setLoadingStepActive('gpu')
     // spawns the render worker; gpu_cache.js warms its device there before the launch
     return prepareRender()

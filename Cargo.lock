@@ -3497,6 +3497,7 @@ dependencies = [
  "alloy-signer-local",
  "anyhow",
  "async-std",
+ "base64 0.22.1",
  "bevy",
  "bevy_console",
  "bevy_kira_audio",

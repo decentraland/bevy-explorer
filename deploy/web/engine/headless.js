@@ -68,6 +68,10 @@ export async function startHeadless(compiledModule, options) {
   const glueUrl = new URL("./pkg/webgpu_build.js", import.meta.url).href;
   const glue = await import(glueUrl);
   await glue.default({ module_or_path: compiledModule, memory: sharedMemory });
+  // The client's Pulse certificate pin (EngineHost.tsx), set again here: this instance's statics
+  // are its own, and the server joins the same Pulse server as a listener.
+  const pulseCertificateHash = window.parent.__bevyPulseCertificateHash;
+  if (pulseCertificateHash) glue.engine_set_pulse_certificate_hash(pulseCertificateHash);
 
   const sandboxes = createSandboxHost({
     compiledModule,

@@ -14,6 +14,7 @@ describe('acceptedEntryParams', () => {
     expect(new Set(names).size).toBe(names.length)
     expect(names).toContain('guest')
     expect(names).toContain('fps')
+    expect(names).toContain('pulseCertificateHash')
     // host-forced and debug switches are known, not advertised
     for (const internal of ['native', 'hud', 'mock', 'gate', 'simerror']) expect(names).not.toContain(internal)
   })
