@@ -475,9 +475,10 @@ const DEFAULT_PULSE_PORT: u16 = if cfg!(target_arch = "wasm32") {
 
 /// The SHA-256 the wasm WebTransport driver pins the server's certificate to through
 /// `serverCertificateHashes`, for a self-signed server (a local or test deployment). Set by the
-/// page before the engine starts (src/web.rs `engine_set_pulse_certificate_hash`), which the
-/// engine worker and an in-page scene server share. Unset, production's CA-signed certificate is
-/// trusted by default; native (ENet) never needs one.
+/// page before the engine starts (src/web.rs `engine_set_pulse_certificate_hash`) — once per
+/// instance of the module, so an in-page scene server (deploy/web/engine/headless.js), over its
+/// own memory, sets its own. Unset, production's CA-signed certificate is trusted by default;
+/// native (ENet) never needs one.
 static CERTIFICATE_HASH: OnceLock<[u8; 32]> = OnceLock::new();
 
 /// Pin the Pulse certificate to `digest` for the rest of the process; a later call is ignored.

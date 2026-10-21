@@ -54,8 +54,9 @@ function injectEngine(): void {
     systemScene: bootMode().systemScene ?? SYSTEM_SCENE
   }
   // A page switch, not a launch option (native could never use it): boot.js hands it to the wasm
-  // directly. Gated like a service override (lib/launchGate.ts).
-  const pulseCertificateHash = params.get('pulseCertificateHash')
+  // directly. Gated like a service override (lib/launchGate.ts). A query value decodes `+` as a
+  // space; base64 has no spaces, so each one was a `+`.
+  const pulseCertificateHash = params.get('pulseCertificateHash')?.replaceAll(' ', '+')
   if (pulseCertificateHash) window.__bevyPulseCertificateHash = pulseCertificateHash
 
   // The engine's signer for an identity whose key the web shell holds (crates/wallet remote_signer):
