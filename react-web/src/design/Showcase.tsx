@@ -271,6 +271,9 @@ export function Showcase(): React.JSX.Element {
           <Tooltip label="Settings" shortcut="P" side="top">
             <span style={{ padding: '8px 14px', borderRadius: 10, background: 'var(--fill-4)' }}>top</span>
           </Tooltip>
+          <Tooltip label={'A longer hint that wraps.\n\nParagraph breaks are kept, and it hangs from the left edge.'} side="bottom" multiline>
+            <span style={{ padding: '8px 14px', borderRadius: 10, background: 'var(--fill-4)' }}>multiline</span>
+          </Tooltip>
         </div>
       </Section>
 

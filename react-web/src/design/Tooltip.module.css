@@ -72,6 +72,25 @@
   transform: translate(-50%, 14px) scale(1);
 }
 
+/* multiline: a paragraph (settings descriptions). Left-anchored so a wide tip under a short
+   trigger doesn't run off the panel's edge. */
+.multiline {
+  display: block;
+  width: max-content;
+  max-width: 360px;
+  white-space: pre-line;
+  font-weight: 500;
+  text-align: left;
+}
+.multiline.bottom {
+  left: 0;
+  transform: translate(0, 10px) scale(0.96);
+  transform-origin: left top;
+}
+.wrap:hover .multiline.bottom {
+  transform: translate(0, 14px) scale(1);
+}
+
 .rail {
   border-radius: var(--r-button);
   box-shadow: none;

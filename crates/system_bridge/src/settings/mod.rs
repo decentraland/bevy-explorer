@@ -353,7 +353,7 @@ impl Settings {
             },
             apply: Some(Box::new(
                 |config: &mut AppConfig, value: f32| -> Result<f32, anyhow::Error> {
-                    let new_value = S::from_int((value / S::scale()) as i32);
+                    let new_value = S::from_int((value / S::scale()).round() as i32);
                     new_value.save(config);
                     Ok(new_value.value() as f32 * S::scale())
                 },
