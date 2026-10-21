@@ -10,12 +10,14 @@ import { recordVisit } from '../lobby/lobbyApi'
 import type { SatelliteView } from '../../engine/generated'
 import type { PreviewFocus } from '../../engine/protocol'
 import { clickButton, screenViewed, track } from '../../lib/analytics'
+import { inShell, postToShell } from '../../lib/shell'
 import { storedLoginType, type LoginType } from './sessionAnalytics'
 import type { InteractableArea } from '../../lib/hudInset'
 import type { FatalError } from '../error/fatalError'
 import { createLoadingProgress } from './loadingProgress'
 import { DEFAULT_REALM } from '../../lib/baseDomain'
 import { checkRealm, realmCheckMessage } from '../../lib/realmCheck'
+import { entryRealm } from '../../lib/entryParams'
 import { color3ToHex, hexToColor3 } from '../../lib/color'
 import { closeTopPopup, hasOpenPopup, subscribePopups } from '../../design'
 import { emitFriendEvent } from '../friends/friendEvents'
@@ -704,6 +706,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // How the pending login is reported once it resolves: 'stored' reads the stored identity's kind
   // then (it loads alongside the status), null is a scene-owned login the page never ran.
   const pendingLoginType = useRef<LoginType | 'stored' | null>(null)
+  const lastLoginType = useRef<LoginType | null>(null)
+  // the terms accepted on this install, as the welcome flow reported it (the engine knows otherwise)
+  const termsOk = useRef(false)
   const storedRef = useRef<StoredLogin | null>(null)
   storedRef.current = stored
   const welcomeRef = useRef<{ terms: boolean; newProfile: boolean } | null>(null)
@@ -1281,6 +1286,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           setWelcomePending(false)
           // native, which launches itself, holds a link's world for the terms (src/lib.rs)
           if (msg.terms && driver.launch == null && welcomeLink.current != null) heldDest.current = welcomeLink.current
+          if (!msg.terms) termsOk.current = true
           if (!msg.terms && !msg.newProfile) {
             releaseLinkRef.current()
             break
@@ -1291,6 +1297,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
             driver.send({ kind: 'getProfile' })
           }
           welcomeRef.current = { terms: msg.terms, newProfile: msg.newProfile }
+          if (!msg.terms) termsOk.current = true
           screenViewed(msg.newProfile ? 'AVATAR_NAMING' : 'WELCOME')
           setWelcome({ terms: msg.terms, newProfile: msg.newProfile })
           break
@@ -1301,6 +1308,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
             break
           }
           releaseLinkRef.current()
+          termsOk.current = true
           setWelcome(null)
           if (welcomeRef.current?.newProfile) screenViewed('AUTH_DEPLOY_SUCCESS')
           welcomeRef.current = null
@@ -1944,7 +1952,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     pendingLoginType.current = null
     Promise.resolve(login?.(driver))
       .then(() => {
-        if (type != null) screenViewed('AUTH_SUCCESS', { login_type: type === 'stored' ? storedLoginType(storedRef.current) : type })
+        if (type != null) {
+          lastLoginType.current = type === 'stored' ? storedLoginType(storedRef.current) : type
+          screenViewed('AUTH_SUCCESS', { login_type: lastLoginType.current })
+        }
         welcomeLink.current = urlDestination.current
         urlDestination.current = null
         setBusy(false)
@@ -2137,9 +2148,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       const raw = q.get('position')
       const [x, y] = raw?.split(',').map((n) => parseInt(n.trim(), 10)) ?? []
       const hasPosition = Number.isFinite(x) && Number.isFinite(y)
-      const realm = q.get('realm')
-      if (realm != null && realm !== '')
-        return { kind: 'world', realm, position: hasPosition ? `${x},${y}` : undefined }
+      const realm = entryRealm(q)
+      if (realm != null) return { kind: 'world', realm, position: hasPosition ? `${x},${y}` : undefined }
       if (hasPosition) return { kind: 'parcel', x, y }
       // A hidden HUD renders no picker — land at Genesis 0,0 so the boot doesn't strand on an
       // invisible screen (parity with the picker's "skip").
@@ -2381,6 +2391,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     clearLogins() // drop the same-domain SSO identity for this origin
     setStored(null)
     pendingLoginType.current = null
+    lastLoginType.current = null
     welcomeRef.current = null
     setStatus('sign-in-or-guest')
     closeAllPanels()
@@ -2683,12 +2694,20 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // The screens a phase shows (the loading screen's own are the engine's: LOADING_START / END /
   // TIMEOUT come from `crates/analytics/src/loading.rs`).
   const prevPhase = useRef<SessionPhase | null>(null)
+  const inWorldReported = useRef(false)
   useEffect(() => {
     const prev = prevPhase.current
     prevPhase.current = phase
     if (prev === phase) return
     if (phase === 'lobby') screenViewed('LOBBY')
     else if (phase === 'picking') screenViewed('PLACES_PICKER')
+    else if (phase === 'world' && !inWorldReported.current) {
+      // the first scene of the page load, the shell's Google Ads conversion (shell/googleTag.ts):
+      // only with the terms accepted, like every event the engine sends
+      inWorldReported.current = true
+      const terms = termsOk.current || driverRef.current?.termsAccepted?.() === true
+      if (inShell && terms) postToShell({ type: 'bevy-shell:in-world', login_type: lastLoginType.current })
+    }
   }, [phase])
   // The sign-in screens as mobile names them, once per showing (an error flip on the same screen
   // is not a new view). The "welcome back" panel only shows after a failed sign-in: a stored login

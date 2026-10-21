@@ -1432,9 +1432,7 @@ dependencies = [
  "social",
  "system_bridge",
  "texture_camera",
- "tokio",
  "ui_core",
- "urn",
  "world_ui",
 ]
 

@@ -4,7 +4,7 @@ use bevy::{
 };
 use chrono::{DateTime, Utc};
 use common::{
-    structs::AppConfig,
+    structs::{AppConfig, CurrentRealm, PreviewMode},
     util::{reqwest_client, TaskCompat, TaskExt},
 };
 use std::{collections::VecDeque, time::Duration};
@@ -21,7 +21,10 @@ impl Plugin for SegmentMetricPlugin {
             TimerMode::Repeating,
         )))
         .init_resource::<SegmentMetricsEvents>()
-        .add_systems(Update, send_segment_metric_event);
+        .add_systems(
+            Update,
+            (mark_local_scene, send_segment_metric_event).chain(),
+        );
     }
 }
 
@@ -117,6 +120,19 @@ impl SegmentConfig {
 
     pub fn update_position(&mut self, position: String) {
         self.common.position = position;
+    }
+}
+
+/// A scene being developed: the sdk's or an editor's preview (`preview=true`, `--preview`), or a
+/// realm served by a local dev server, which lists its parcels in `about`.
+fn mark_local_scene(
+    preview: Res<PreviewMode>,
+    realm: Option<Res<CurrentRealm>>,
+    mut config: ResMut<SegmentConfig>,
+) {
+    let local = preview.is_preview || realm.is_some_and(|realm| realm.is_local());
+    if config.common.is_local_scene != local {
+        config.common.is_local_scene = local;
     }
 }
 

@@ -13,6 +13,8 @@ interface TooltipProps {
   side?: Side
   /** rail: the sidebar's tooltip (tighter radius, 34px from the button centre, no fade). */
   variant?: 'default' | 'rail'
+  /** A paragraph rather than a name: wraps, keeps line breaks, hangs from the trigger's left edge. */
+  multiline?: boolean
   className?: string
   children: React.ReactNode
 }
@@ -22,13 +24,15 @@ export function Tooltip({
   shortcut,
   side = 'right',
   variant = 'default',
+  multiline = false,
   className = '',
   children
 }: TooltipProps): React.JSX.Element {
+  const tip = [styles.tip, styles[side], variant === 'rail' && styles.rail, multiline && styles.multiline].filter(Boolean).join(' ')
   return (
     <span className={`${styles.wrap} ${className}`.trim()}>
       {children}
-      <span className={`${styles.tip} ${styles[side]} ${variant === 'rail' ? styles.rail : ''}`.trim()} role="tooltip">
+      <span className={tip} role="tooltip">
         {label}
         {shortcut && <span className={styles.shortcut}>[{shortcut}]</span>}
       </span>

@@ -136,7 +136,8 @@ export function bootAnalytics(): void {
   if (resumedSession != null) return
   track('App Opened', {
     start_kind: 'cold',
-    trigger: entry.has('realm') || entry.has('position') ? 'deeplink' : 'icon',
+    // a destination on the link (lib/entryParams.ts entryRealm reads world as a realm)
+    trigger: entry.has('realm') || entry.has('world') || entry.has('position') ? 'deeplink' : 'icon',
     prev_session_id: '',
     seconds_since_last_seen: -1
   })

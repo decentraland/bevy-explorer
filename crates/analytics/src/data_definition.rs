@@ -41,6 +41,9 @@ pub struct SegmentEventCommonExplorerFields {
     // this session to the web visit that led to it (as the launcher does for the desktop client).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub campaign_anon_user_id: Option<String>,
+    // A scene being developed (the sdk's or an editor's preview, a local dev server's realm), as
+    // the desktop client flags it: not a visit, the warehouse filters on it.
+    pub is_local_scene: bool,
 }
 
 impl SegmentEventCommonExplorerFields {
@@ -57,6 +60,7 @@ impl SegmentEventCommonExplorerFields {
             session_id,
             renderer_version: version,
             campaign_anon_user_id,
+            is_local_scene: false,
         }
     }
 }

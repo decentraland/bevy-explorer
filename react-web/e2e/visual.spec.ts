@@ -414,3 +414,18 @@ test.describe('visual — mock HUD', () => {
     await expect(page).toHaveScreenshot('backpack-emotes.png')
   })
 })
+
+// "Start with account" is a normal navigation, so the browser's back button returns to the sign-in
+// screen. The auth page is stubbed: the point is the history entry, not the auth site. Real driver
+// (no ?mock): the mock's has a native sign-in flow and never redirects.
+test.describe('sign-in — web driver', () => {
+  test('back from the auth page returns to the sign-in screen', async ({ page }) => {
+    await page.route('**/auth/login*', (route) => route.fulfill({ contentType: 'text/html', body: '<title>auth</title>' }))
+    await page.goto('/app.html?nogate=1')
+    await page.getByRole('button', { name: /START WITH ACCOUNT/i }).click()
+    await page.waitForURL(/\/auth\/login/)
+    await page.goBack()
+    await expect(page).toHaveURL(/app\.html/)
+    await expect(page.getByRole('button', { name: /START WITH ACCOUNT/i })).toBeVisible({ timeout: 60_000 })
+  })
+})

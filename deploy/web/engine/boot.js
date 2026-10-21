@@ -353,6 +353,8 @@ window.set_url_params = (optionsJson) => {
     const urlParams = new URLSearchParams(window.location.search)
     const options = Object.fromEntries(Object.entries(JSON.parse(optionsJson)).map(([name, raw]) => [name, urlValue(name, raw)]))
     applyOptionsToUrlParams(urlParams, options)
+    // a `world=` link named the realm the sync now writes; one destination in the url
+    urlParams.delete('world')
     history.replaceState(null, '', window.location.pathname + '?' + urlParams.toString())
     // inside the web shell (react-web/index.html) this page is an iframe; the shell owns the address bar
     if (window.parent !== window && !window.credentialless) {
