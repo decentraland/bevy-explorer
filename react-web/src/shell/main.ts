@@ -7,6 +7,7 @@ import { authLoginUrl } from '../features/auth/sso'
 import { ANALYTICS_SESSION_PARAM, ANON_USER_ID_PARAM, dropAttributionParams } from '../lib/analytics'
 import { migratePrefs } from '../lib/prefs'
 import { request } from './login'
+import { isLoginType, reportInWorld } from './googleTag'
 
 // The service worker's scope is the package DIRECTORY, but the production entry URL has no
 // trailing slash, which puts this page outside it: the worker never sees the request, so the
@@ -100,6 +101,10 @@ addEventListener('message', async (e: MessageEvent) => {
     case 'bevy-shell:auth-login':
       if (typeof m.session === 'string') sessionStorage.setItem(ANALYTICS_SESSION_KEY, m.session)
       location.assign(authLoginUrl(location.href))
+      break
+    // the session's first scene: the Google Ads conversion (googleTag.ts)
+    case 'bevy-shell:in-world':
+      reportInWorld(isLoginType(m.login_type) ? m.login_type : undefined)
       break
     // the untrusted-link gate's exit (see src/features/gate/UntrustedLaunchGate.tsx)
     case 'bevy-shell:exit':

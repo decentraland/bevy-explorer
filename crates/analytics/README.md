@@ -31,7 +31,8 @@ server (`CurrentRealm::is_local`, so an editor host that omits the flag is cover
 every tick so a realm change updates it.
 
 The page side is `react-web/src/lib/analytics.ts` (events and sequences in
-`react-web/review.md`, "Analytics").
+`react-web/review.md`, "Analytics"). The web's Google Ads conversion (`web_in_world`, a GA4 event
+the shell page sends on the first scene) is not a Segment event: `react-web/src/shell/googleTag.ts`.
 
 An engine crash on the web is reported by the page (`crash.rs`): the engine keeps a snapshot of
 what an Explorer Error batch needs (user id, write key, consent, the common fields) in a static,
