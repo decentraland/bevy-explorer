@@ -1340,12 +1340,6 @@ impl From<&String> for SystemAudio {
     }
 }
 
-#[derive(Resource, Default)]
-pub struct PermissionTarget {
-    pub scene: Option<Entity>,
-    pub ty: Option<PermissionType>,
-}
-
 // render layers
 // 0 is default
 // - normally 0 and 1 is used for the player, when in first person only 1 is used for the player

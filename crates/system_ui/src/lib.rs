@@ -15,10 +15,7 @@ use common::{
     inputs::SystemAction,
     rpc::RpcStreamSender,
     sets::SetupSets,
-    structs::{
-        ActiveDialog, AppConfig, CurrentRealm, PermissionTarget, PermissionUsed, ToolTips, UiRoot,
-        ZOrder,
-    },
+    structs::{ActiveDialog, AppConfig, CurrentRealm, PermissionUsed, ToolTips, UiRoot, ZOrder},
 };
 use input_manager::{InputManager, InputPriority, MouseInteractionComponent};
 use login::LoginPlugin;
@@ -42,7 +39,6 @@ impl Plugin for SystemUiPlugin {
             .init_resource::<ActiveDialog>()
             .init_resource::<ToolTips>()
             .init_resource::<PermissionManager>()
-            .init_resource::<PermissionTarget>()
             .add_event::<PermissionUsed>();
         app.add_systems(
             Startup,
