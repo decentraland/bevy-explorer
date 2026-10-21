@@ -36,5 +36,5 @@ export function reportInWorld(loginType: LoginType | undefined): void {
   gtag('consent', 'default', { ad_storage: 'granted', analytics_storage: 'granted', ad_user_data: 'granted', ad_personalization: 'granted' })
   gtag('js', new Date())
   gtag('config', MEASUREMENT_ID, { send_page_view: false })
-  gtag('event', 'web_in_world', loginType ? { login_type: loginType } : {})
+  gtag('event', 'bevy_first_move_in_world', loginType ? { login_type: loginType } : {})
 }
