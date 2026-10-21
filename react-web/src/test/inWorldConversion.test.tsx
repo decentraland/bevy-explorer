@@ -23,4 +23,17 @@ describe('in-world conversion', () => {
     await waitFor(() => expect(h.session().phase).toBe('world'))
     expect(inWorldPosts()).toHaveLength(1)
   })
+
+  // ?guest=1 skips the welcome page, so nothing has said the terms are accepted on this install
+  it('does not post without the terms accepted', async () => {
+    vi.mocked(postToShell).mockClear()
+    window.history.replaceState(null, '', '/?guest=1&position=10,20')
+    const h = renderSession({ userId: null })
+    await waitFor(() => expect(h.driver.calls).toContain('loginGuest'))
+    h.driver.emit({ kind: 'event', name: 'playerReady' })
+    h.driver.emit({ kind: 'sceneLoading', state: { visible: false, realmConnected: true, title: '', pendingAssets: null } })
+    await waitFor(() => expect(h.session().phase).toBe('world'))
+    expect(inWorldPosts()).toEqual([])
+    window.history.replaceState(null, '', '/')
+  })
 })

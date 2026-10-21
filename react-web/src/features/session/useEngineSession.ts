@@ -707,6 +707,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // then (it loads alongside the status), null is a scene-owned login the page never ran.
   const pendingLoginType = useRef<LoginType | 'stored' | null>(null)
   const lastLoginType = useRef<LoginType | null>(null)
+  // the terms accepted on this install, as the welcome flow reported it (the engine knows otherwise)
+  const termsOk = useRef(false)
   const storedRef = useRef<StoredLogin | null>(null)
   storedRef.current = stored
   const welcomeRef = useRef<{ terms: boolean; newProfile: boolean } | null>(null)
@@ -1284,6 +1286,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           setWelcomePending(false)
           // native, which launches itself, holds a link's world for the terms (src/lib.rs)
           if (msg.terms && driver.launch == null && welcomeLink.current != null) heldDest.current = welcomeLink.current
+          if (!msg.terms) termsOk.current = true
           if (!msg.terms && !msg.newProfile) {
             releaseLinkRef.current()
             break
@@ -1294,6 +1297,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
             driver.send({ kind: 'getProfile' })
           }
           welcomeRef.current = { terms: msg.terms, newProfile: msg.newProfile }
+          if (!msg.terms) termsOk.current = true
           screenViewed(msg.newProfile ? 'AVATAR_NAMING' : 'WELCOME')
           setWelcome({ terms: msg.terms, newProfile: msg.newProfile })
           break
@@ -1304,6 +1308,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
             break
           }
           releaseLinkRef.current()
+          termsOk.current = true
           setWelcome(null)
           if (welcomeRef.current?.newProfile) screenViewed('AUTH_DEPLOY_SUCCESS')
           welcomeRef.current = null
@@ -2386,6 +2391,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     clearLogins() // drop the same-domain SSO identity for this origin
     setStored(null)
     pendingLoginType.current = null
+    lastLoginType.current = null
     welcomeRef.current = null
     setStatus('sign-in-or-guest')
     closeAllPanels()
@@ -2696,9 +2702,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     if (phase === 'lobby') screenViewed('LOBBY')
     else if (phase === 'picking') screenViewed('PLACES_PICKER')
     else if (phase === 'world' && !inWorldReported.current) {
-      // the first scene of the page load, the shell's Google Ads conversion (shell/googleTag.ts)
+      // the first scene of the page load, the shell's Google Ads conversion (shell/googleTag.ts):
+      // only with the terms accepted, like every event the engine sends
       inWorldReported.current = true
-      if (inShell) postToShell({ type: 'bevy-shell:in-world', login_type: lastLoginType.current })
+      const terms = termsOk.current || driverRef.current?.termsAccepted?.() === true
+      if (inShell && terms) postToShell({ type: 'bevy-shell:in-world', login_type: lastLoginType.current })
     }
   }, [phase])
   // The sign-in screens as mobile names them, once per showing (an error flip on the same screen

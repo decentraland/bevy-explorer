@@ -248,11 +248,12 @@ back as `analyticsSession`). Expectations:
   {position, status} and LOADING_TIMEOUT after 90 s follow its own loading screen
   (`crates/analytics/src/loading.rs`), the one `sceneLoading` mirrors here.
 - **Social**: Friend Request, Friend Accept, Unfriend, Block User on the action.
-- **In world**: the first `world` phase of a page load posts `bevy-shell:in-world` {login_type} to
+- **In world**: the first `world` phase of a page load, with the terms accepted (the welcome
+  flow's answer, or the engine's persisted config), posts `bevy-shell:in-world` {login_type} to
   the shell, the one message that leaves the page for anyone but the engine. On decentraland.org
-  only, once per tab session, the shell then loads the Google tag for the Explorer GA4 stream and
-  sends `web_in_world`, the Google Ads conversion (`shell/googleTag.ts`). Nothing of Google's
-  loads before that moment.
+  only, never for a `preview=true` page, once per tab session, the shell then loads the Google
+  tag for the Explorer GA4 stream and sends `web_in_world`, the Google Ads conversion
+  (`shell/googleTag.ts`). Nothing of Google's loads before that moment.
 - Tests: `src/test/analytics.test.ts` (stamping, the handoff, the rejected send),
   `src/test/analytics.session.test.tsx` (the sequences above), `engineDriver.test.ts` (the session
   id at launch), `entryParams.test.ts` (campaign params).
