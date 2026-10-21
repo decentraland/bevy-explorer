@@ -77,10 +77,7 @@ impl PlayerIdAllocator {
     }
 }
 
-pub struct GlobalCrdtPlugin {
-    /// Subscribes to foreign player audio sources
-    pub handle_foreign_audio: bool,
-}
+pub struct GlobalCrdtPlugin;
 
 /// Drop incoming `NetworkUpdate::Player` messages without spawning
 /// ForeignPlayer entities or updating the profile cache. Set by headless
@@ -115,7 +112,12 @@ impl Plugin for GlobalCrdtPlugin {
         app.add_systems(Update, despawn_players);
         app.add_observer(remove_transport_from_foreign_audio_source);
         app.add_observer(remove_transport_from_foreign_players);
-        if self.handle_foreign_audio {
+        // a headless app plays no voices, so never subscribes to foreign audio
+        if app
+            .world()
+            .get_resource::<common::structs::NoRenderApp>()
+            .is_none()
+        {
             app.add_systems(Update, handle_foreign_audio);
         }
         app.add_systems(

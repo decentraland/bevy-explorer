@@ -42,11 +42,11 @@ impl Plugin for LivekitPlugin {
         }
 
         // a headless app has no microphone, and plays no voices
-        if app
+        let headless = app
             .world()
             .get_resource::<common::structs::NoRenderApp>()
-            .is_none()
-        {
+            .is_some();
+        if !headless {
             app.add_plugins(MicPlugin);
         }
         app.add_plugins(LivekitRuntimePlugin);
@@ -55,9 +55,10 @@ impl Plugin for LivekitPlugin {
         app.add_plugins(LivekitTrackPlugin);
 
         app.add_systems(Update, (start_livekit, verify_player_update_tasks));
-        // on the web the page plays voice (livekit-client), and the engine worker has no audio output
+        // on the web the page plays voice (livekit-client), and the engine worker has no audio
+        // output; a headless app plays nothing, so opens no audio device
         #[cfg(not(target_arch = "wasm32"))]
-        {
+        if !headless {
             app.add_systems(Startup, build_kira_audio_manager);
             app.add_systems(
                 Update,

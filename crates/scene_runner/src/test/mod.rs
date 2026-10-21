@@ -110,9 +110,7 @@ impl PluginGroup for TestPlugins {
                 add_bevy_console: false,
             })
             .add(WalletPlugin)
-            .add(CommsPlugin {
-                handle_foreign_audio: false,
-            })
+            .add(CommsPlugin)
             .add(DuiPlugin)
             .add(SystemBridgePlugin { bare: true })
     }

@@ -586,9 +586,7 @@ impl DecentralandApp {
                 no_fog: decentraland_app_config.arguments.no_fog,
             })
             .add_plugins(WalletPlugin)
-            .add_plugins(CommsPlugin {
-                handle_foreign_audio: true,
-            })
+            .add_plugins(CommsPlugin)
             .add_plugins(SocialPlugin)
             .add_plugins(NftShapePlugin)
             .add_plugins(TweenPlugin)
