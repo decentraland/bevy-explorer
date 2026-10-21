@@ -32,7 +32,6 @@ pub fn latch(launch: &LaunchOptions) -> Result<(), String> {
     if let Some(domain) = &launch.base_domain {
         common::base_domain::set(domain)?;
     }
-    launch.pulse_certificate_hash()?;
     common::base_domain::set_services(launch.services.iter())
 }
 
@@ -50,13 +49,7 @@ pub fn apply(app: &mut App, launch: &LaunchOptions, config: &AppConfig, boot_ser
         services: _,
         preview,
         log_fps,
-        pulse_certificate_hash: _,
     } = launch;
-
-    // validated by `latch`
-    if let Ok(Some(digest)) = launch.pulse_certificate_hash() {
-        app.insert_resource(comms::pulse::plugin::PulseCertificateHash(digest));
-    }
 
     app.insert_resource(PreviewMode {
         server: preview.then(|| boot_server.to_owned()),

@@ -18,7 +18,7 @@
 //! the whole driver/link from `Down` (unless the last reason was terminal, in which case it parks in
 //! `Dead`). Initial connect is just the first such build.
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use alloy_core::primitives::Address;
 use bevy::prelude::*;
@@ -473,12 +473,34 @@ const DEFAULT_PULSE_PORT: u16 = if cfg!(target_arch = "wasm32") {
     7777
 };
 
-/// The `--pulse-certificate-hash` launch option: the SHA-256 the wasm WebTransport driver pins the
-/// server's certificate to through `serverCertificateHashes`, for a self-signed server (a local or
-/// test deployment). Absent, production's CA-signed certificate is trusted by default; native
-/// (ENet) never needs one.
-#[derive(Resource, Clone, Copy, Debug)]
-pub struct PulseCertificateHash(pub [u8; 32]);
+/// The SHA-256 the wasm WebTransport driver pins the server's certificate to through
+/// `serverCertificateHashes`, for a self-signed server (a local or test deployment). Set by the
+/// page before the engine starts (src/web.rs `engine_set_pulse_certificate_hash`), which the
+/// engine worker and an in-page scene server share. Unset, production's CA-signed certificate is
+/// trusted by default; native (ENet) never needs one.
+static CERTIFICATE_HASH: OnceLock<[u8; 32]> = OnceLock::new();
+
+/// Pin the Pulse certificate to `digest` for the rest of the process; a later call is ignored.
+pub fn set_certificate_hash(digest: [u8; 32]) {
+    let _ = CERTIFICATE_HASH.set(digest);
+}
+
+/// A certificate's SHA-256 as the server states it: 64 hex digits, or the base64 the Pulse dev
+/// server logs for its generated certificate.
+pub fn parse_certificate_hash(text: &str) -> Result<[u8; 32], String> {
+    use base64::prelude::*;
+    let text = text.trim();
+    let invalid = || format!("pulse certificate hash {text:?}: must be a SHA-256 in hex or base64");
+    let bytes = if text.len() == 64 && text.bytes().all(|b| b.is_ascii_hexdigit()) {
+        (0..64)
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&text[i..i + 2], 16).unwrap())
+            .collect()
+    } else {
+        BASE64_STANDARD.decode(text).map_err(|_| invalid())?
+    };
+    <[u8; 32]>::try_from(bytes).map_err(|_| invalid())
+}
 
 /// Insert the [`PulseConfig`] that activates the transport, on clients and servers alike — a server
 /// joins as a scene listener rather than a subject (see [`ListenerRole`]). Targets, in order of
@@ -488,7 +510,7 @@ pub struct PulseCertificateHash(pub [u8; 32]);
 /// deployment must be told to use the zone server or its players land among prod's; the realm a
 /// client is on is deliberately not used to infer it. The grid is the Decentraland Genesis City
 /// `ParcelEncoder` from the server's appsettings ([`PulseParcelGrid::default`]).
-fn configure_pulse(mut commands: Commands, certificate: Option<Res<PulseCertificateHash>>) {
+fn configure_pulse(mut commands: Commands) {
     use common::base_domain::{service, service_override, with_default_port, Service};
     let (authority, source) = match service_override(Service::PulseServer) {
         Some(authority) => (authority.to_owned(), "--pulse-server"),
@@ -504,11 +526,11 @@ fn configure_pulse(mut commands: Commands, certificate: Option<Res<PulseCertific
             return;
         }
     };
-    let cert_hash = certificate.map(|hash| hash.0.to_vec());
+    let cert_hash = CERTIFICATE_HASH.get().map(|digest| digest.to_vec());
     info!(
         "pulse: configured for {host}:{port} ({source}){}",
         if cert_hash.is_some() {
-            ", certificate pinned by --pulse-certificate-hash"
+            ", certificate pinned"
         } else {
             ""
         }
@@ -1734,8 +1756,37 @@ async fn build_auth_chain(wallet: &Wallet, server_id: &str) -> Result<Vec<u8>, S
 
 #[cfg(test)]
 mod tests {
-    use super::{configure_pulse, lsd_realm_key, PulseConfig, DEFAULT_PULSE_PORT};
+    use super::{
+        configure_pulse, lsd_realm_key, parse_certificate_hash, PulseConfig, DEFAULT_PULSE_PORT,
+    };
     use bevy::prelude::*;
+
+    /// Hex in either case, or the base64 the Pulse dev server logs — the same digest; anything
+    /// that is not exactly 32 bytes is refused.
+    #[test]
+    fn certificate_hash_is_a_sha256_in_hex_or_base64() {
+        let hex = "391d5e8c087abc6e76bc6f76a3aa79cd199b66949c3a0466e9d6526790aceb9e";
+        let digest = parse_certificate_hash(hex).unwrap();
+        assert_eq!(digest[..3], [0x39, 0x1d, 0x5e]);
+        assert_eq!(digest[31], 0x9e);
+        assert_eq!(parse_certificate_hash(&hex.to_uppercase()), Ok(digest));
+        assert_eq!(
+            parse_certificate_hash(" OR1ejAh6vG52vG92o6p5zRmbZpScOgRm6dZSZ5Cs654= "),
+            Ok(digest)
+        );
+        for bad in [
+            "",
+            "ab",
+            &hex[..62],
+            &format!("{hex}00"),
+            &"zz".repeat(32),
+            &"+a".repeat(32),
+            "OR1ejAh6vG52vG92o6p5zRmbZpScOgRm6dZSZ5Cs6w==",
+            "OR1ejAh6vG52vG92o6p5zRmbZpScOgRm6dZSZ5Cs654",
+        ] {
+            assert!(parse_certificate_hash(bad).is_err(), "`{bad}`");
+        }
+    }
 
     /// The endpoint `configure_pulse` settles on for a given env var (and whatever override is
     /// latched).
