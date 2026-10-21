@@ -4,7 +4,7 @@
 // of BevyApi.getSettings / setSetting.
 
 import { memo, useMemo, useState } from 'react'
-import { Select, Slider, Tabs, Toggle, showConfirm } from '../../design'
+import { Select, Slider, Tabs, Toggle, Tooltip, showConfirm } from '../../design'
 import { MainMenuShell } from '../menu/MainMenuShell'
 import type { Setting } from '../../engine/protocol'
 import type { BindingsState, ProfileState, SettingsState } from '../session/useEngineSession'
@@ -38,6 +38,20 @@ function isBinary(s: Setting): boolean {
 function isSlider(s: Setting): boolean {
   return !isBinary(s) && s.namedVariants.length < 2
 }
+// Values are f32 widened to f64 on the way over, so 19.95 arrives as 19.950000762939453. Showing
+// them at f32's own precision drops the noise, and the trailing zeros with it. Display only.
+function formatValue(v: number): string {
+  return String(Number(v.toPrecision(7)))
+}
+// An enum's description is per variant (the general text plus the selected variant's line), and
+// the engine sends every variant's up front: read the selected one so the hint tracks the choice
+// without a refetch. The engine writes many descriptions for its own panel, which has no label of
+// its own, so they open with the setting's name on a line of its own; the label shows the name here.
+function hint(s: Setting): string {
+  const text = (s.namedVariants[s.value]?.description ?? s.description).trim()
+  const [first, ...rest] = text.split('\n')
+  return first.trim().toLowerCase() === s.name.trim().toLowerCase() ? rest.join('\n').trim() : text
+}
 
 function Control({ s, onSet }: { s: Setting; onSet: (name: string, value: number) => void }): React.JSX.Element {
   // A negative value is the engine saying the setting is not known yet (e.g. a server-owned
@@ -67,11 +81,19 @@ function Control({ s, onSet }: { s: Setting; onSet: (name: string, value: number
 // the one field that actually changed — keeps the menu snappy over the busy engine.
 const SettingField = memo(
   function SettingField({ s, onSet }: { s: Setting; onSet: (name: string, value: number) => void }): React.JSX.Element {
+    const description = hint(s)
+    const label = <span className={styles.label}>{humanize(s.name)}</span>
     return (
       <div className={styles.field}>
         <div className={styles.fieldHead}>
-          <span className={styles.label}>{humanize(s.name)}</span>
-          {isSlider(s) && <span className={styles.value}>{s.value}</span>}
+          {description ? (
+            <Tooltip label={description} side="bottom" multiline className={styles.hint}>
+              {label}
+            </Tooltip>
+          ) : (
+            label
+          )}
+          {isSlider(s) && <span className={styles.value}>{formatValue(s.value)}</span>}
         </div>
         <Control s={s} onSet={onSet} />
       </div>
