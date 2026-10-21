@@ -25,6 +25,8 @@ describe('unrecognisedEntryParams', () => {
     expect(unrecognisedEntryParams(new URLSearchParams('?native=1&hud=0&gate=gpu&simerror=realm'))).toEqual([])
     // campaign links: Segment reads them, never called out
     expect(unrecognisedEntryParams(new URLSearchParams('?utm_source=x&utm_campaign=y&anon_user_id=abc&analyticsSession=s'))).toEqual([])
+    // Tag Assistant's debug session and ad platforms' click ids
+    expect(unrecognisedEntryParams(new URLSearchParams('?gtm_debug=1792601101853&gclid=a&fbclid=b&msclkid=c&_gl=d'))).toEqual([])
   })
 
   it('names each unknown key once, including the host-only editor flag', () => {

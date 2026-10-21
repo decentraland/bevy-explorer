@@ -49,6 +49,18 @@ const INTERNAL_PARAMS = [
   'perm',
   'worldpw',
   ANALYTICS_SESSION_PARAM,
+  // Tag Assistant's debug session, and the click ids ad platforms append to their links
+  'gtm_debug',
+  '_gl',
+  'gclid',
+  'gbraid',
+  'wbraid',
+  'fbclid',
+  'msclkid',
+  'ttclid',
+  'twclid',
+  'li_fat_id',
+  'rdt_cid',
   // dev only (lib/systemScene.ts)
   ...(import.meta.env.PROD ? [] : ['bridgePort'])
 ]
