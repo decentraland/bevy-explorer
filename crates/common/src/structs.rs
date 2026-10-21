@@ -876,6 +876,8 @@ pub struct GraphicsSettings {
     /// draw the dark edge outline around avatars
     pub avatar_outline: bool,
     pub gpu_bytes_per_frame: usize,
+    /// share of the screen's device pixels the web canvas renders at (src/web.rs)
+    pub render_scale: f32,
 }
 
 impl Default for GraphicsSettings {
@@ -905,7 +907,31 @@ impl Default for GraphicsSettings {
             } else {
                 0
             },
+            render_scale: 1.0,
         }
+    }
+}
+
+/// Graphics a host page sets for this session only, such as the scene editor's viewport: never
+/// saved, and each one that is set wins over the player's own setting.
+#[derive(Resource, Default, Debug, Clone, PartialEq)]
+pub struct SessionGraphics {
+    pub fps_target: Option<usize>,
+    pub parcel_grass: Option<ParcelGrassSetting>,
+    pub render_scale: Option<f32>,
+}
+
+impl SessionGraphics {
+    pub fn fps_target(&self, config: &AppConfig) -> usize {
+        self.fps_target.unwrap_or(config.graphics.fps_target)
+    }
+
+    pub fn parcel_grass(&self, config: &AppConfig) -> ParcelGrassSetting {
+        self.parcel_grass.unwrap_or(config.parcel_grass_setting)
+    }
+
+    pub fn render_scale(&self, config: &AppConfig) -> f32 {
+        self.render_scale.unwrap_or(config.graphics.render_scale)
     }
 }
 

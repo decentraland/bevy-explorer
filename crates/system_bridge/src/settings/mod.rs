@@ -29,8 +29,8 @@ use common::{
     sets::SceneSets,
     structs::{
         AaSetting, AppConfig, BloomSetting, CameraSmoothing, DofSetting, FogSetting,
-        ParcelGrassSetting, PointAtMarkerVisibility, PreviewMode, ShadowSetting,
-        SkyReflectionSetting, WindowSetting,
+        ParcelGrassConfig, ParcelGrassSetting, PointAtMarkerVisibility, PreviewMode,
+        SessionGraphics, ShadowSetting, SkyReflectionSetting, WindowSetting,
     },
 };
 use constrain_ui::ConstrainUiSetting;
@@ -68,6 +68,8 @@ pub mod oob_setting;
 pub mod parcel_grass_settings;
 pub mod player_settings;
 pub mod point_at_marker_visibility;
+#[cfg(target_arch = "wasm32")]
+pub mod render_scale_setting;
 pub mod scene_threads;
 pub mod sensitivity;
 pub mod shadow_settings;
@@ -169,6 +171,14 @@ impl Plugin for SettingBridgePlugin {
         }
 
         add_enum_setting::<FpsTargetSetting>(app, &mut settings, &mut schedule, &config);
+        // the web canvas is the only one drawn at a share of the screen (src/web.rs)
+        #[cfg(target_arch = "wasm32")]
+        add_int_setting::<render_scale_setting::RenderScaleSetting>(
+            app,
+            &mut settings,
+            &mut schedule,
+            &config,
+        );
         add_int_setting::<SceneThreadsSetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<MaxAvatarsSetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<MasterVolumeSetting>(app, &mut settings, &mut schedule, &config);
@@ -201,12 +211,14 @@ impl Plugin for SettingBridgePlugin {
         app.insert_resource(settings);
         app.insert_resource(ApplyAppSettingsSchedule(schedule));
         app.init_resource::<ActiveCameras>();
+        app.init_resource::<SessionGraphics>();
         app.add_systems(
             Update,
             (
                 record_cameras,
                 apply_settings.run_if(resource_changed::<AppConfig>),
                 refresh_settings.run_if(resource_changed::<AppConfig>),
+                apply_session_grass,
             )
                 .chain(),
         );
@@ -427,6 +439,17 @@ fn handle_settings(
             }
             _ => (),
         }
+    }
+}
+
+// after the settings schedule, which writes the player's own grass whenever the config changes
+fn apply_session_grass(
+    session: Res<SessionGraphics>,
+    config: Res<AppConfig>,
+    mut grass: ResMut<ParcelGrassConfig>,
+) {
+    if session.is_changed() || config.is_changed() {
+        *grass = *session.parcel_grass(&config);
     }
 }
 
