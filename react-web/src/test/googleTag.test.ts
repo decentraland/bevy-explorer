@@ -21,7 +21,7 @@ describe('google tag', () => {
     const sent = entries()
     expect(sent.map((e) => e[0])).toEqual(['consent', 'js', 'config', 'event'])
     expect(sent[2]).toEqual(['config', 'G-GE8LTKK0VK', { send_page_view: false }])
-    expect(sent[3]).toEqual(['event', 'web_in_world', { login_type: 'guest' }])
+    expect(sent[3]).toEqual(['event', 'bevy_first_move_in_world', { login_type: 'guest' }])
     expect(sessionStorage.getItem('dcl-in-world-reported')).toBe('1')
 
     reportInWorld('fully_registered')
