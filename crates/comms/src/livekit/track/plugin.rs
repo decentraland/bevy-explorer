@@ -62,8 +62,15 @@ impl Plugin for LivekitTrackPlugin {
 
         #[cfg(not(target_arch = "wasm32"))]
         app.add_systems(Update, subscribed_audio_track_with_open_sender);
+        // a headless app has no LivekitAudioManager (see LivekitPlugin)
         #[cfg(not(target_arch = "wasm32"))]
-        app.add_observer(audio_track_is_now_subscribed);
+        if app
+            .world()
+            .get_resource::<common::structs::NoRenderApp>()
+            .is_none()
+        {
+            app.add_observer(audio_track_is_now_subscribed);
+        }
         #[cfg(not(target_arch = "wasm32"))]
         app.add_observer(audio_track_unpublished);
         app.add_observer(video_track_is_now_subscribed);
