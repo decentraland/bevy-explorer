@@ -368,7 +368,10 @@ pub(crate) fn scene_thread(
     let start_time = std::time::Instant::now();
     let mut prev_time = start_time;
     let mut elapsed;
+    // lifetime uncaught-error count; only gates the log cap
     let mut reported_errors = 0;
+    // consecutive ticks that never reached the renderer interface functions
+    let mut silent_ticks = 0;
     let mut last_heap_sample: Option<std::time::Instant> = None;
     loop {
         let now = std::time::Instant::now();
@@ -418,7 +421,8 @@ pub(crate) fn scene_thread(
             return;
         }
 
-        if let Err(e) = result {
+        let err = result.err();
+        if let Some(e) = &err {
             reported_errors += 1;
             if reported_errors <= 10 {
                 error!("[{scene_id:?}] uncaught error: {e:?}");
@@ -426,29 +430,36 @@ pub(crate) fn scene_thread(
                     error!("[{scene_id:?}] not logging any further uncaught errors.")
                 }
             }
-
-            // we no longer exit on uncaught `onUpdate` errors unless the scene failed to reach the renderer interface functions
-            if reported_errors == 10
-                && state
-                    .borrow()
-                    .try_borrow::<CommunicatedWithRenderer>()
-                    .is_none()
-            {
-                error!(
-                    "[{scene_id:?}] too many errors without renderer interaction: shutting down"
-                );
-                let _ = state
-                    .borrow_mut()
-                    .take::<SceneResponseSender>()
-                    .try_send(SceneResponse::Error(format!("{e:?}")));
-                rt.block_on(async move {
-                    drop(runtime);
-                });
-                return;
-            }
         }
 
-        state.borrow_mut().try_take::<CommunicatedWithRenderer>();
+        // we don't exit on uncaught `onUpdate` errors, only on the scene failing to reach the
+        // renderer interface functions. a tick that doesn't reach them never blocks on the
+        // renderer round-trip, so a scene that stays silent (erroring or not) would spin the
+        // loop hot until the renderer's not-responding timeout; cut it off after a few ticks.
+        if state
+            .borrow_mut()
+            .try_take::<CommunicatedWithRenderer>()
+            .is_some()
+        {
+            silent_ticks = 0;
+        } else {
+            silent_ticks += 1;
+        }
+        if silent_ticks >= 10 {
+            let msg = err.map_or_else(
+                || "no renderer interaction for 10 consecutive ticks".to_owned(),
+                |e| format!("{e:?}"),
+            );
+            error!("[{scene_id:?}] {msg}: shutting down");
+            let _ = state
+                .borrow_mut()
+                .take::<SceneResponseSender>()
+                .try_send(SceneResponse::Error(msg));
+            rt.block_on(async move {
+                drop(runtime);
+            });
+            return;
+        }
     }
 }
 

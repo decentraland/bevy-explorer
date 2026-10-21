@@ -751,8 +751,10 @@ self.onmessage = async (event) => {
       var prevElapsed = 0;
       var elapsed = 0;
       var count = 0;
+      // lifetime uncaught-error count; only gates the log cap
       var reportedErrors = 0;
-      var consecutiveErrorsWithoutInteraction = 0;
+      // consecutive ticks that never reached the renderer interface functions
+      var silentTicks = 0;
       // Cap the per-frame dt handed to the scene: a slow frame must not feed dt-scaled scene
       // logic (timers, animations) a multi-second step. Mirrors MAX_SCENE_DT in
       // crates/dcl_deno/src/js/mod.rs.
@@ -760,12 +762,12 @@ self.onmessage = async (event) => {
       while (ops.op_continue_running()) {
         const dt = Math.min((elapsed - prevElapsed) / 1000, MAX_SCENE_DT_SECONDS);
         ops.op_set_elapsed(elapsed / 1000);
+        var err = undefined;
         try {
           await module.onUpdate(dt);
-          consecutiveErrorsWithoutInteraction = 0;
         } catch (e) {
+          err = e;
           reportedErrors += 1;
-          consecutiveErrorsWithoutInteraction += 1;
           if (reportedErrors <= 10) {
             console.error(
               "[Sandbox worker] Error running onUpdate:",
@@ -776,14 +778,21 @@ self.onmessage = async (event) => {
               console.error("[Sandbox worker] not logging any further uncaught errors.");
             }
           }
+        }
 
-          if (ops.op_communicated_with_renderer()) {
-            consecutiveErrorsWithoutInteraction = 0;
-          }
-
-          if (consecutiveErrorsWithoutInteraction >= 10) {
-            throw "[Sandbox worker] too many errors without renderer interaction: shutting down";
-          }
+        // we don't exit on uncaught `onUpdate` errors, only on the scene failing to reach the
+        // renderer interface functions. a tick that doesn't reach them never blocks on the
+        // renderer round-trip, so a scene that stays silent (erroring or not) would spin the
+        // loop hot until the renderer's not-responding timeout; cut it off after a few ticks.
+        // Mirrors the scene loop in crates/dcl_deno/src/js/mod.rs.
+        if (ops.op_communicated_with_renderer()) {
+          silentTicks = 0;
+        } else {
+          silentTicks += 1;
+        }
+        if (silentTicks >= 10) {
+          const msg = err !== undefined ? err : "no renderer interaction for 10 consecutive ticks";
+          throw `[Sandbox worker] ${msg}: shutting down`;
         }
         prevElapsed = elapsed;
         elapsed = new Date() - startTime;
