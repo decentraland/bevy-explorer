@@ -423,16 +423,26 @@ srv_has_line "$SCENE_A" "onEnterScene" "$ADDR_A"; check "scene A onEnterScene fi
 srv_has_line "$SCENE_A" "onEnterScene" "$ADDR_B"; check "scene A onEnterScene never for client B"    $(neg $?)
 srv_has_line "$SCENE_B" "onEnterScene" "$ADDR_B"; check "scene B onEnterScene fired for client B"    $?
 srv_has_line "$SCENE_A" "onLeaveScene" "$ADDR_A"; check "scene A onLeaveScene fired for stopped client A" $?
-# Seconds from client A's SIGTERM to the first timestamped server.log line matching both
-# needles (the engine's tracing lines carry a UTC timestamp; @scene-log frames don't).
+# Seconds from client A's SIGTERM to the first server.log line matching both needles. The
+# engine's tracing lines carry a UTC timestamp; @scene-log frames don't (only a scene-relative
+# ts), so for a frame take the next timestamped line after it in the log: an upper bound on
+# when the frame was written, which is the conservative side for a "within N seconds" check.
 since_stop_a() { # <needle-1> <needle-2> -> seconds, or non-zero if no such line
-  local ts
-  ts=$(grep -a "$1" "$LOGS/server.log" | grep -a "$2" | head -1 \
-       | sed 's/\x1b\[[0-9;]*m//g' | grep -o '^[0-9]\{4\}-[0-9-]*T[0-9:]*' ) || return 1
-  [ -n "$ts" ] || return 1
-  python3 -c 'import sys,datetime as d
-t=d.datetime.strptime(sys.argv[1],"%Y-%m-%dT%H:%M:%S").replace(tzinfo=d.timezone.utc).timestamp()
-print(int(t-int(sys.argv[2])))' "$ts" "$KILL_AT_A"
+  python3 - "$1" "$2" "$KILL_AT_A" "$LOGS/server.log" <<'PY'
+import re, sys, datetime as d
+n1, n2, kill_at, path = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4]
+ansi = re.compile(r'\x1b\[[0-9;]*m')
+stamp = re.compile(r'^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)')
+lines = [ansi.sub('', l) for l in open(path, 'rb').read().decode('utf-8', 'replace').splitlines()]
+hit = next((i for i, l in enumerate(lines) if re.search(n1, l) and n2 in l), None)
+if hit is None:
+    sys.exit(1)
+ts = next((m.group(1) for l in lines[hit:] if (m := stamp.match(l))), None)
+if ts is None:
+    sys.exit(1)
+t = d.datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=d.timezone.utc).timestamp()
+print(int(t - kill_at))
+PY
 }
 LAT_LEAVE=$(since_stop_a "onLeaveScene" "$ADDR_A" || true)
 LAT_REMOVE=$(since_stop_a "removing .*player" "$ADDR_A" || true)
