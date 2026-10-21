@@ -155,7 +155,7 @@ export function authLoginUrl(redirectTo: string = location.href, attribution = a
 // the shell navigates, so the auth site gets the top-level page and returns to the shell's URL.
 export function redirectToAuth(redirectTo: string = location.href): void {
   if (inShell) postToShell({ type: 'bevy-shell:auth-login', session: sessionId() })
-  else location.replace(authLoginUrl(redirectTo))
+  else location.assign(authLoginUrl(redirectTo))
 }
 
 // Sign out: drop every SSO identity for this origin (matches sites' disconnect for the

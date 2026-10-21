@@ -99,7 +99,7 @@ addEventListener('message', async (e: MessageEvent) => {
     // sign-in: the same-origin auth site, returning here
     case 'bevy-shell:auth-login':
       if (typeof m.session === 'string') sessionStorage.setItem(ANALYTICS_SESSION_KEY, m.session)
-      location.replace(authLoginUrl(location.href))
+      location.assign(authLoginUrl(location.href))
       break
     // the untrusted-link gate's exit (see src/features/gate/UntrustedLaunchGate.tsx)
     case 'bevy-shell:exit':
