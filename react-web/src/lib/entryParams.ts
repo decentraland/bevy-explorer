@@ -49,6 +49,18 @@ const INTERNAL_PARAMS = [
   'perm',
   'worldpw',
   ANALYTICS_SESSION_PARAM,
+  // the click ids ad platforms append to their links, and the Google tag's cross-domain linker:
+  // the shell's tag reads gclid off the url to credit the conversion to the ad
+  '_gl',
+  'gclid',
+  'gbraid',
+  'wbraid',
+  'fbclid',
+  'msclkid',
+  'ttclid',
+  'twclid',
+  'li_fat_id',
+  'rdt_cid',
   // dev only (lib/systemScene.ts)
   ...(import.meta.env.PROD ? [] : ['bridgePort'])
 ]
