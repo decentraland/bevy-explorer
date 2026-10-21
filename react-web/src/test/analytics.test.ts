@@ -68,7 +68,7 @@ describe('page analytics', () => {
   })
 
   it('takes the attribution params and the resumed session off the address bar, keeping the rest', () => {
-    history.replaceState(null, '', '/?realm=main&utm_source=ads&anon_user_id=abc&analyticsSession=s1&position=0,0')
+    history.replaceState(null, '', '/?realm=main&utm_source=ads&gclid=g1&fbclid=f1&anon_user_id=abc&analyticsSession=s1&position=0,0')
     dropAttributionParams()
     expect(location.search).toBe('?realm=main&position=0%2C0')
     dropAttributionParams()

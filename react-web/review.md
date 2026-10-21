@@ -253,7 +253,8 @@ back as `analyticsSession`). Expectations:
   the shell, the one message that leaves the page for anyone but the engine. On decentraland.org
   only, never for a `preview=true` page, once per tab session, the shell then loads the Google
   tag for the Explorer GA4 stream and sends `bevy_first_move_in_world`, the Google Ads conversion,
-  with the user property `login_type` `guest` or `web3` (`shell/googleTag.ts`). Nothing of Google's loads before that moment.
+  with the user property `login_type` `guest` or `web3`, and as its page the url the tab arrived
+  with, keeping only its `utm_*` and ad click ids (`shell/googleTag.ts`). Nothing of Google's loads before that moment.
 - Tests: `src/test/analytics.test.ts` (stamping, the handoff, the rejected send),
   `src/test/analytics.session.test.tsx` (the sequences above), `engineDriver.test.ts` (the session
   id at launch), `entryParams.test.ts` (campaign params).

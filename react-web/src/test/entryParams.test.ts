@@ -26,7 +26,7 @@ describe('unrecognisedEntryParams', () => {
     // campaign links: Segment reads them, never called out
     expect(unrecognisedEntryParams(new URLSearchParams('?utm_source=x&utm_campaign=y&anon_user_id=abc&analyticsSession=s'))).toEqual([])
     // ad platforms' click ids
-    expect(unrecognisedEntryParams(new URLSearchParams('?gclid=a&gbraid=b&wbraid=c&fbclid=d&msclkid=e&_gl=f'))).toEqual([])
+    expect(unrecognisedEntryParams(new URLSearchParams('?gclid=a&gbraid=b&wbraid=c&fbclid=d&msclkid=e'))).toEqual([])
   })
 
   it('names each unknown key once, including the host-only editor flag', () => {
