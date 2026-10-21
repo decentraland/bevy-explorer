@@ -59,6 +59,7 @@ impl Plugin for MicPlugin {
         app.init_state::<MicrophoneAvailability>();
         app.init_state::<MicrophonePermission>();
         app.init_state::<MicrophoneState>();
+        app.init_state::<MicrophoneTransmissionState>();
 
         #[cfg(target_arch = "wasm32")]
         app.add_systems(Startup, setup_microphone_permission);
@@ -106,6 +107,7 @@ impl Plugin for MicPlugin {
         );
 
         app.add_systems(Startup, add_ping_systems);
+        app.add_systems(Update, transmission_state);
 
         #[cfg(not(target_arch = "wasm32"))]
         app.insert_state(MicrophonePermission::Granted);
@@ -138,6 +140,13 @@ enum MicrophoneState {
     Enabled,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, States)]
+enum MicrophoneTransmissionState {
+    #[default]
+    Disabled,
+    Enabled,
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Resource, Deref, DerefMut)]
 struct MicrophoneDevice(Device);
@@ -158,9 +167,28 @@ struct MicStream(Option<cpal::Stream>);
 fn add_ping_systems(world: &mut World) {
     // This stops the ping being played during startup
     world.resource_scope::<Schedules, ()>(|_, mut schedules| {
-        schedules.add_systems(OnEnter(MicrophoneState::Enabled), ping_enabled);
-        schedules.add_systems(OnEnter(MicrophoneState::Disabled), ping_disabled);
+        schedules.add_systems(OnEnter(MicrophoneTransmissionState::Enabled), ping_enabled);
+        schedules.add_systems(
+            OnEnter(MicrophoneTransmissionState::Disabled),
+            ping_disabled,
+        );
     });
+}
+
+fn transmission_state(
+    tracks: Query<(), With<MicrophoneLocalTrack>>,
+    microphone_transmission_state: Res<State<MicrophoneTransmissionState>>,
+    mut next_state: ResMut<NextState<MicrophoneTransmissionState>>,
+) {
+    if tracks.is_empty()
+        && microphone_transmission_state.get() == &MicrophoneTransmissionState::Enabled
+    {
+        next_state.set(MicrophoneTransmissionState::Disabled);
+    } else if !tracks.is_empty()
+        && microphone_transmission_state.get() == &MicrophoneTransmissionState::Disabled
+    {
+        next_state.set(MicrophoneTransmissionState::Enabled);
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
