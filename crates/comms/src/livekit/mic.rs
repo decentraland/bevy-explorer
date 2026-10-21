@@ -157,11 +157,9 @@ struct MicStream(Option<cpal::Stream>);
 
 fn add_ping_systems(world: &mut World) {
     // This stops the ping being played during startup
-    world.schedule_scope(OnEnter(MicrophoneState::Enabled), |_, schedule| {
-        schedule.add_systems(ping_enabled);
-    });
-    world.schedule_scope(OnEnter(MicrophoneState::Disabled), |_, schedule| {
-        schedule.add_systems(ping_disabled);
+    world.resource_scope::<Schedules, ()>(|_, mut schedules| {
+        schedules.add_systems(OnEnter(MicrophoneState::Enabled), ping_enabled);
+        schedules.add_systems(OnEnter(MicrophoneState::Disabled), ping_disabled);
     });
 }
 
