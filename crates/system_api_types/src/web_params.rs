@@ -82,7 +82,8 @@ fn delivery(field: &str) -> Delivery {
         | "content_server"
         | "log_fps"
         | "gpu_bytes_per_frame"
-        | "compute_threads" => Launch,
+        | "compute_threads"
+        | "pulse_certificate_hash" => Launch,
         "editor" | "hold_world" | "session_id" | "campaign_anon_user_id" => Host,
         "base_domain" => Resolved,
         other => {
@@ -199,6 +200,7 @@ mod tests {
         assert_eq!(fields, names);
         let delivery = |name: &str| params.iter().find(|p| p.name == name).unwrap().delivery;
         assert_eq!(delivery("baseDomain"), Delivery::Resolved);
+        assert_eq!(delivery("pulseCertificateHash"), Delivery::Launch);
         let catalyst = params.iter().find(|p| p.name == "catalyst").unwrap();
         assert_eq!(catalyst.delivery, Delivery::Resolved);
         assert_eq!(catalyst.kind, ParamKind::String);

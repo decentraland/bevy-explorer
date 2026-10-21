@@ -473,24 +473,12 @@ const DEFAULT_PULSE_PORT: u16 = if cfg!(target_arch = "wasm32") {
     7777
 };
 
-/// SHA-256 to pin the server's TLS cert via WebTransport's `serverCertificateHashes`. Production is
-/// CA-signed → `None` (default trust); native (ENet) never needs one.
-#[cfg(not(target_arch = "wasm32"))]
-fn dev_cert_hash() -> Option<Vec<u8>> {
-    None
-}
-#[cfg(target_arch = "wasm32")]
-fn dev_cert_hash() -> Option<Vec<u8>> {
-    // To test against a local self-signed dev server, point --pulse-server at it and return the
-    // SHA-256 of its cert (e.g. claude-work/pulse-dev-cert/cert.pem — regenerate + refresh if expired,
-    // `openssl x509 -outform DER | openssl dgst -sha256`):
-    // Some(vec![
-    //     0x00, 0x0c, 0x4f, 0xec, 0xc3, 0x81, 0x1d, 0xe4, 0x9a, 0x8a, 0x9d, 0x31, 0x6c, 0x3e, 0x40,
-    //     0x49, 0xdd, 0xb4, 0x8e, 0x0f, 0xfd, 0x87, 0x51, 0x60, 0x92, 0x01, 0x35, 0xb4, 0x1a, 0xf7,
-    //     0xdd, 0xda,
-    // ])
-    None
-}
+/// The `--pulse-certificate-hash` launch option: the SHA-256 the wasm WebTransport driver pins the
+/// server's certificate to through `serverCertificateHashes`, for a self-signed server (a local or
+/// test deployment). Absent, production's CA-signed certificate is trusted by default; native
+/// (ENet) never needs one.
+#[derive(Resource, Clone, Copy, Debug)]
+pub struct PulseCertificateHash(pub [u8; 32]);
 
 /// Insert the [`PulseConfig`] that activates the transport, on clients and servers alike — a server
 /// joins as a scene listener rather than a subject (see [`ListenerRole`]). Targets, in order of
@@ -500,7 +488,7 @@ fn dev_cert_hash() -> Option<Vec<u8>> {
 /// deployment must be told to use the zone server or its players land among prod's; the realm a
 /// client is on is deliberately not used to infer it. The grid is the Decentraland Genesis City
 /// `ParcelEncoder` from the server's appsettings ([`PulseParcelGrid::default`]).
-fn configure_pulse(mut commands: Commands) {
+fn configure_pulse(mut commands: Commands, certificate: Option<Res<PulseCertificateHash>>) {
     use common::base_domain::{service, service_override, with_default_port, Service};
     let (authority, source) = match service_override(Service::PulseServer) {
         Some(authority) => (authority.to_owned(), "--pulse-server"),
@@ -516,12 +504,20 @@ fn configure_pulse(mut commands: Commands) {
             return;
         }
     };
-    info!("pulse: configured for {host}:{port} ({source})");
+    let cert_hash = certificate.map(|hash| hash.0.to_vec());
+    info!(
+        "pulse: configured for {host}:{port} ({source}){}",
+        if cert_hash.is_some() {
+            ", certificate pinned by --pulse-certificate-hash"
+        } else {
+            ""
+        }
+    );
     commands.insert_resource(PulseConfig {
         transport: PulseTransportConfig {
             host,
             port,
-            cert_hash: dev_cert_hash(),
+            cert_hash,
         },
         parcel_grid: PulseParcelGrid::default(),
         server_id: String::new(),

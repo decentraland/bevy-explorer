@@ -67,6 +67,36 @@ pub struct LaunchOptions {
     #[serde(flatten)]
     #[command(flatten)]
     pub services: ServiceOverrides,
+
+    /// SHA-256 of the Pulse server's TLS certificate, as 64 hex digits. The web build pins the
+    /// certificate to it through WebTransport's `serverCertificateHashes` instead of trusting
+    /// the CA chain, so a self-signed server (a local or test deployment) is reachable; such a
+    /// certificate must be ECDSA and valid for at most 14 days. Absent = CA trust. Native
+    /// speaks ENet and ignores it
+    #[arg(long, value_name = "sha256", help_heading = SERVICES)]
+    pub pulse_certificate_hash: Option<String>,
+}
+
+impl LaunchOptions {
+    /// `--pulse-certificate-hash` as the digest's bytes; an error names a value that is not 64
+    /// hex digits.
+    pub fn pulse_certificate_hash(&self) -> Result<Option<[u8; 32]>, String> {
+        let Some(hex) = self.pulse_certificate_hash.as_deref() else {
+            return Ok(None);
+        };
+        let invalid =
+            || format!("--pulse-certificate-hash {hex}: must be a SHA-256 as 64 hex digits");
+        let hex = hex.trim();
+        if hex.len() != 64 || !hex.is_ascii() {
+            return Err(invalid());
+        }
+        let mut digest = [0; 32];
+        for (byte, pair) in digest.iter_mut().zip(hex.as_bytes().chunks(2)) {
+            let pair = std::str::from_utf8(pair).map_err(|_| invalid())?;
+            *byte = u8::from_str_radix(pair, 16).map_err(|_| invalid())?;
+        }
+        Ok(Some(digest))
+    }
 }
 
 /// The options only a rendering client (native, web) has a use for.
@@ -166,6 +196,7 @@ impl EngineRunOptions {
             &mut self.launch.position,
             &mut self.launch.content_server,
             &mut self.launch.base_domain,
+            &mut self.launch.pulse_certificate_hash,
             &mut self.client.system_scene,
             &mut self.client.portables,
             &mut self.client.imposter_source,
@@ -229,6 +260,43 @@ mod tests {
         // most of Genesis City is negative, and the value arrives as its own argv entry
         let cli = Cli::try_parse_from(["x", "--position", "-125,-96"]).unwrap();
         assert_eq!(cli.launch.position.as_deref(), Some("-125,-96"));
+    }
+
+    #[test]
+    fn pulse_certificate_hash_is_a_sha256_in_hex() {
+        let hash = |value: &str| {
+            Cli::parse_from(["x", "--pulse-certificate-hash", value])
+                .launch
+                .pulse_certificate_hash()
+        };
+        let hex = "000C4FECC3811DE49A8A9D316C3E4049DDB48E0FFD875160920135B41AF7DDDA".to_owned();
+        let digest = hash(&hex).unwrap().unwrap();
+        assert_eq!(digest[..3], [0x00, 0x0c, 0x4f]);
+        assert_eq!(digest[31], 0xda);
+        assert_eq!(hash(&hex.to_lowercase()).unwrap(), Some(digest));
+        for bad in [
+            "",
+            "ab",
+            &hex[..62],
+            &format!("{hex}00"),
+            &"zz".repeat(32),
+            &"é".repeat(32),
+        ] {
+            assert!(hash(bad).is_err(), "`{bad}`");
+        }
+        assert_eq!(
+            Cli::parse_from(["x"]).launch.pulse_certificate_hash(),
+            Ok(None)
+        );
+        // a web launch option like the pulse server, and '' is absent there
+        let options =
+            EngineRunOptions::from_json(&format!(r#"{{"pulseCertificateHash": "{hex}"}}"#))
+                .unwrap();
+        assert_eq!(options.launch.pulse_certificate_hash(), Ok(Some(digest)));
+        let options = EngineRunOptions::from_json(r#"{"pulseCertificateHash": ""}"#)
+            .unwrap()
+            .without_empty_strings();
+        assert_eq!(options.launch.pulse_certificate_hash, None);
     }
 
     #[test]
