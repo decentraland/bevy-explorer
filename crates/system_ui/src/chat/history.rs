@@ -2,10 +2,7 @@ use std::collections::VecDeque;
 
 use bevy::prelude::*;
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
-use common::{
-    structs::{ShowProfileEvent, SystemAudio},
-    util::AsH160,
-};
+use common::{structs::SystemAudio, util::AsH160};
 use comms::{chat_marker_things, global_crdt::ChatEvent, profile::UserProfile};
 use social::{DirectChatEvent, DirectChatMessage, FriendshipEvent, FriendshipEventBody};
 use ui_core::{
@@ -186,10 +183,6 @@ fn update_chat_history(
 
         let (bubble, message) =
             convo.add_message(entity, Some(h160), color.with_alpha(0.3), message, false);
-        commands.entity(bubble).try_insert((
-            Interaction::default(),
-            ShowProfileEvent(h160).send_value_on::<Click>(),
-        ));
         history
             .current
             .push_back((bubble, message, time.elapsed_secs_f64()));

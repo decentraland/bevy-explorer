@@ -1,13 +1,10 @@
 use alloy_core::primitives::Address;
 use bevy::{diagnostic::FrameCount, ecs::system::SystemParam, prelude::*, tasks::IoTaskPool};
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
-use common::{
-    structs::{ShowProfileEvent, ZOrder},
-    util::TryPushChildrenEx,
-};
+use common::{structs::ZOrder, util::TryPushChildrenEx};
 use copypwasmta::{ClipboardContext, ClipboardProvider};
 use scene_runner::Toaster;
-use ui_core::ui_actions::{Click, EventCloneExt, On, UiCaller};
+use ui_core::ui_actions::{Click, On, UiCaller};
 use wallet::Wallet;
 
 use crate::chat::friends::PendingProfileUiImage;
@@ -122,21 +119,14 @@ impl ConversationManager<'_, '_> {
             return (bubble, content);
         }
 
-        let components = if let Some(address) = address {
-            let components = self
-                .commands
+        let components = if address.is_some() {
+            self.commands
                 .spawn_template(
                     &self.dui,
                     "chat-container-other",
                     DuiProps::new().with_prop("color", color),
                 )
-                .unwrap();
-            if address != Address::ZERO {
-                self.commands
-                    .entity(components.named("image"))
-                    .try_insert(ShowProfileEvent(address).send_value_on::<Click>());
-            }
-            components
+                .unwrap()
         } else {
             self.commands
                 .spawn_template(

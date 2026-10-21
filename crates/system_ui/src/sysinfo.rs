@@ -15,7 +15,7 @@ use common::{
     sets::{SceneSets, SetupSets},
     structs::{
         AppConfig, CurrentRealm, CursorLocks, DebugInfo, PreviewCommand, PreviewMode, PrimaryUser,
-        SettingsTab, ShowSettingsEvent, StartupScenes, UiRoot, Version, ZOrder,
+        StartupScenes, UiRoot, Version, ZOrder,
     },
     util::{ModifyComponentExt, TryPushChildrenEx},
 };
@@ -36,12 +36,10 @@ use ui_core::{
     bound_node::BoundedImageMaterial,
     stretch_uvs_image::StretchUvMaterial,
     text_size::update_fontsize,
-    ui_actions::{Click, EventCloneExt, On},
+    ui_actions::{Click, On},
     BODY_TEXT_STYLE, TITLE_TEXT_STYLE,
 };
 use world_ui::TextShapeMaterial;
-
-use crate::map::MapTexture;
 
 use super::SystemUiRoot;
 
@@ -369,19 +367,7 @@ fn setup_minimap(
             .insert_children(0, &[components.root]);
     }
 
-    if system_scene.is_none() {
-        commands.entity(components.named("map-node")).try_insert((
-            MapTexture {
-                center: Default::default(),
-                parcels_per_vmin: 100.0,
-                icon_min_size_vmin: 0.03,
-            },
-            Interaction::default(),
-            ShowSettingsEvent(SettingsTab::Map).send_value_on::<Click>(),
-        ));
-    } else {
-        commands.entity(components.named("map-container")).despawn();
-    }
+    commands.entity(components.named("map-container")).despawn();
 
     if preview.server.is_some()
         || system_scene
@@ -448,7 +434,6 @@ fn setup_minimap(
 #[allow(clippy::too_many_arguments)]
 fn update_minimap(
     q: Query<&DuiEntities, With<Minimap>>,
-    mut maps: Query<&mut MapTexture>,
     player: Query<&GlobalTransform, With<PrimaryUser>>,
     containing_scene: ContainingScene,
     scenes: Query<(&RendererSceneContext, Option<&GltfLoadingCount>)>,
@@ -471,7 +456,6 @@ fn update_minimap(
     };
 
     let player_translation = (gt.translation().xz() * Vec2::new(1.0, -1.0)) / PARCEL_SIZE;
-    let map_center = player_translation - Vec2::Y;
     let parcel = preview
         .preview_parcel
         .unwrap_or_else(|| player_translation.floor().as_ivec2());
@@ -501,12 +485,6 @@ fn update_minimap(
         .unwrap_or("No scene".to_owned());
 
     if let Ok(components) = q.single() {
-        if let Ok(mut map) = maps.get_mut(components.named("map-node")) {
-            if map.center != map_center {
-                map.center = map_center;
-            }
-        }
-
         if let Ok(mut text) = text.get_mut(components.named("title")) {
             if text.0 != title {
                 text.0 = title;

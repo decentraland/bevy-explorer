@@ -189,11 +189,7 @@ pub enum SystemApi {
 #[derive(Resource)]
 pub struct NativeUi {
     pub login: bool,
-    pub emote_wheel: bool,
     pub chat: bool,
-    pub permissions: bool,
-    pub nametags: bool,
-    pub tooltips: bool,
     pub loading_scene: bool,
 }
 

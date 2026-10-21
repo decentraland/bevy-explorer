@@ -28,10 +28,10 @@ use super::{
     TransportType,
 };
 use common::{
-    profile::{LambdaProfiles, SerializedProfile},
-    rpc::{RpcCallEvent, RpcEventSender, RpcStreamSender},
+    profile::{AvatarColor, AvatarEmote, LambdaProfiles, SerializedProfile},
+    rpc::{RpcCallEvent, RpcEventSender, RpcResultSender, RpcStreamSender},
     sets::SceneSets,
-    structs::PrimaryUser,
+    structs::{AppConfig, PrimaryUser},
     util::{TaskCompat, TaskExt},
 };
 use common::{rpc::RpcCall, util::AsH160};
@@ -56,7 +56,7 @@ impl Plugin for UserProfilePlugin {
             )
                 .before(process_transport_updates), // .in_set(TODO)
         );
-        app.add_systems(Update, pipe_profile_changes_to_scene);
+        app.add_systems(Update, (pipe_profile_changes_to_scene, process_profile));
 
         // a server has no real local player: never insert/announce/deploy the fake
         // player's profile or write PLAYER identity into scene crdts
@@ -1215,6 +1215,149 @@ pub async fn get_remote_profile(
     match fetch_error {
         Some(e) => Err(e),
         None => Ok(None),
+    }
+}
+
+enum ProcessProfileState {
+    Deploying(u32, RpcResultSender<Result<u32, String>>),
+}
+
+fn process_profile(
+    mut e: EventReader<SystemApi>,
+    mut current_profile: ResMut<CurrentUserProfile>,
+    mut processing: Local<Option<ProcessProfileState>>,
+    mut deployed: EventReader<ProfileDeployedEvent>,
+    config: Res<AppConfig>,
+) {
+    if let Some(SystemApi::SetAvatar(set_avatar, sender)) = e
+        .read()
+        .filter(|ev| matches!(ev, SystemApi::SetAvatar(..)))
+        .last()
+    {
+        // the welcome page's save, after its accept: a held new profile deploys with it
+        if current_profile.deploy_held && config.terms_accepted() {
+            current_profile.deploy_held = false;
+        }
+
+        let Some(profile) = current_profile.profile.as_mut() else {
+            error!("can't amend missing profile");
+            return;
+        };
+
+        if let Some(base) = &set_avatar.base {
+            // As with the colors below, a base that doesn't carry a body shape must not strip the
+            // profile's — a caller editing only the name has no reason to restate it.
+            if !base.body_shape_urn.is_empty() {
+                profile.content.avatar.body_shape = Some(base.body_shape_urn.clone());
+            }
+
+            // a base without colors must not strip them from the profile
+            if let Some(hair) = base.hair_color {
+                profile.content.avatar.hair = Some(AvatarColor::new(hair));
+            }
+            if let Some(eyes) = base.eyes_color {
+                profile.content.avatar.eyes = Some(AvatarColor::new(eyes));
+            }
+            if let Some(skin) = base.skin_color {
+                profile.content.avatar.skin = Some(AvatarColor::new(skin));
+            }
+
+            profile.content.name = base.name.clone();
+            profile.content.avatar.name = Some(base.name.clone());
+        }
+
+        if let Some(has_claimed_name) = set_avatar.has_claimed_name {
+            profile.content.has_claimed_name = has_claimed_name;
+        }
+
+        if let Some(equip) = &set_avatar.equip {
+            profile.content.avatar.wearables = equip.wearable_urns.to_vec();
+            profile.content.avatar.emotes = Some(
+                equip
+                    .emote_urns
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(ix, e)| {
+                        (!e.is_empty()).then_some(AvatarEmote {
+                            slot: ix as u32,
+                            urn: if e.starts_with("urn:decentraland:off-chain:base-emotes") {
+                                e.rsplit_once(':').unwrap().1.to_string()
+                            } else {
+                                e.clone()
+                            },
+                        })
+                    })
+                    .collect(),
+            );
+            profile.content.avatar.force_render = Some(equip.force_render.to_vec());
+        }
+
+        if let Some(extras) = &set_avatar.profile_extras {
+            // Merged per key, not assigned: `extra_fields` is a catch-all for every profile key we
+            // don't model (and for keys written by other explorers), so a caller that edits one
+            // field must not have to restate the rest to avoid deleting them. An explicit `null`
+            // removes a key — the only way back out, now that omission means "leave alone".
+            for (key, value) in extras {
+                if value.is_null() {
+                    profile.content.extra_fields.remove(key);
+                } else {
+                    profile
+                        .content
+                        .extra_fields
+                        .insert(key.clone(), value.clone());
+                }
+            }
+        }
+
+        if let Some(name_color) = set_avatar.name_color {
+            profile.content.name_color = name_color.to_color3();
+        }
+
+        profile.version += 1;
+        profile.content.version = profile.version as i64;
+
+        debug!("{:#?}", profile.content);
+
+        if let Some(existing) = processing.take() {
+            match existing {
+                ProcessProfileState::Deploying(_, sender) => {
+                    sender.send(Err("cancelled".to_owned()));
+                }
+            }
+        }
+
+        if profile.content.has_connected_web3.unwrap_or_default() {
+            *processing = Some(ProcessProfileState::Deploying(
+                profile.version,
+                sender.clone(),
+            ));
+            current_profile.is_deployed = false;
+        } else {
+            sender.send(Ok(u32::MAX))
+        }
+
+        return;
+    }
+
+    if let Some(ProcessProfileState::Deploying(version, sender)) = processing.take() {
+        debug!("checking for response: {}", version);
+        if let Some(ev) = deployed.read().next() {
+            debug!("got response: {} vs {}", version, ev.version);
+            let res = if version == ev.version {
+                if ev.success {
+                    Ok(version)
+                } else {
+                    Err("failed to deploy to server.".to_owned())
+                }
+            } else {
+                Err("cancelled".to_owned())
+            };
+            sender.send(res);
+            return;
+        }
+        *processing = Some(ProcessProfileState::Deploying(version, sender));
+    } else {
+        deployed.clear();
     }
 }
 

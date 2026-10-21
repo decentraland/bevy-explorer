@@ -17,7 +17,6 @@ use bevy::{
     tasks::{IoTaskPool, Task},
 };
 use bevy_console::ConsoleCommand;
-use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use collectibles::{
     base_wearables,
     wearables::{UsedWearables, Wearable, WearableCategory, WearableModel, WearableUrn},
@@ -52,7 +51,7 @@ use common::{
     asset_cache::{clean_asset_cache, AssetCache},
     sets::SetupSets,
     structs::{AppConfig, AttachPoints, EmoteCommand, EmoteMask, PrimaryUser},
-    util::{DespawnWith, JoinRelativeExt, SceneSpawnerPlus, TaskExt, TryPushChildrenEx},
+    util::{JoinRelativeExt, SceneSpawnerPlus, TaskExt, TryPushChildrenEx},
 };
 use comms::{
     global_crdt::{ForeignPlayer, GlobalCrdtState},
@@ -80,8 +79,7 @@ use scene_runner::{
     util::ConsoleRelay,
     ContainingScene, SceneEntity,
 };
-use system_bridge::NativeUi;
-use world_ui::{spawn_world_ui_view, WorldUi};
+use world_ui::spawn_world_ui_view;
 
 use crate::{
     animate::{AvatarAnimPlayer, LOWER_BODY_BONES, LOWER_BODY_MASK_GROUP},
@@ -521,7 +519,6 @@ fn select_avatar(
 
 #[derive(Component)]
 pub struct AvatarDefinition {
-    label: Option<String>,
     body: Wearable,
     body_shape: String,
     skin_color: Color,
@@ -578,7 +575,6 @@ fn update_render_avatar(
     mut wearable_loader: CollectibleManager<Wearable>,
     scenes: Query<&RendererSceneContext>,
     ipfas: IpfsAssetServer,
-    native_ui: Res<NativeUi>,
 ) {
     // remove renderable entities when avatar selection is removed
     for entity in removed_selections.read() {
@@ -754,24 +750,6 @@ fn update_render_avatar(
                 Transform::from_rotation(Quat::from_rotation_y(PI)),
                 Visibility::default(),
                 AvatarDefinition {
-                    label: native_ui
-                        .nametags
-                        .then(|| {
-                            selection.shape.0.name.as_ref().and_then(|name| {
-                                (!name.is_empty()).then_some(format!(
-                                    "{}#{}",
-                                    name,
-                                    selection
-                                        .shape
-                                        .0
-                                        .id
-                                        .chars()
-                                        .skip(selection.shape.0.id.len().saturating_sub(4))
-                                        .collect::<String>()
-                                ))
-                            })
-                        })
-                        .flatten(),
                     body,
                     body_shape: body_urn.as_str().to_owned(),
                     wearables,
@@ -1080,9 +1058,7 @@ fn process_avatar(
     mut meshes: ResMut<Assets<Mesh>>,
     gltfs: Res<Assets<Gltf>>,
     attach_points: Query<&AttachPoints>,
-    (ui_view, dui, config, mut mat_cache, mut mask_cache): (
-        Res<AvatarWorldUi>,
-        Res<DuiRegistry>,
+    (config, mut mat_cache, mut mask_cache): (
         Res<AppConfig>,
         ResMut<AssetCache<AvatarMatKey, SceneMaterial>>,
         ResMut<AssetCache<AvatarMaskKey, MaskMaterial>>,
@@ -1651,44 +1627,6 @@ fn process_avatar(
             .try_insert(AvatarMaterials(
                 instance_scene_materials.values().map(|h| h.id()).collect(),
             ));
-
-        // add nametag
-        if let Some(label) = def.label.as_ref() {
-            debug!("spawn avatar label for {label}");
-            let label_ui = commands
-                .entity(ui_view.ui_root)
-                .spawn_template(
-                    &dui,
-                    "avatar-nametag",
-                    DuiProps::new().with_prop("name", label.to_string()),
-                )
-                .unwrap()
-                .root;
-
-            debug!("{:?} as child of {:?}", label_ui, ui_view.view);
-            commands
-                .entity(label_ui)
-                .try_insert(DespawnWith(avatar_ent));
-
-            commands.entity(avatar_ent).try_with_children(|commands| {
-                commands.spawn((
-                    Transform::from_translation(Vec3::Y * 2.2),
-                    Visibility::default(),
-                    WorldUi {
-                        dbg: label.clone(),
-                        pix_per_m: 200.0,
-                        valign: 0.0,
-                        halign: 0.0,
-                        add_y_pix: 0.0,
-                        bounds: def.bounds.clone(),
-                        view: ui_view.view,
-                        ui_node: label_ui,
-                        vertex_billboard: true,
-                        blend_mode: AlphaMode::Mask(0.5),
-                    },
-                ));
-            });
-        }
 
         // remove previous
         if let Ok(prev) = previous_avatar.get(root_player_entity.parent()) {

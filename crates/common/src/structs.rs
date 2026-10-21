@@ -1316,24 +1316,6 @@ impl DialogPermit {
     }
 }
 
-#[derive(Component, Default, Clone, Copy, PartialEq, Eq)]
-pub enum SettingsTab {
-    ProfileDetail,
-    #[default]
-    Wearables,
-    Emotes,
-    Map,
-    Discover,
-    Settings,
-    Permissions,
-}
-
-#[derive(Event, Clone)]
-pub struct ShowSettingsEvent(pub SettingsTab);
-
-#[derive(Event, Clone)]
-pub struct ShowProfileEvent(pub Address);
-
 #[derive(Event, Clone)]
 pub struct SystemAudio(pub String);
 
@@ -1353,12 +1335,6 @@ impl From<&String> for SystemAudio {
     fn from(value: &String) -> Self {
         Self(value.to_owned())
     }
-}
-
-#[derive(Resource, Default)]
-pub struct PermissionTarget {
-    pub scene: Option<Entity>,
-    pub ty: Option<PermissionType>,
 }
 
 // render layers

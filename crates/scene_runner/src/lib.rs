@@ -383,6 +383,8 @@ impl Plugin for SceneRunnerPlugin {
                 .run_if(on_real_timer(Duration::from_secs(1))),
         );
         app.add_systems(Update, push_camera_fov_to_crdt.in_set(SceneSets::Input));
+
+        app.add_systems(PostUpdate, consume_toasts);
     }
 }
 
@@ -1424,5 +1426,11 @@ fn push_camera_fov_to_crdt(
             global_crdt_state.update_camera_fov(p.fov);
         }
         *last_pushed = Some((p.fov, now));
+    }
+}
+
+fn consume_toasts(mut toasts: ResMut<Toasts>) {
+    for (key, toast) in toasts.0.drain() {
+        info!(target: "toast", "{}: {}", key, toast.message);
     }
 }

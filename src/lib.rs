@@ -251,21 +251,9 @@ pub struct DecentralandArguments {
     /// Force the engine-drawn login back on
     #[arg(long = "builtin-login", help_heading = DEBUG)]
     pub login: bool,
-    /// Force the engine-drawn emote wheel back on
-    #[arg(long = "builtin-emotes", help_heading = DEBUG)]
-    pub emote_wheel: bool,
     /// Force the engine-drawn chat back on
     #[arg(long = "builtin-chat", help_heading = DEBUG)]
     pub chat: bool,
-    /// Force the engine-drawn permission prompts back on
-    #[arg(long = "builtin-perms", help_heading = DEBUG)]
-    pub permissions: bool,
-    /// Force the engine-drawn nametags back on
-    #[arg(long = "builtin-nametags", help_heading = DEBUG)]
-    pub nametags: bool,
-    /// Force the engine-drawn tooltips back on
-    #[arg(long = "builtin-tooltips", help_heading = DEBUG)]
-    pub tooltips: bool,
     /// Force the engine-drawn loading scene ui back on
     #[arg(long = "builtin-loading-scene-ui", help_heading = DEBUG)]
     pub loading_scene: bool,
@@ -507,11 +495,7 @@ impl DecentralandApp {
         if let Some(source) = decentraland_app_config.arguments.ui_scene() {
             app.insert_resource(NativeUi {
                 login: decentraland_app_config.arguments.login,
-                emote_wheel: decentraland_app_config.arguments.emote_wheel,
                 chat: decentraland_app_config.arguments.chat,
-                permissions: decentraland_app_config.arguments.permissions,
-                nametags: decentraland_app_config.arguments.nametags,
-                tooltips: decentraland_app_config.arguments.tooltips,
                 loading_scene: decentraland_app_config.arguments.loading_scene,
             });
             startup_scenes.insert(
@@ -528,11 +512,7 @@ impl DecentralandApp {
         } else {
             app.insert_resource(NativeUi {
                 login: true,
-                emote_wheel: true,
                 chat: true,
-                permissions: true,
-                nametags: true,
-                tooltips: true,
                 loading_scene: true,
             });
         }
@@ -544,11 +524,7 @@ impl DecentralandApp {
         if decentraland_app_config.arguments.hud && !decentraland_app_config.arguments.test_mode() {
             app.insert_resource(NativeUi {
                 login: false,
-                emote_wheel: false,
                 chat: false,
-                permissions: false,
-                nametags: false,
-                tooltips: false,
                 loading_scene: false,
             });
         }
