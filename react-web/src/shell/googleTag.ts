@@ -53,7 +53,8 @@ export function reportInWorld(loginType: LoginType | undefined): void {
   // the app reports only once the terms are accepted, so consent is known here
   gtag('consent', 'default', { ad_storage: 'granted', analytics_storage: 'granted', ad_user_data: 'granted', ad_personalization: 'granted' })
   gtag('js', new Date())
-  // the property's login_type dimension is user-scoped, valued web2 / web3 / guest; every web sign-in reports web3
+  // the property's login_type dimension is user-scoped, valued web2 / web3 / guest; the page only knows
+  // guest or signed in, so web never reports web2 and a social or email sign-in counts as web3
   if (loginType) gtag('set', 'user_properties', { login_type: loginType === 'guest' ? 'guest' : 'web3' })
   gtag('config', MEASUREMENT_ID, { send_page_view: false, page_location: ENTRY_LOCATION })
   gtag('event', 'bevy_first_move_in_world')

@@ -235,8 +235,9 @@ back as `analyticsSession`). Expectations:
   return from the sign-in redirect.
 - **Sign-in link** (`authLoginUrl`): the entry's `utm_*` params ride along, so the auth site's
   own Segment calls carry the campaign and tie it to the address it signs in. Once read, the
-  shell and the app take the attribution params off the address bar (`dropAttributionParams`),
-  so a copied link or a reload does not attribute again.
+  shell and the app take the attribution params (`utm_*`, `gad_*`, ad click ids such as `gclid`,
+  the landing page's anonymous id) off the address bar (`dropAttributionParams`), so a copied link
+  or a reload does not attribute again; the Google tag gets them from what the shell kept at load.
 - **Sign-in** (`useEngineSession`): ACCOUNT_HOME, COMEBACK (after a failed stored sign-in),
   ACCOUNT_GUEST_CREATE, AUTH_BROWSER_OPEN, AUTH_SUCCESS {login_type}, AUTH_ERROR {error}; clicks
   SIGN_IN, PLAY_GUEST, lets_go, use_another_account, try_again. `Guest Wallet Creation` wraps the

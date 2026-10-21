@@ -109,12 +109,13 @@ export function sessionId(): string {
   return session
 }
 
-// the ids ad platforms append to their links, which credit a conversion to the click
-const CLICK_ID_PARAMS = ['gclid', 'gbraid', 'wbraid', 'fbclid', 'msclkid', 'ttclid', 'twclid', 'li_fat_id', 'rdt_cid']
+// the ids ad platforms append to their links, which credit a conversion to the click; Google Ads
+// also adds `gad_*` keys (gad_source, gad_campaignid) and keeps adding new ones
+const CLICK_ID_PARAMS = ['gclid', 'gclsrc', 'gbraid', 'wbraid', 'dclid', '_gl', 'fbclid', 'msclkid', 'ttclid', 'twclid', 'li_fat_id', 'rdt_cid']
 
-/** A campaign's own key: any `utm_*`, or an ad click id. */
+/** A campaign's own key: any `utm_*` or `gad_*`, or an ad click id. */
 export function isCampaignParam(name: string): boolean {
-  return name.startsWith('utm_') || CLICK_ID_PARAMS.includes(name)
+  return name.startsWith('utm_') || name.startsWith('gad_') || CLICK_ID_PARAMS.includes(name)
 }
 
 /** A query key read for attribution rather than called out as unknown: a campaign's, or the
