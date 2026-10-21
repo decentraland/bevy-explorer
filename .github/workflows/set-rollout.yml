@@ -24,7 +24,7 @@ jobs:
           packageVersion: ${{ github.event.deployment.payload.packageVersion }}
 
           # Rollout information
-          deploymentPath: 'bevy-web'
+          deploymentPath: 'play'
           deploymentEnvironment: 'zone'
           deploymentName: '_site'
           percentage: 100
