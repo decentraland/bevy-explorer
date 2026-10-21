@@ -109,10 +109,19 @@ export function sessionId(): string {
   return session
 }
 
-/** A query key read for attribution rather than called out as unknown: any `utm_*`, or the
+// the ids ad platforms append to their links, which credit a conversion to the click; Google Ads
+// also adds `gad_*` keys (gad_source, gad_campaignid) and keeps adding new ones
+const CLICK_ID_PARAMS = ['gclid', 'gclsrc', 'gbraid', 'wbraid', 'dclid', '_gl', 'fbclid', 'msclkid', 'ttclid', 'twclid', 'li_fat_id', 'rdt_cid']
+
+/** A campaign's own key: any `utm_*` or `gad_*`, or an ad click id. */
+export function isCampaignParam(name: string): boolean {
+  return name.startsWith('utm_') || name.startsWith('gad_') || CLICK_ID_PARAMS.includes(name)
+}
+
+/** A query key read for attribution rather than called out as unknown: a campaign's, or the
  *  landing page's anonymous id. */
 export function isAttributionParam(name: string): boolean {
-  return name === ANON_USER_ID_PARAM || name.startsWith('utm_')
+  return name === ANON_USER_ID_PARAM || isCampaignParam(name)
 }
 
 /** Takes the attribution params, and the resumed session, off the address bar once read: a copied

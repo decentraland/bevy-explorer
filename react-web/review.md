@@ -235,8 +235,9 @@ back as `analyticsSession`). Expectations:
   return from the sign-in redirect.
 - **Sign-in link** (`authLoginUrl`): the entry's `utm_*` params ride along, so the auth site's
   own Segment calls carry the campaign and tie it to the address it signs in. Once read, the
-  shell and the app take the attribution params off the address bar (`dropAttributionParams`),
-  so a copied link or a reload does not attribute again.
+  shell and the app take the attribution params (`utm_*`, `gad_*`, ad click ids such as `gclid`,
+  the landing page's anonymous id) off the address bar (`dropAttributionParams`), so a copied link
+  or a reload does not attribute again; the Google tag gets them from what the shell kept at load.
 - **Sign-in** (`useEngineSession`): ACCOUNT_HOME, COMEBACK (after a failed stored sign-in),
   ACCOUNT_GUEST_CREATE, AUTH_BROWSER_OPEN, AUTH_SUCCESS {login_type}, AUTH_ERROR {error}; clicks
   SIGN_IN, PLAY_GUEST, lets_go, use_another_account, try_again. `Guest Wallet Creation` wraps the
@@ -252,8 +253,9 @@ back as `analyticsSession`). Expectations:
   flow's answer, or the engine's persisted config), posts `bevy-shell:in-world` {login_type} to
   the shell, the one message that leaves the page for anyone but the engine. On decentraland.org
   only, never for a `preview=true` page, once per tab session, the shell then loads the Google
-  tag for the Explorer GA4 stream and sends `bevy_first_move_in_world`, the Google Ads conversion
-  (`shell/googleTag.ts`). Nothing of Google's loads before that moment.
+  tag for the Explorer GA4 stream and sends `bevy_first_move_in_world`, the Google Ads conversion,
+  with the user property `login_type` `guest` or `web3`, and as its page the url the tab arrived
+  with, keeping only its `utm_*` and ad click ids (`shell/googleTag.ts`). Nothing of Google's loads before that moment.
 - Tests: `src/test/analytics.test.ts` (stamping, the handoff, the rejected send),
   `src/test/analytics.session.test.tsx` (the sequences above), `engineDriver.test.ts` (the session
   id at launch), `entryParams.test.ts` (campaign params).
