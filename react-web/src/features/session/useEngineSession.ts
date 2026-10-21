@@ -10,6 +10,7 @@ import { recordVisit } from '../lobby/lobbyApi'
 import type { SatelliteView } from '../../engine/generated'
 import type { PreviewFocus } from '../../engine/protocol'
 import { clickButton, screenViewed, track } from '../../lib/analytics'
+import { inShell, postToShell } from '../../lib/shell'
 import { storedLoginType, type LoginType } from './sessionAnalytics'
 import type { InteractableArea } from '../../lib/hudInset'
 import type { FatalError } from '../error/fatalError'
@@ -705,6 +706,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // How the pending login is reported once it resolves: 'stored' reads the stored identity's kind
   // then (it loads alongside the status), null is a scene-owned login the page never ran.
   const pendingLoginType = useRef<LoginType | 'stored' | null>(null)
+  const lastLoginType = useRef<LoginType | null>(null)
   const storedRef = useRef<StoredLogin | null>(null)
   storedRef.current = stored
   const welcomeRef = useRef<{ terms: boolean; newProfile: boolean } | null>(null)
@@ -1945,7 +1947,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     pendingLoginType.current = null
     Promise.resolve(login?.(driver))
       .then(() => {
-        if (type != null) screenViewed('AUTH_SUCCESS', { login_type: type === 'stored' ? storedLoginType(storedRef.current) : type })
+        if (type != null) {
+          lastLoginType.current = type === 'stored' ? storedLoginType(storedRef.current) : type
+          screenViewed('AUTH_SUCCESS', { login_type: lastLoginType.current })
+        }
         welcomeLink.current = urlDestination.current
         urlDestination.current = null
         setBusy(false)
@@ -2683,12 +2688,18 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // The screens a phase shows (the loading screen's own are the engine's: LOADING_START / END /
   // TIMEOUT come from `crates/analytics/src/loading.rs`).
   const prevPhase = useRef<SessionPhase | null>(null)
+  const inWorldReported = useRef(false)
   useEffect(() => {
     const prev = prevPhase.current
     prevPhase.current = phase
     if (prev === phase) return
     if (phase === 'lobby') screenViewed('LOBBY')
     else if (phase === 'picking') screenViewed('PLACES_PICKER')
+    else if (phase === 'world' && !inWorldReported.current) {
+      // the first scene of the page load, the shell's Google Ads conversion (shell/googleTag.ts)
+      inWorldReported.current = true
+      if (inShell) postToShell({ type: 'bevy-shell:in-world', login_type: lastLoginType.current })
+    }
   }, [phase])
   // The sign-in screens as mobile names them, once per showing (an error flip on the same screen
   // is not a new view). The "welcome back" panel only shows after a failed sign-in: a stored login
