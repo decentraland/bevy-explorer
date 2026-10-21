@@ -460,7 +460,6 @@ pub fn setup_primary_profile(
 #[derive(Resource, Default)]
 pub struct CurrentUserProfile {
     pub profile: Option<UserProfile>,
-    pub snapshots: Option<(Handle<Image>, Handle<Image>)>,
     pub is_deployed: bool,
     /// A new profile made while the world is held: the host's welcome page deploys it, with its
     /// save after the terms are accepted.
@@ -985,7 +984,6 @@ async fn deploy_profile(
 
         ipfs.client()
             .post(url)
-            // multipart deploy carries profile snapshots, so allow more headroom
             .timeout(std::time::Duration::from_secs(60))
             .header(
                 "Content-Type",

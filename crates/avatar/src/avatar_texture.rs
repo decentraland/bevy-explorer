@@ -5,18 +5,13 @@ use bevy::{
     app::Propagate,
     diagnostic::FrameCount,
     ecs::system::SystemParam,
-    math::FloatOrd,
     prelude::*,
     render::{
         camera::RenderTarget,
-        render_asset::RenderAssetUsages,
         render_resource::{
             Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
         },
-        view::{
-            screenshot::{Screenshot, ScreenshotCaptured},
-            RenderLayers,
-        },
+        view::RenderLayers,
     },
 };
 use bevy_dui::{DuiRegistry, DuiTemplate};
@@ -33,13 +28,11 @@ use crate::{AvatarSelection, AvatarShape};
 
 pub struct AvatarTexturePlugin;
 
-const SNAPSHOT_FRAMES: u32 = 5;
-
 impl Plugin for AvatarTexturePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<LiveBooths>();
         app.add_systems(Startup, setup.in_set(SetupSets::Main));
-        app.add_systems(Update, (update_booth_image, snapshot, clean_booths));
+        app.add_systems(Update, (update_booth_image, clean_booths));
     }
 }
 
@@ -60,8 +53,6 @@ pub struct BoothInstance {
     pub avatar: Arc<Entity>,
     pub avatar_texture: Handle<Image>,
     pub camera: Entity,
-    pub snapshot_target: (Option<Handle<Image>>, Option<Handle<Image>>),
-    pending_target: Option<(Handle<Image>, Handle<Image>)>,
 }
 
 #[derive(Resource, Default)]
@@ -73,7 +64,6 @@ impl PhotoBooth<'_, '_> {
         render_layers: RenderLayers,
         shape: AvatarShape,
         size: Extent3d,
-        snapshot: bool,
     ) -> BoothInstance {
         let avatar = self
             .commands
@@ -92,18 +82,6 @@ impl PhotoBooth<'_, '_> {
             ))
             .id();
 
-        let pending_target = if snapshot {
-            self.commands
-                .entity(avatar)
-                .try_insert(SnapshotTimer(self.frame.0 + SNAPSHOT_FRAMES));
-            Some((
-                self.images.add(Image::default()),
-                self.images.add(Image::default()),
-            ))
-        } else {
-            None
-        };
-
         let (avatar_texture, camera) = add_booth_camera(
             &mut self.commands,
             &mut self.images,
@@ -119,19 +97,12 @@ impl PhotoBooth<'_, '_> {
             avatar,
             avatar_texture,
             camera,
-            snapshot_target: (None, None),
-            pending_target,
         }
     }
 
     pub fn update_shape(&mut self, instance: &BoothInstance, new_shape: AvatarShape) {
         if let Ok(mut selection) = self.selections.get_mut(*instance.avatar) {
             selection.shape = new_shape;
-            if instance.pending_target.is_some() {
-                self.commands
-                    .entity(*instance.avatar)
-                    .try_insert(SnapshotTimer(self.frame.0 + SNAPSHOT_FRAMES));
-            }
         } else {
             error!("no booth avatar to update?");
         }
@@ -310,147 +281,8 @@ fn update_booth_image(
     }
 }
 
-struct SnapshotResult {
-    image: Image,
-    camera: Entity,
-    target: Handle<Image>,
-    source: Entity,
-    index: usize,
-}
-
-#[allow(clippy::too_many_arguments)]
-fn snapshot(
-    mut commands: Commands,
-    mut booths: Query<&mut BoothInstance>,
-    avatars: Query<(Entity, &SnapshotTimer, &AvatarSelection, &RenderLayers)>,
-    frame: Res<FrameCount>,
-    mut local_sender: Local<Option<tokio::sync::mpsc::Sender<SnapshotResult>>>,
-    mut local_receiver: Local<Option<tokio::sync::mpsc::Receiver<SnapshotResult>>>,
-    mut images: ResMut<Assets<Image>>,
-) {
-    if local_sender.is_none() {
-        let (sx, rx) = tokio::sync::mpsc::channel(10);
-        *local_sender = Some(sx);
-        *local_receiver = Some(rx);
-    }
-
-    // take any pending shots
-    for (ent, timer, _selection, render_layers) in avatars.iter() {
-        if frame.0 >= timer.0 {
-            let mut cam = |transform: Transform| -> (Entity, Handle<Image>) {
-                let mut image = Image::new_fill(
-                    Extent3d {
-                        width: 256,
-                        height: 256,
-                        depth_or_array_layers: 1,
-                    },
-                    TextureDimension::D2,
-                    &[0, 0, 0, 0],
-                    TextureFormat::bevy_default(),
-                    RenderAssetUsages::all(),
-                );
-                image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
-                let image = images.add(image);
-
-                let cam = commands
-                    .spawn((
-                        Camera3d::default(),
-                        transform,
-                        Camera {
-                            clear_color: ClearColorConfig::Custom(Color::NONE),
-                            target: RenderTarget::Image(bevy::render::camera::ImageRenderTarget {
-                                handle: image.clone(),
-                                scale_factor: FloatOrd(1.0),
-                            }),
-                            ..default()
-                        },
-                        render_layers.clone(),
-                    ))
-                    .id();
-                (cam, image)
-            };
-
-            // find matching instance
-            if let Some(instance) = booths.iter().find(|b| *b.avatar == ent) {
-                let (face_cam, face_image) =
-                    cam(Transform::from_translation(Vec3::new(0.0, 1.7, -1.0))
-                        .looking_at(Vec3::Y * 1.7, Vec3::Y));
-
-                let (body_cam, body_image) =
-                    cam(Transform::from_translation(Vec3::new(0.0, 0.9, -3.0))
-                        .looking_at(Vec3::Y * 0.9, Vec3::Y));
-
-                // snap face
-                let sender = local_sender.as_ref().unwrap().clone();
-                let target = instance.pending_target.as_ref().unwrap().0.clone();
-                commands.spawn(Screenshot::image(face_image)).observe(
-                    move |mut trigger: Trigger<ScreenshotCaptured>| {
-                        let _ = sender.blocking_send(SnapshotResult {
-                            image: std::mem::take(&mut trigger.0),
-                            camera: face_cam,
-                            target: target.clone(),
-                            source: ent,
-                            index: 0,
-                        });
-                    },
-                );
-
-                // snap body
-                let sender = local_sender.as_ref().unwrap().clone();
-                let target = instance.pending_target.as_ref().unwrap().1.clone();
-                commands.spawn(Screenshot::image(body_image)).observe(
-                    move |mut trigger: Trigger<ScreenshotCaptured>| {
-                        let _ = sender.blocking_send(SnapshotResult {
-                            image: std::mem::take(&mut trigger.0),
-                            camera: body_cam,
-                            target: target.clone(),
-                            source: ent,
-                            index: 1,
-                        });
-                    },
-                );
-            } else {
-                error!("no matching instance for timed snapshot");
-            }
-
-            commands.entity(ent).remove::<SnapshotTimer>();
-        }
-    }
-
-    // process taken shots
-    while let Ok(SnapshotResult {
-        image,
-        camera,
-        target,
-        source,
-        index,
-    }) = local_receiver.as_mut().unwrap().try_recv()
-    {
-        commands.entity(camera).despawn();
-
-        let Some(target_img) = images.get_mut(&target) else {
-            error!("target {:?} not found", target);
-            continue;
-        };
-
-        *target_img = image;
-        target_img.asset_usage = RenderAssetUsages::default();
-
-        if let Some(mut instance) = booths.iter_mut().find(|b| *b.avatar == source) {
-            if index == 0 {
-                instance.snapshot_target.0 = Some(target.clone());
-            } else {
-                instance.snapshot_target.1 = Some(target.clone());
-            }
-        }
-    }
-}
-
 #[derive(Component)]
 pub struct BoothImage;
-
-#[derive(Component)]
-pub struct SnapshotTimer(u32);
 
 pub struct DuiBooth;
 impl DuiTemplate for DuiBooth {
