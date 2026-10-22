@@ -42,3 +42,47 @@
 .invalid:focus {
   border-color: var(--error);
 }
+
+.wrap {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+.large {
+  height: auto;
+  min-height: 74px;
+  padding: 0 18px;
+  font-size: var(--type-36);
+}
+.withAction {
+  padding-right: calc(var(--action-icon, 18px) + 22px);
+  min-height: calc(var(--action-icon, 18px) + 20px);
+}
+.action {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: calc(var(--action-icon, 18px) + 10px);
+  height: calc(var(--action-icon, 18px) + 10px);
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-control);
+  background: none;
+  color: inherit;
+  opacity: 0.7;
+  cursor: pointer;
+  transition: opacity var(--dur-fast) ease, background var(--dur-fast) ease;
+}
+.action:hover:not(:disabled),
+.action:focus-visible {
+  opacity: 1;
+  background: var(--fill-2);
+  outline: none;
+}
+.action:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}

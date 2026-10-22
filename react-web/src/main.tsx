@@ -11,6 +11,7 @@ import { isNativeHud } from './lib/bootMode'
 import { inShell } from './lib/shell'
 import { loadPrefs } from './lib/prefs'
 import { bootAnalytics, dropAttributionParams, listenForGoogleTag } from './lib/analytics'
+import { AUTH_RETURN_PARAM } from './lib/entryParams'
 import './styles/global.css'
 
 // Before anything fetches: annotate loopback/local-network requests so Chrome's Local Network
@@ -59,7 +60,9 @@ if (!redirecting) void loadPrefs().then(() => {
   countLaunch()
   bootAnalytics()
   if (inShell) listenForGoogleTag()
-  dropAttributionParams()
+  // the auth return marker too (sso.ts has read it): the engine's url sync rebuilds the shell's
+  // address bar from this frame's search, and a reload must not read as a return from the auth site
+  dropAttributionParams([AUTH_RETURN_PARAM])
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <App />

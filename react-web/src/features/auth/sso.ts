@@ -8,6 +8,7 @@
 // redirects back, by which point the identity is already in localStorage.
 
 import { attributionParams, sessionId } from '../../lib/analytics'
+import { AUTH_RETURN_PARAM } from '../../lib/entryParams'
 import { inShell, postToShell, shellRequest } from '../../lib/shell'
 import { GUEST_SESSION_KEY } from './thirdweb'
 
@@ -151,11 +152,25 @@ export function authLoginUrl(redirectTo: string = location.href, attribution = a
   return `/auth/login?redirectTo=${encodeURIComponent(redirectTo)}${campaign}`
 }
 
+/** `url` marked as the auth site's return, so the page it lands on knows the sign-in just happened
+ *  (a new account's profile can still be syncing between catalysts). */
+export function authReturnUrl(url: string): string {
+  const u = new URL(url, location.href)
+  u.searchParams.set(AUTH_RETURN_PARAM, '1')
+  return u.href
+}
+
+/** This load is the auth site's return. */
+export const returnedFromAuth = new URLSearchParams(location.search).has(AUTH_RETURN_PARAM)
+// this page as entered, before the attribution params were taken off its address: where the
+// sign-in returns to outside the shell (the shell keeps its own)
+const entryUrl = location.href
+
 // Send the browser to the auth site to sign in (fresh account or switch account). Inside the shell
 // the shell navigates, so the auth site gets the top-level page and returns to the shell's URL.
-export function redirectToAuth(redirectTo: string = location.href): void {
+export function redirectToAuth(redirectTo: string = entryUrl): void {
   if (inShell) postToShell({ type: 'bevy-shell:auth-login', session: sessionId() })
-  else location.assign(authLoginUrl(redirectTo))
+  else location.assign(authLoginUrl(authReturnUrl(redirectTo)))
 }
 
 // Sign out: drop every SSO identity for this origin (matches sites' disconnect for the

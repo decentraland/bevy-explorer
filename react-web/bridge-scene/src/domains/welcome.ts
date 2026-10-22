@@ -1,65 +1,58 @@
 // Welcome page: where the terms are accepted, and an account without a profile settles the name and
-// look its new profile deploys with. The look is the Backpack's draft (./avatarDraft), so the stage
-// wears each reroll before anything deploys.
-//   from: getWelcome / rerollLook / acceptWelcome (the page), BevyApi.getWelcome, the curated
-//         default looks (`default<N>` profiles on the base-domain catalyst, as the engine's)
+// look its new profile deploys with. The looks come from the page (its fetches work before sign-in,
+// the scene's signed ones don't): before sign-in the stage wears one as a stand-in, signed in it is
+// the Backpack's draft (./avatarDraft), so the stage wears each pick before anything deploys.
+//   from: getWelcome / expectLook / showLook / acceptWelcome (the page), BevyApi.getWelcome
 //   to:   welcome / welcomeAccepted / wearables (the page), BevyApi.setAvatar + acceptTerms,
 //         RestrictedActions.openExternalUrl (openLegal)
+import { AvatarEquippedData, engine } from '@dcl/sdk/ecs'
 import { getPlayer } from '@dcl/sdk/players'
 import { openExternalUrl } from '~system/RestrictedActions'
 import { BevyApi } from '../bevy-api'
 import type { Ctx } from '../bridge'
-import { catalystBase, getJson } from '../http'
-import type { Color3 } from '../../../src/engine/generated'
-import { deployLookAs, editLook, hasDraft } from './avatarDraft'
+import { deployLookAs, editLook, hasDraft, setStandInLook } from './avatarDraft'
+import { expectLook, syncShape, waitFrames } from './avatarPreview'
+import type { AvatarLook } from '../../../src/engine/avatarEquip'
 import { sendEquipped } from './wearables'
-
-// comms::profile::DEFAULT_LOOKS: the looks are deployed as `default1` to `default160`
-const DEFAULT_LOOKS = 160
 
 const LEGAL = {
   terms: 'https://decentraland.org/terms/',
   privacy: 'https://decentraland.org/privacy/'
 }
-
-type LookColor = { color?: Color3 }
-type DefaultLook = {
-  avatars?: Array<{
-    avatar?: { bodyShape?: string; wearables?: string[]; eyes?: LookColor; hair?: LookColor; skin?: LookColor }
-  }>
-}
-
-const color = (c: LookColor | undefined): Color3 | null =>
-  c?.color == null ? null : { r: c.color.r, g: c.color.g, b: c.color.b }
+// Frames to wait for a signed-in player's equipped data before the accept deploys the look
+const PLAYER_LOOK_FRAMES = 600
 
 export function registerWelcome(ctx: Ctx): void {
-  let lastLook = 0
-
   ctx.on('getWelcome', async () => {
     const state = (await BevyApi.getWelcome?.().catch(() => undefined)) ?? { terms: false, newProfile: false }
     ctx.send({ kind: 'welcome', ...state })
   })
 
-  ctx.on('rerollLook', async () => {
-    let n = lastLook
-    while (n === lastLook) n = 1 + Math.floor(Math.random() * DEFAULT_LOOKS)
-    lastLook = n
-    const found = await getJson<DefaultLook>(`${await catalystBase()}/lambdas/profiles/default${n}`).catch((e: unknown) => {
-      console.error(`[welcome] default look ${n}`, e)
-      return undefined
+  // A curated default look, as the page fetched it, on the stage: signed in, on the draft (the
+  // page's equipped set follows); not yet, as the stand-in. Applied a frame later, so the picks
+  // queued while the scene was not yet up (the page's rerolls before the engine ran) collapse to
+  // the last.
+  ctx.on('expectLook', () => {
+    expectLook()
+  })
+  let queuedShow: { look: number; avatar: AvatarLook } | null = null
+  ctx.on('showLook', (msg) => {
+    queuedShow = { look: msg.look, avatar: msg.avatar }
+  })
+  ctx.push(() => {
+    if (queuedShow == null) return
+    const { look: n, avatar: look } = queuedShow
+    queuedShow = null
+    if (getPlayer() == null) {
+      setStandInLook(look)
+      syncShape(n)
+      return
+    }
+    editLook({ bodyShape: look.bodyShape, wearables: look.wearables, eyes: look.eyes, hair: look.hair, skin: look.skin, forceRender: [] })
+    syncShape(n)
+    sendEquipped(ctx).catch((e: unknown) => {
+      console.error('[welcome] equipped', e)
     })
-    const look = found?.avatars?.[0]?.avatar
-    // a later reroll has replaced this one
-    if (look?.bodyShape == null || n !== lastLook) return
-    editLook({
-      bodyShape: look.bodyShape,
-      wearables: look.wearables ?? [],
-      eyes: color(look.eyes),
-      hair: color(look.hair),
-      skin: color(look.skin),
-      forceRender: []
-    })
-    await sendEquipped(ctx)
   })
 
   ctx.on('openLegal', async (msg) => {
@@ -70,9 +63,15 @@ export function registerWelcome(ctx: Ctx): void {
 
   ctx.on('acceptWelcome', async (msg) => {
     try {
-      // The terms first: a held new profile deploys with the first setAvatar after them.
+      // The terms first: a held new profile deploys with the first setAvatar after them (the guest
+      // start page's accept carries its name for that).
       await BevyApi.acceptTerms?.()
-      if (msg.name != null || hasDraft()) await deployLookAs(msg.name ?? getPlayer()?.name ?? '')
+      if (msg.name != null || hasDraft()) {
+        // the look deploys as the player wears it, which reaches the scene after the player's
+        // identity (the sign-in's accept can land between): deployed before, it would be bare
+        for (let waited = 0; !AvatarEquippedData.has(engine.PlayerEntity) && waited < PLAYER_LOOK_FRAMES; waited++) await waitFrames(1)
+        await deployLookAs(msg.name ?? getPlayer()?.name ?? '')
+      }
       ctx.send({ kind: 'welcomeAccepted', ok: true })
     } catch (e) {
       console.error('[welcome] accept failed', e)

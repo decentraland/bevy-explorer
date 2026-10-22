@@ -11,6 +11,21 @@ import type { PageToScene, SceneToPage } from './protocol'
 // the consumer subscribes once and switches on `msg.kind`. Login stays typed
 // because the two implementations drive it differently (console vs rpc).
 
+/** What a first-time login's new profile starts as: a name and one of the curated default looks
+ *  by number (`default<look>`), picked before the account existed (the guest start page). */
+export interface NewAccountPick {
+  name: string
+  look: number
+}
+
+/** The pick as `/login_identity` flags; a name outside the unclaimed-name rule is left to the
+ *  engine (it would also break the command line). */
+export function newAccountFlags(pick?: NewAccountPick): string {
+  if (pick == null) return ''
+  const name = /^[A-Za-z0-9]{1,15}$/.test(pick.name) ? ` --name ${pick.name}` : ''
+  return `${name} --look ${Math.floor(pick.look)}`
+}
+
 export interface LoginDriver {
   getPreviousLogin(): Promise<{ userId: string | null }>
   loginPrevious(defaultOnError?: boolean): Promise<unknown>
@@ -18,7 +33,7 @@ export interface LoginDriver {
   /** Create a guest account that persists across visits (a thirdweb guest wallet) and sign in
    *  with it, replacing any earlier guest. Absent where there is no engine to take the identity;
    *  `loginGuest` stays the throwaway guest (?guest=1, scene previews). */
-  loginPersistentGuest?(): Promise<void>
+  loginPersistentGuest?(pick?: NewAccountPick): Promise<void>
   loginCancel(): Promise<void>
   /** Sign out of the current account → back to the login screen. */
   logout(): Promise<void>
@@ -26,8 +41,9 @@ export interface LoginDriver {
    *  `defaultOnError` continues with (and deploys) a default profile if the user's current
    *  profile can't be fetched — it OVERWRITES the server-side profile, so only pass it after
    *  a failed attempt, with explicit user consent. `guest` marks a guest account: the
-   *  engine reports it as a guest in analytics and refuses its transactions. */
-  loginWithIdentity(identity: AuthIdentity, defaultOnError?: boolean, guest?: boolean): Promise<void>
+   *  engine reports it as a guest in analytics and refuses its transactions. `pick` names and
+   *  dresses the profile a first login builds. */
+  loginWithIdentity(identity: AuthIdentity, defaultOnError?: boolean, guest?: boolean, pick?: NewAccountPick): Promise<void>
   /** Reuse the existing login (the "Jump in" button). Each backend logs in the way it
    *  supports: console `/login_identity` for the engine, `loginPrevious` over the bridge.
    *  `defaultOnError` as for loginWithIdentity. */

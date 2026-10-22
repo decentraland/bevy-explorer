@@ -25,6 +25,9 @@ const PAGE_PARAMS: Record<string, string> = {
 
 const WORLD_NAME = /^[a-z0-9-]+$/
 
+/** On the url the auth site returns to (features/auth/sso): the sign-in just happened. */
+export const AUTH_RETURN_PARAM = 'signedIn'
+
 /** The realm a link names: `realm`, else `world`, a name under `.dcl.eth` given bare or in full.
  *  Anything else as a world (a url, another ens) is no destination. */
 export function entryRealm(q: URLSearchParams): string | null {
@@ -51,6 +54,7 @@ const INTERNAL_PARAMS = [
   'perm',
   'worldpw',
   ANALYTICS_SESSION_PARAM,
+  AUTH_RETURN_PARAM,
   // dev only (lib/systemScene.ts)
   ...(import.meta.env.PROD ? [] : ['bridgePort'])
 ]

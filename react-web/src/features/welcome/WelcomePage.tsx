@@ -23,7 +23,7 @@ export function WelcomePage({
   setEngineViewport: (region: 'map' | 'avatarPreview' | 'lobby', rect: Rect | null, dpr?: number) => void
 }): React.JSX.Element {
   const session = useSession()
-  const { terms, newProfile, pending, saving, error, reroll, accept, openLegal } = session.welcome
+  const { terms, newProfile, pending, saving, error, reroll, lookPending, accept, openLegal } = session.welcome
   const profile = session.profile.data
   const stored = useStoredProfile(session.login.account ?? undefined)
   // Only the part before the '#': the suffix is the protocol's, not something you type.
@@ -40,12 +40,16 @@ export function WelcomePage({
   // an existing profile only accepts the terms here
   const canAccept = !saving && (!newProfile || (profile != null && isValidName(name)))
 
-  // Until the engine says whether the page is needed, only the background: the avatar and the
-  // chrome come with the page or the lobby, whichever it is.
+  // Until the engine says whether the page is needed, only the stage: the chrome comes with the
+  // page or the lobby, whichever it is. The stage stays open so an avatar already on it (the guest
+  // start page's) carries through.
   if (pending) {
     return (
       <div className={lobbyStyles.root}>
-        <StandInStage hidden={false} />
+        <div className={lobbyStyles.stage}>
+          <EngineViewport region="lobby" report={setEngineViewport} />
+        </div>
+        <StandInStage hidden={session.lobbyStageReady} />
       </div>
     )
   }
@@ -84,7 +88,7 @@ export function WelcomePage({
               <div className={styles.hint}>Letters and numbers only, up to {NAME_MAX} characters.</div>
             </div>
 
-            <Button variant="secondary" onClick={reroll} disabled={saving}>
+            <Button variant="secondary" onClick={reroll} disabled={saving || (lookPending && session.lobbyStageReady)}>
               RANDOMIZE
             </Button>
             {terms && <div className={styles.hint}>You can freely customize your appearance after accepting the terms.</div>}

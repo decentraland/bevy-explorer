@@ -8,6 +8,7 @@
 // forward SystemApi results verbatim.
 
 import type { Color3, HomeScene, SatelliteView, SceneLoadingUi, WelcomeState } from './generated'
+import type { AvatarLook } from './avatarEquip'
 
 export const BRIDGE_CHANNEL = 'bevy-ui-bridge'
 
@@ -204,7 +205,9 @@ export type PageToScene =
   | GetMapRequest
   | GetHomeSceneRequest
   | GetWelcomeRequest
-  | RerollLookRequest
+  | ExpectLookRequest
+  | ShowLookRequest
+  | PreloadLookRequest
   | AcceptWelcomeRequest
   | OpenLegalRequest
   | TeleportRequest
@@ -724,13 +727,31 @@ export interface WelcomeMessage extends WelcomeState {
   kind: 'welcome'
 }
 
-/** Put another of the curated default looks on the welcome page's avatar (the Backpack's unsaved
- *  look, so the stage shows it); deployed on `acceptWelcome`. */
-export interface RerollLookRequest {
-  kind: 'rerollLook'
+/** Put the curated default look `default<look>` on the lobby stage's avatar, as the page fetched it
+ *  (the scene's own fetches are signed, so it can't before sign-in): the guest start page's pick, or
+ *  the welcome page's RANDOMIZE. Signed in it is the Backpack's unsaved look, deployed on
+ *  `acceptWelcome`; before sign-in the stage wears it as a stand-in. */
+export interface ShowLookRequest {
+  kind: 'showLook'
+  look: number
+  avatar: AvatarLook
 }
 
-/** The welcome page's accept: the terms, then for a new profile its `name` and look in one
+/** A `showLook` is on its way (RANDOMIZE was hit; the page is fetching the look): the lobby stage's
+ *  avatar turns away now rather than when the look arrives. */
+export interface ExpectLookRequest {
+  kind: 'expectLook'
+}
+
+/** The look the next RANDOMIZE will show: the stage loads it out of sight once the one on show has
+ *  loaded, so the swap is instant. */
+export interface PreloadLookRequest {
+  kind: 'preloadLook'
+  look: number
+  avatar: AvatarLook
+}
+
+/** The welcome page's accept: the terms, then for a new profile its `name` with the look in one
  *  setAvatar. Answered with `welcomeAccepted` once that lands. */
 export interface AcceptWelcomeRequest {
   kind: 'acceptWelcome'
@@ -778,6 +799,13 @@ export interface RealmInfoMessage {
 /** The lobby stage and its avatar have been drawn (scene → page), so the page's stand-in can go. */
 export interface LobbyStageReadyMessage {
   kind: 'lobbyStageReady'
+}
+
+/** The look `default<look>` (a `showLook`) is on the lobby stage, loaded and facing front (scene →
+ *  page): the next RANDOMIZE can go. */
+export interface LookShownMessage {
+  kind: 'lookShown'
+  look: number
 }
 
 export interface SceneInfoMessage {
@@ -1600,6 +1628,7 @@ export type SceneToPage =
   | RealmInfoMessage
   | SceneInfoMessage
   | LobbyStageReadyMessage
+  | LookShownMessage
   | GalleryMessage
   | GalleryPhotoMessage
   | PermissionRequestMessage

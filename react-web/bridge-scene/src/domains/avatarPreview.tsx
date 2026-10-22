@@ -8,13 +8,14 @@
 // The preview wears the Backpack's look (./avatarDraft), which equipping edits, so equipping in the
 // Backpack reflects here before anything is deployed. Mounted via ReactEcsRenderer in index.ts.
 import ReactEcs, { UiEntity } from '@dcl/react-ecs'
-import { AvatarShape, CameraLayer, CameraLayers, Material, MaterialTransparencyMode, MeshRenderer, PrimaryPointerInfo, TextureCamera, Transform, engine } from '@dcl/sdk/ecs'
+import { AssetLoadLoadingState, AvatarShape, CameraLayer, CameraLayers, Material, MaterialTransparencyMode, MeshRenderer, PrimaryPointerInfo, TextureCamera, Transform, engine } from '@dcl/sdk/ecs'
 import { Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { getPlayer } from '@dcl/sdk/players'
 import type { Entity } from '@dcl/ecs'
 import type { Ctx } from '../bridge'
 import type { PreviewFocus } from '../../../src/engine/protocol'
 import { currentLook } from './avatarDraft'
+import type { AvatarLook } from '../../../src/engine/avatarEquip'
 import { BACKDROP_EDGE_FADE, FLOOR, FLOOR_SHADE_STOPS, backdropRect, floorShadeAt } from '../../../src/engine/lobbyStage'
 import { BevyApi } from '../bevy-api'
 
@@ -65,9 +66,22 @@ const LOBBY_CAMERA_DISTANCE = 6
 const LOBBY_FOV = (26.2 * Math.PI) / 180
 const LOBBY_SHADOW = Color4.create(0, 0, 0, 0.65)
 // Frames to let the stage and the avatar's first look settle before the page drops its stand-in,
-// and how long to wait for the look at all.
+// and how long to wait for an avatar to load at all.
 const LOBBY_SETTLE_FRAMES = 45
 const LOBBY_LOOK_FRAMES = 600
+// The lobby's standby avatar lives on a layer no camera draws: a look loads there out of sight.
+const STANDBY_LAYER = 11
+// A new look's entrance: the avatar on show turns its back, and the new one, loaded, turns to the
+// front from its back, each over this long. Yaws, one way round: 180 faces the camera.
+const TURN_SECONDS = 0.5
+const YAW_FRONT = 180
+const YAW_AWAY = 360
+const YAW_BACK = 0
+// decentraland.sdk.components.common.LoadingState, as the engine reports an avatar's load on its
+// entity's AssetLoadLoadingState (a const enum the SDK does not export at runtime)
+const LOADING_NOT_FOUND = 2
+const LOADING_FINISHED_WITH_ERROR = 3
+const LOADING_FINISHED = 4
 
 // The backdrop's bottom edge fading into the floor, as abutting bands offset from that edge.
 const EDGE_FADE = Array.from({ length: BACKDROP_EDGE_FADE / LOBBY_SHADE_BAND_PX }, (_, i) => ({
@@ -95,10 +109,72 @@ type Stage = 'backpack' | 'lobby'
 let stage: Stage = 'backpack'
 
 let rect: Rect | null = null
+// Frames until a closed region's stage is dropped: a page handing the stage to the next one (the
+// guest start page to the lobby, say) closes its region and the next opens its own straight after,
+// and the stage, with its loaded avatar, must survive that.
+let disposeIn = 0
+const DISPOSE_FRAMES = 2
 let avatarEntity: Entity | null = null
 let cameraEntity: Entity | null = null
 let podiumEntities: Entity[] = []
 let lastShapeKey = ''
+// The lobby stage swaps between two avatars, one on show and one standing by, so that a new look
+// loads out of sight and the one on show never goes missing: a look wanted on the stage goes on
+// the standby first, and the stage swaps once the engine reports it loaded. The next RANDOMIZE's
+// look is loaded on the standby ahead, once the one on show has loaded, so its swap is instant.
+let standbyEntity: Entity | null = null
+let shownKey = ''
+let standbyKey = ''
+// the curated default look numbers behind the keys, for the page (`lookShown`); the requested
+// one is the page's pick, held until the stage takes it up (a shape change without one is an equip)
+let shownLook: number | null = null
+let standbyLook: number | null = null
+let requestedLook: number | null = null
+// the turn under way, and where the avatar on show is facing (YAW_FRONT when still)
+let turn: { entity: Entity; from: number; to: number; t: number } | null = null
+let shownYaw = YAW_FRONT
+// the standby has the wanted look loaded: it takes the stage once the shown one has turned away
+let swapReady = false
+// frames left to wait for the look a RANDOMIZE promised, turned away for it in advance
+let expecting = 0
+let announce: ((look: number) => void) | null = null
+// whether the standby's look was asked for (a RANDOMIZE), as opposed to loaded ahead
+let standbyWanted = false
+let wanted: { key: string; shape: ShapeData; look: number | null } | null = null
+let preload: { key: string; shape: ShapeData; look: number } | null = null
+let showLoad: LoadWatch | null = null
+let standbyLoad: LoadWatch | null = null
+let shownLoaded = false
+
+/** An avatar's load on its entity, from the engine's reports since it was given its look. */
+type LoadWatch = {
+  entity: Entity
+  since: number
+  frames: number
+  done: boolean
+}
+
+function latestLoad(entity: Entity): { timestamp: number; state: number } | null {
+  if (!AssetLoadLoadingState.has(entity)) return null
+  let latest: { timestamp: number; state: number } | null = null
+  for (const report of AssetLoadLoadingState.get(entity)) {
+    if (latest == null || report.timestamp > latest.timestamp) latest = { timestamp: report.timestamp, state: report.currentState }
+  }
+  return latest
+}
+
+function watchLoad(entity: Entity): LoadWatch {
+  return { entity, since: latestLoad(entity)?.timestamp ?? 0, frames: 0, done: false }
+}
+
+// Done once the engine reports the load finished (well or not), or after long enough that it
+// never will.
+function pollLoad(watch: LoadWatch): void {
+  if (watch.done) return
+  const latest = latestLoad(watch.entity)
+  const ended = latest != null && latest.timestamp > watch.since && [LOADING_FINISHED, LOADING_FINISHED_WITH_ERROR, LOADING_NOT_FOUND].includes(latest.state)
+  if (ended || ++watch.frames >= LOBBY_LOOK_FRAMES) watch.done = true
+}
 let framing = FRAMING.body
 let framingFrom = FRAMING.body
 let framingTo = FRAMING.body
@@ -130,8 +206,7 @@ function camRes(r: Rect): { width: number; height: number } {
   return { width: w, height: h }
 }
 
-function avatarShape(): {
-  id: string
+type ShapeData = {
   bodyShape?: string
   eyeColor?: { r: number; g: number; b: number }
   hairColor?: { r: number; g: number; b: number }
@@ -139,21 +214,28 @@ function avatarShape(): {
   wearables: string[]
   emotes: string[]
   forceRender: string[]
-} {
-  const look = currentLook()
-  // Preview override (item selected, not equipped) takes precedence over the look's set,
-  // so selecting shows the item without adding it to the look.
-  const wearables = previewUrns ?? look?.wearables ?? []
+}
+
+// `override`: the Backpack's preview (item selected, not equipped) takes precedence over the
+// look's set, so selecting shows the item without adding it to the look.
+function shapeOf(look: AvatarLook, override: string[] | null = null): ShapeData {
   return {
-    id: getPlayer()?.userId ?? '',
-    bodyShape: look?.bodyShape || undefined,
-    eyeColor: look?.eyes ?? undefined,
-    hairColor: look?.hair ?? undefined,
-    skinColor: look?.skin ?? undefined,
-    wearables,
+    bodyShape: look.bodyShape || undefined,
+    eyeColor: look.eyes ?? undefined,
+    hairColor: look.hair ?? undefined,
+    skinColor: look.skin ?? undefined,
+    wearables: override ?? look.wearables,
     emotes: [],
-    forceRender: look?.forceRender ?? []
+    forceRender: look.forceRender
   }
+}
+
+const shapeKey = (shape: ShapeData): string => JSON.stringify(shape)
+
+function setShape(entity: Entity, shape: ShapeData): void {
+  const mut = AvatarShape.getMutableOrNull(entity)
+  if (mut != null) Object.assign(mut, shape)
+  else AvatarShape.create(entity, { ...shape, id: getPlayer()?.userId ?? '', name: undefined, talking: false })
 }
 
 function createPreview(): void {
@@ -171,7 +253,12 @@ function createPreview(): void {
     rotation: FACING,
     scale: lobby ? Vector3.One() : Vector3.create(2, 2, 2)
   })
-
+  if (lobby) {
+    const standby = engine.addEntity()
+    CameraLayers.create(standby, { layers: [STANDBY_LAYER] })
+    Transform.create(standby, { position: Vector3.create(8, 0, 8), rotation: FACING, scale: Vector3.One() })
+    standbyEntity = standby
+  }
   // Podium under the avatar (preview layer only), the parity backpack's platform;
   // the lobby stands it on a soft blob shadow instead.
   const podium = lobby ? [lobbyShadow()] : PODIUM_LAYERS.map((layer) => {
@@ -219,6 +306,19 @@ function createPreview(): void {
   cameraEntity = c
   podiumEntities = podium
   lastShapeKey = ''
+  shownKey = ''
+  standbyKey = ''
+  shownLook = null
+  standbyLook = null
+  turn = null
+  shownYaw = YAW_FRONT
+  swapReady = false
+  expecting = 0
+  wanted = null
+  standbyWanted = false
+  showLoad = null
+  standbyLoad = null
+  shownLoaded = false
   syncShape()
 }
 
@@ -228,9 +328,13 @@ let stageGeneration = 0
 async function announceLobbyStage(ctx: Ctx): Promise<void> {
   const generation = ++stageGeneration
   const current = (): boolean => generation === stageGeneration && stage === 'lobby' && avatarEntity != null
-  // the avatar renders nothing until the player's look (and so its body shape) has arrived
-  for (let waited = 0; current() && !currentLook()?.bodyShape && waited < LOBBY_LOOK_FRAMES; waited += 5) await waitFrames(5)
-  await waitFrames(LOBBY_SETTLE_FRAMES)
+  // the avatar renders nothing until its look has arrived and loaded; a reroll meanwhile keeps
+  // the stand-in until the new look is on show and facing front
+  const landed = (): boolean => shownLoaded && wanted == null && turn == null
+  // a stage already on show (a page taking it over) has nothing left to settle
+  const settled = landed()
+  for (let waited = 0; current() && !landed() && waited < 2 * LOBBY_LOOK_FRAMES; waited += 5) await waitFrames(5)
+  if (!settled) await waitFrames(LOBBY_SETTLE_FRAMES)
   if (current()) ctx.send({ kind: 'lobbyStageReady' })
 }
 
@@ -245,24 +349,177 @@ function lobbyShadow(): Entity {
 
 function disposePreview(): void {
   if (avatarEntity != null) engine.removeEntity(avatarEntity)
+  if (standbyEntity != null) engine.removeEntity(standbyEntity)
   if (cameraEntity != null) engine.removeEntity(cameraEntity)
   podiumEntities.forEach((e) => engine.removeEntity(e))
   avatarEntity = null
+  standbyEntity = null
   cameraEntity = null
   podiumEntities = []
+  shownKey = ''
+  standbyKey = ''
+  shownLook = null
+  standbyLook = null
+  turn = null
+  shownYaw = YAW_FRONT
+  swapReady = false
+  expecting = 0
+  wanted = null
+  standbyWanted = false
+  preload = null
+  showLoad = null
+  standbyLoad = null
+  shownLoaded = false
 }
 
-// Re-read the player's avatar into the shape when it changes (equip via React → setAvatar).
-function syncShape(): void {
+/** Re-read the look into the shape when it changes (a pick from the page, an equip via React →
+ *  setAvatar). The Backpack's preview changes in place; the lobby stage loads the new look on its
+ *  standby and swaps to it once loaded. */
+export function syncShape(look?: number): void {
+  if (look != null) requestedLook = look
   if (avatarEntity == null) return
-  const shape = avatarShape()
-  if (!shape.bodyShape) return
-  const key = JSON.stringify(shape)
+  const current = currentLook()
+  if (!current?.bodyShape) return
+  const pick = requestedLook
+  requestedLook = null
+  const shape = shapeOf(current, previewUrns)
+  const key = shapeKey(shape)
   if (key === lastShapeKey) return
   lastShapeKey = key
-  const mut = AvatarShape.getMutableOrNull(avatarEntity)
-  if (mut != null) Object.assign(mut, shape)
-  else AvatarShape.create(avatarEntity, { ...shape, name: undefined, talking: false })
+  if (key === shownKey && stage === 'lobby' && AvatarShape.has(avatarEntity)) {
+    // the look on show again (a RANDOMIZE taken back before its swap): it turns back to the front
+    wanted = null
+    swapReady = false
+    standbyWanted = false
+    expecting = 0
+    if (shownYaw !== YAW_FRONT) startTurn(avatarEntity, shownYaw, YAW_FRONT)
+    return
+  }
+  if (stage !== 'lobby' || standbyEntity == null || !AvatarShape.has(avatarEntity)) {
+    setShape(avatarEntity, shape)
+    if (stage === 'lobby') {
+      shownKey = key
+      shownLook = pick
+      shownLoaded = false
+      showLoad = watchLoad(avatarEntity)
+    }
+    return
+  }
+  wanted = { key, shape, look: pick }
+  expecting = 0
+  // the avatar on show turns away meanwhile; the new one takes the stage once it has, and is loaded
+  if (shownYaw !== YAW_AWAY) startTurn(avatarEntity, shownYaw, YAW_AWAY)
+  // already loaded on the standby (a look loaded ahead, or the one before): on show now if the
+  // shown avatar has already turned away (RANDOMIZE turns it ahead of the look), else once it has
+  if (key === standbyKey && standbyLoad == null) {
+    if (shownYaw === YAW_AWAY && turn == null) swapToStandby()
+    else swapReady = true
+    return
+  }
+  loadOnStandby()
+}
+
+/** RANDOMIZE was hit: the avatar on show turns away now, ahead of the look (which the page is still
+ *  fetching); it turns back if none comes. */
+export function expectLook(): void {
+  if (stage !== 'lobby' || avatarEntity == null || !AvatarShape.has(avatarEntity) || !shownLoaded) return
+  expecting = LOBBY_LOOK_FRAMES
+  if (shownYaw !== YAW_AWAY && turn?.to !== YAW_AWAY) startTurn(avatarEntity, shownYaw, YAW_AWAY)
+}
+
+function startTurn(entity: Entity, from: number, to: number): void {
+  turn = { entity, from, to, t: 0 }
+}
+
+// Advance the turn under way; done, a look that was waiting for the shown avatar to face away
+// can take the stage, and a new one facing front is announced to the page.
+function pollTurn(dt: number): void {
+  if (turn == null) return
+  turn.t = Math.min(1, turn.t + dt / TURN_SECONDS)
+  const e = turn.t * turn.t * (3 - 2 * turn.t)
+  const yaw = turn.from + (turn.to - turn.from) * e
+  if (Transform.has(turn.entity)) Transform.getMutable(turn.entity).rotation = Quaternion.fromEulerDegrees(0, yaw, 0)
+  if (turn.entity === avatarEntity) shownYaw = yaw
+  if (turn.t < 1) return
+  const done = turn
+  turn = null
+  if (done.entity !== avatarEntity) return
+  if (done.to === YAW_FRONT && shownLook != null && announce != null) announce(shownLook)
+  if (done.to === YAW_AWAY && swapReady) swapToStandby()
+  // a look loaded meanwhile (one asked for after the one just shown): turn away for it
+  else if (done.to === YAW_FRONT && swapReady) startTurn(done.entity, YAW_FRONT, YAW_AWAY)
+}
+
+// The look wanted on show goes on the standby (unless already there, loaded ahead); the next
+// RANDOMIZE's look goes there once the one on show has loaded and nothing else is wanted, nor on
+// its way (a RANDOMIZE's look, usually the one loaded ahead, must find it there).
+function loadOnStandby(): void {
+  if (standbyEntity == null || standbyLoad != null) return
+  const next = wanted != null && wanted.key !== standbyKey ? wanted : wanted == null && expecting === 0 && preload != null && shownLoaded && preload.key !== standbyKey ? preload : null
+  if (next == null) return
+  setShape(standbyEntity, next.shape)
+  standbyKey = next.key
+  standbyLook = next.look
+  standbyWanted = next === wanted
+  standbyLoad = watchLoad(standbyEntity)
+}
+
+// The standby, loaded with the look wanted on show, takes the stage; the avatar that was on show
+// becomes the standby, still wearing its look (a look dropped and replaced in one frame never
+// reports loaded; and a RANDOMIZE back to it then costs nothing).
+function swapToStandby(): void {
+  if (avatarEntity == null || standbyEntity == null) return
+  const shown = avatarEntity
+  const standby = standbyEntity
+  CameraLayers.getMutable(standby).layers = [LAYER]
+  CameraLayers.getMutable(shown).layers = [STANDBY_LAYER]
+  Transform.getMutable(standby).rotation = Quaternion.fromEulerDegrees(0, YAW_BACK, 0)
+  avatarEntity = standby
+  standbyEntity = shown
+  const wasShown = shownKey
+  shownKey = standbyKey
+  standbyKey = wasShown
+  const wasShownLook = shownLook
+  shownLook = standbyLook
+  standbyLook = wasShownLook
+  standbyWanted = false
+  swapReady = false
+  if (wanted?.key === shownKey) wanted = null
+  shownLoaded = true
+  shownYaw = YAW_BACK
+  startTurn(standby, YAW_BACK, YAW_FRONT)
+}
+
+function pollStage(dt: number): void {
+  pollTurn(dt)
+  if (expecting > 0 && --expecting === 0 && wanted == null && avatarEntity != null && shownYaw !== YAW_FRONT) {
+    startTurn(avatarEntity, shownYaw, YAW_FRONT)
+  }
+  if (showLoad != null) {
+    pollLoad(showLoad)
+    if (showLoad.done) {
+      showLoad = null
+      shownLoaded = true
+      if (shownLook != null && announce != null) announce(shownLook)
+    }
+  }
+  if (standbyLoad != null) {
+    pollLoad(standbyLoad)
+    if (standbyLoad.done) {
+      standbyLoad = null
+      // a loaded look that was asked for shows, even if another was asked for since: that one
+      // then loads on what was on show. It waits for the shown avatar to have turned away.
+      if (wanted?.key === standbyKey || standbyWanted) {
+        if (shownYaw === YAW_AWAY && turn == null) swapToStandby()
+        else {
+          swapReady = true
+          // facing front and still (the look before took the stage while this one was wanted)
+          if (turn == null && avatarEntity != null) startTurn(avatarEntity, shownYaw, YAW_AWAY)
+        }
+      }
+    }
+  }
+  loadOnStandby()
 }
 
 export function registerAvatarPreview(ctx: Ctx): void {
@@ -277,20 +534,18 @@ export function registerAvatarPreview(ctx: Ctx): void {
       framing = framingFrom = framingTo = FRAMING.body
       framingT = 1
     }
-    rect = msg.rect
-    dpr = msg.dpr ?? 1
-    if (rect == null) {
-      disposePreview()
+    if (msg.rect == null) {
+      if (avatarEntity != null) disposeIn = DISPOSE_FRAMES
+      else rect = null
       return
     }
-    if (avatarEntity == null) {
-      createPreview()
-      if (stage === 'lobby') {
-        announceLobbyStage(ctx).catch((e) => {
-          console.error('[avatarPreview] lobby stage', e)
-        })
-      }
-    } else if (cameraEntity != null) {
+    disposeIn = 0
+    // the same region again (a page re-reporting its viewport) leaves the stage as it is
+    const same = rect != null && rect.x === msg.rect.x && rect.y === msg.rect.y && rect.width === msg.rect.width && rect.height === msg.rect.height && dpr === (msg.dpr ?? 1)
+    rect = msg.rect
+    dpr = msg.dpr ?? 1
+    if (avatarEntity == null) createPreview()
+    else if (!same && cameraEntity != null) {
       // Window resized → re-size the render target to the hole, not just re-aspect it.
       const res = camRes(rect)
       const cam = TextureCamera.getMutableOrNull(cameraEntity)
@@ -298,6 +553,13 @@ export function registerAvatarPreview(ctx: Ctx): void {
         cam.width = res.width
         cam.height = res.height
       }
+    }
+    // told again for a stage carried over (the guest start page's into the lobby, the lobby's
+    // back to it on logout): the page taking it over may have put its stand-in back up
+    if (stage === 'lobby') {
+      announceLobbyStage(ctx).catch((e) => {
+        console.error('[avatarPreview] lobby stage', e)
+      })
     }
   })
 
@@ -311,11 +573,21 @@ export function registerAvatarPreview(ctx: Ctx): void {
     framingT = 0
   })
   ctx.push(() => {
+    if (disposeIn > 0 && --disposeIn === 0) {
+      disposePreview()
+      rect = null
+    }
     const due = frameWaiters.filter((w) => --w.frames <= 0)
     frameWaiters = frameWaiters.filter((w) => w.frames > 0)
     due.forEach((w) => {
       w.done()
     })
+  })
+  announce = (look) => {
+    ctx.send({ kind: 'lookShown', look })
+  }
+  ctx.push((dt) => {
+    if (stage === 'lobby' && avatarEntity != null) pollStage(dt)
   })
   ctx.push((dt) => {
     if (framingT >= 1 || cameraEntity == null || stage !== 'backpack') return
@@ -326,6 +598,13 @@ export function registerAvatarPreview(ctx: Ctx): void {
       centerY: framingFrom.centerY + (framingTo.centerY - framingFrom.centerY) * e
     }
     applyFraming(framing)
+  })
+
+  // The look the next RANDOMIZE shows, loaded on the lobby's standby ahead of it.
+  ctx.on('preloadLook', (msg) => {
+    const shape = shapeOf(msg.avatar)
+    preload = { key: shapeKey(shape), shape, look: msg.look }
+    if (stage === 'lobby') loadOnStandby()
   })
 
   // Selecting an item in the Backpack previews it on the avatar without persisting (null reverts).

@@ -50,7 +50,7 @@ mod two_bone_ik;
 use common::{
     asset_cache::{clean_asset_cache, AssetCache},
     sets::SetupSets,
-    structs::{AppConfig, AttachPoints, EmoteCommand, EmoteMask, PrimaryUser},
+    structs::{AppConfig, AttachPoints, EmoteCommand, EmoteMask, MonotonicTimestamp, PrimaryUser},
     util::{JoinRelativeExt, SceneSpawnerPlus, TaskExt, TryPushChildrenEx},
 };
 use comms::{
@@ -62,8 +62,8 @@ use dcl_component::{
     proto_components::{
         common::Color3,
         sdk::components::{
-            common::LoadingState, PbAvatarBase, PbAvatarEquippedData, PbAvatarShape,
-            PbGltfContainerLoadingState,
+            common::LoadingState, PbAssetLoadLoadingState, PbAvatarBase, PbAvatarEquippedData,
+            PbAvatarShape, PbGltfContainerLoadingState,
         },
         Color3DclToBevy,
     },
@@ -573,8 +573,9 @@ fn update_render_avatar(
     children: Query<(&Children, &AttachPoints)>,
     avatar_render_entities: Query<(), With<AvatarDefinition>>,
     mut wearable_loader: CollectibleManager<Wearable>,
-    scenes: Query<&RendererSceneContext>,
+    mut scenes: Query<&mut RendererSceneContext>,
     ipfas: IpfsAssetServer,
+    timestamp: Res<MonotonicTimestamp<PbAssetLoadLoadingState>>,
 ) {
     // remove renderable entities when avatar selection is removed
     for entity in removed_selections.read() {
@@ -623,6 +624,15 @@ fn update_render_avatar(
             }
             Err(other) => {
                 warn!("failed to resolve body {body_urn}: {other:?}");
+                if let Some(scene_ent) = maybe_scene_ent {
+                    report_avatar_load(
+                        &mut scenes,
+                        &timestamp,
+                        scene_ent,
+                        LoadingState::FinishedWithError,
+                        body_urn.as_str(),
+                    );
+                }
                 // don't retry
                 let data = wearable_loader.get_data(&body_urn);
                 debug!("data: {data:?}");
@@ -745,6 +755,15 @@ fn update_render_avatar(
         urns.insert(body_urn.clone());
 
         debug!("avatar definition loaded: {wearables:?}");
+        if let Some(scene_ent) = maybe_scene_ent {
+            report_avatar_load(
+                &mut scenes,
+                &timestamp,
+                scene_ent,
+                LoadingState::Loading,
+                body_urn.as_str(),
+            );
+        }
         commands.entity(entity).try_with_children(|commands| {
             commands.spawn((
                 Transform::from_rotation(Quat::from_rotation_y(PI)),
@@ -884,16 +903,58 @@ pub struct AvatarLoaded {
 #[derive(Component)]
 pub struct AvatarProcessed;
 
+/// Tells a scene how the avatar on one of its entities is loading, as the AssetLoad loading
+/// state of that entity (a grow-only set the scene reads in order): Loading once the look's
+/// files are being fetched, Finished once it renders, FinishedWithError when it never will.
+fn report_avatar_load(
+    contexts: &mut Query<&mut RendererSceneContext>,
+    timestamp: &MonotonicTimestamp<PbAssetLoadLoadingState>,
+    scene_ent: &SceneEntity,
+    state: LoadingState,
+    body_shape: &str,
+) {
+    let Ok(mut context) = contexts.get_mut(scene_ent.root) else {
+        return;
+    };
+    context.update_crdt(
+        SceneComponentId::ASSET_LOAD_LOADING_STATE,
+        CrdtType::GO_ANY,
+        scene_ent.id,
+        &PbAssetLoadLoadingState {
+            current_state: state as i32,
+            asset: body_shape.to_owned(),
+            timestamp: timestamp.next_timestamp(),
+        },
+    );
+}
+
 // instantiate avatar gltfs
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn spawn_scenes(
     mut commands: Commands,
-    query: Query<(Entity, &AvatarDefinition), (Without<AvatarLoaded>, Without<AvatarProcessed>)>,
+    query: Query<
+        (Entity, &AvatarDefinition, &ChildOf),
+        (Without<AvatarLoaded>, Without<AvatarProcessed>),
+    >,
     asset_server: Res<AssetServer>,
     gltfs: Res<Assets<Gltf>>,
     mut scene_spawner: ResMut<SceneSpawner>,
+    scene_ents: Query<&SceneEntity>,
+    mut contexts: Query<&mut RendererSceneContext>,
+    timestamp: Res<MonotonicTimestamp<PbAssetLoadLoadingState>>,
 ) {
-    for (ent, def) in query.iter() {
+    for (ent, def, parent) in query.iter() {
+        let report_failure = |contexts: &mut Query<&mut RendererSceneContext>| {
+            if let Ok(scene_ent) = scene_ents.get(parent.parent()) {
+                report_avatar_load(
+                    contexts,
+                    &timestamp,
+                    scene_ent,
+                    LoadingState::FinishedWithError,
+                    &def.body_shape,
+                );
+            }
+        };
         let any_loading = def
             .body
             .model
@@ -933,6 +994,7 @@ fn spawn_scenes(
                 otherwise => {
                     warn!("failed to load body gltf: {otherwise:?}");
                     commands.entity(ent).try_insert(AvatarProcessed);
+                    report_failure(&mut contexts);
                 }
             }
             continue;
@@ -941,6 +1003,7 @@ fn spawn_scenes(
         let Some(h_scene) = gltf.default_scene.as_ref() else {
             warn!("body gltf has no default scene");
             commands.entity(ent).try_insert(AvatarProcessed);
+            report_failure(&mut contexts);
             continue;
         };
 
@@ -1065,7 +1128,7 @@ fn process_avatar(
     ),
     mut emote_loader: CollectibleManager<Emote>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
-    (name_and_parent, previous_avatar, scene_ent, previous_animator, mut contexts): (
+    (name_and_parent, previous_avatar, scene_ent, previous_animator, mut contexts, timestamp): (
         Query<(&Name, &ChildOf)>,
         Query<&PreviousAvatar>,
         Query<&SceneEntity>,
@@ -1079,6 +1142,7 @@ fn process_avatar(
             ),
         >,
         Query<&mut RendererSceneContext>,
+        Res<MonotonicTimestamp<PbAssetLoadLoadingState>>,
     ),
 ) {
     for (avatar_ent, root_gt, def, loaded_avatar, root_player_entity) in query.iter() {
@@ -1641,6 +1705,13 @@ fn process_avatar(
 
         // announce state
         if let Ok(scene_ent) = scene_ent.get(root_player_entity.parent()) {
+            report_avatar_load(
+                &mut contexts,
+                &timestamp,
+                scene_ent,
+                LoadingState::Finished,
+                &def.body_shape,
+            );
             if let Ok(mut ctx) = contexts.get_mut(scene_ent.root) {
                 ctx.update_crdt(
                     SceneComponentId::GLTF_CONTAINER_LOADING_STATE,

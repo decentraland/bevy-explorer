@@ -1148,7 +1148,13 @@ async fn fetch_catalyst_profile_by_id(
             return Err(anyhow!("catalyst fetch from {url}: {e}"));
         }
     };
-    let base_url = ipfs.contents_endpoint().unwrap_or_default();
+    // the profile's content is on the catalyst it came from (the page's, on a web login), which
+    // need not be the realm's
+    let base_url = endpoint
+        .trim_end_matches('/')
+        .strip_suffix("/lambdas")
+        .map(|catalyst| format!("{catalyst}/content/contents/"))
+        .unwrap_or_else(|| ipfs.contents_endpoint().unwrap_or_default());
     Ok(content
         .avatars
         .into_iter()
