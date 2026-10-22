@@ -87,9 +87,9 @@ use world_ui::WorldUiPlugin;
 pub use crate::web::*;
 use crate::{
     commands::{
-        change_location, lock_preview, scene_distance, scene_threads, set_fps, unlock_preview,
-        ChangeLocationCommand, FpsCommand, LockPreviewCommand, SceneDistanceCommand,
-        SceneThreadsCommand, UnlockPreviewCommand,
+        change_location, lock_preview, scene_distance, scene_threads, session_graphics, set_fps,
+        unlock_preview, ChangeLocationCommand, FpsCommand, LockPreviewCommand,
+        SceneDistanceCommand, SceneThreadsCommand, SessionGraphicsCommand, UnlockPreviewCommand,
     },
     ext::ReplaceIfSome,
 };
@@ -628,6 +628,7 @@ impl DecentralandApp {
         app.add_console_command::<UnlockPreviewCommand, _>(unlock_preview);
         app.add_console_command::<SceneThreadsCommand, _>(scene_threads);
         app.add_console_command::<FpsCommand, _>(set_fps);
+        app.add_console_command::<SessionGraphicsCommand, _>(session_graphics);
 
         app
     }

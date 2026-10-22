@@ -2,7 +2,9 @@ use bevy::prelude::*;
 use bevy_console::ConsoleCommand;
 use common::{
     rpc::{RpcCall, RpcCallEvent, RpcResultSender},
-    structs::{AppConfig, PreviewMode, PrimaryUser, SceneLoadDistance},
+    structs::{
+        AppConfig, ParcelGrassSetting, PreviewMode, PrimaryUser, SceneLoadDistance, SessionGraphics,
+    },
 };
 use console::PendingConsoleResponses;
 use scene_runner::{
@@ -159,5 +161,68 @@ pub fn set_fps(mut input: ConsoleCommand<FpsCommand>, mut config: ResMut<AppConf
         let fps = command.fps;
         config.graphics.fps_target = fps;
         input.reply_ok("target frame rate set to {fps}");
+    }
+}
+
+/// set graphics for this session only, without saving them: `fps <n>`, `grass <off|low|mid|high>`;
+/// without a value, that one goes back to the player's setting
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/session_graphics")]
+pub struct SessionGraphicsCommand {
+    setting: String,
+    value: Option<String>,
+}
+
+pub fn session_graphics(
+    mut input: ConsoleCommand<SessionGraphicsCommand>,
+    mut session: ResMut<SessionGraphics>,
+) {
+    let Some(Ok(command)) = input.take() else {
+        return;
+    };
+    let value = command.value.as_deref();
+    let valid = match command.setting.as_str() {
+        "fps" => match value.map(str::parse::<usize>) {
+            None => {
+                session.fps_target = None;
+                true
+            }
+            Some(Ok(fps)) if fps > 0 => {
+                session.fps_target = Some(fps);
+                true
+            }
+            Some(_) => false,
+        },
+        "grass" => match value.map(parse_grass) {
+            None => {
+                session.parcel_grass = None;
+                true
+            }
+            Some(Some(grass)) => {
+                session.parcel_grass = Some(grass);
+                true
+            }
+            Some(None) => false,
+        },
+        other => {
+            input.reply_failed(format!("unknown setting {other}: use fps or grass"));
+            return;
+        }
+    };
+    let setting = &command.setting;
+    match value {
+        Some(value) if !valid => input.reply_failed(format!("invalid {setting} value {value}")),
+        Some(value) => input.reply_ok(format!("{setting} set to {value} for this session")),
+        None => input.reply_ok(format!("{setting} back to the player's setting")),
+    }
+}
+
+fn parse_grass(value: &str) -> Option<ParcelGrassSetting> {
+    match value {
+        "off" => Some(ParcelGrassSetting::Off),
+        "low" => Some(ParcelGrassSetting::Low),
+        "mid" => Some(ParcelGrassSetting::Mid),
+        "high" => Some(ParcelGrassSetting::High),
+        _ => None,
     }
 }

@@ -909,6 +909,24 @@ impl Default for GraphicsSettings {
     }
 }
 
+/// Graphics a host page sets for this session only, such as the scene editor's viewport: never
+/// saved, and each one that is set wins over the player's own setting.
+#[derive(Resource, Default, Debug, Clone, PartialEq)]
+pub struct SessionGraphics {
+    pub fps_target: Option<usize>,
+    pub parcel_grass: Option<ParcelGrassSetting>,
+}
+
+impl SessionGraphics {
+    pub fn fps_target(&self, config: &AppConfig) -> usize {
+        self.fps_target.unwrap_or(config.graphics.fps_target)
+    }
+
+    pub fn parcel_grass(&self, config: &AppConfig) -> ParcelGrassSetting {
+        self.parcel_grass.unwrap_or(config.parcel_grass_setting)
+    }
+}
+
 #[derive(Debug)]
 pub enum AudioType {
     Voice,

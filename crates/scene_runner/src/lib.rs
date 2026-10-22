@@ -21,7 +21,7 @@ use common::{
     sets::{SceneLoopSets, SceneSets},
     structs::{
         AppConfig, AppError, CurrentRealm, DebugInfo, EditorMode, NoRenderApp, PreviewMode,
-        PrimaryCamera, PrimaryUser, TimeOfDay,
+        PrimaryCamera, PrimaryUser, SessionGraphics, TimeOfDay,
     },
     util::{dcl_assert, TryPushChildrenEx},
 };
@@ -398,13 +398,18 @@ fn run_scene_loop(world: &mut World) {
         .and_then(|window| window.current_monitor())
         .and_then(|monitor| monitor.refresh_rate_millihertz());
     let config = world.resource::<AppConfig>();
+    let fps_target = world
+        .get_resource::<SessionGraphics>()
+        .map_or(config.graphics.fps_target, |session| {
+            session.fps_target(config)
+        });
     let fps = if config.graphics.vsync {
         // TODO this should use video mode if we add fullscreen video modes
         refresh_rate
             .map(|rr| ((rr as f64 + 999.0) / 1000.0).ceil())
-            .unwrap_or(config.graphics.fps_target as f64)
+            .unwrap_or(fps_target as f64)
     } else {
-        config.graphics.fps_target as f64
+        fps_target as f64
     };
     let mut loop_schedule = world.resource_mut::<SceneLoopSchedule>();
     let mut schedule = std::mem::take(&mut loop_schedule.schedule);

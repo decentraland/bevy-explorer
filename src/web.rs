@@ -11,7 +11,8 @@ use bevy_console::ConsoleConfiguration;
 use common::{
     rpc::RpcResultSender,
     structs::{
-        AppConfig, CurrentRealm, EditorMode, PreviewMode, PrimaryUser, StartupScenes, WorldHold,
+        AppConfig, CurrentRealm, EditorMode, PreviewMode, PrimaryUser, SessionGraphics,
+        StartupScenes, WorldHold,
     },
     util::JsThread,
 };
@@ -592,13 +593,15 @@ fn update_text_focus(priorities: Res<InputPriorities>, mut prev: Local<bool>, _j
 
 pub fn update_winit_fps(
     config: Res<AppConfig>,
+    session: Res<SessionGraphics>,
     mut winit: ResMut<WinitSettings>,
     mut last_target: Local<Option<usize>>,
 ) {
+    let fps_target = session.fps_target(&config);
     let target = if VIEWPORT_ACTIVE.load(Ordering::Relaxed) {
-        config.graphics.fps_target.max(1)
+        fps_target.max(1)
     } else {
-        config.graphics.fps_target.clamp(1, 5)
+        fps_target.clamp(1, 5)
     };
     if *last_target != Some(target) {
         *last_target = Some(target);

@@ -29,8 +29,8 @@ use common::{
     sets::SceneSets,
     structs::{
         AaSetting, AppConfig, BloomSetting, CameraSmoothing, DofSetting, FogSetting,
-        ParcelGrassSetting, PointAtMarkerVisibility, PreviewMode, ShadowSetting,
-        SkyReflectionSetting, WindowSetting,
+        ParcelGrassConfig, ParcelGrassSetting, PointAtMarkerVisibility, PreviewMode,
+        SessionGraphics, ShadowSetting, SkyReflectionSetting, WindowSetting,
     },
 };
 use constrain_ui::ConstrainUiSetting;
@@ -205,12 +205,14 @@ impl Plugin for SettingBridgePlugin {
         app.insert_resource(settings);
         app.insert_resource(ApplyAppSettingsSchedule(schedule));
         app.init_resource::<ActiveCameras>();
+        app.init_resource::<SessionGraphics>();
         app.add_systems(
             Update,
             (
                 record_cameras,
                 apply_settings.run_if(resource_changed::<AppConfig>),
                 refresh_settings.run_if(resource_changed::<AppConfig>),
+                apply_session_grass,
             )
                 .chain(),
         );
@@ -431,6 +433,21 @@ fn handle_settings(
             }
             _ => (),
         }
+    }
+}
+
+// after the settings schedule, which writes the player's own grass when it changes; like
+// `apply_setting`, only a changed value is written, since every write rebuilds the grass
+fn apply_session_grass(
+    session: Res<SessionGraphics>,
+    config: Res<AppConfig>,
+    mut grass: ResMut<ParcelGrassConfig>,
+    mut applied: Local<Option<ParcelGrassSetting>>,
+) {
+    let setting = session.parcel_grass(&config);
+    if *applied != Some(setting) {
+        *applied = Some(setting);
+        *grass = *setting;
     }
 }
 
