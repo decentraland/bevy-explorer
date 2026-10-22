@@ -3,6 +3,7 @@
 // other input primitives here.
 
 import { useState } from 'react'
+import { Icon, type IconName } from './icons'
 import styles from './TextInput.module.css'
 
 export interface TextInputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'value' | 'size'> {
@@ -13,6 +14,8 @@ export interface TextInputProps extends Omit<React.InputHTMLAttributes<HTMLInput
   variant?: 'dark' | 'light'
   /** Red border + `aria-invalid`, for a value the user still has to fix. */
   invalid?: boolean
+  /** An icon action inside the field's right edge (e.g. a dice that picks another value). */
+  action?: { icon: IconName; label: string; onClick: () => void }
 }
 
 export function TextInput({
@@ -21,6 +24,7 @@ export function TextInput({
   onChange,
   variant = 'dark',
   invalid = false,
+  action,
   className,
   ...rest
 }: TextInputProps): React.JSX.Element {
@@ -28,10 +32,10 @@ export function TextInput({
   const isControlled = value !== undefined
   const v = isControlled ? value : internal
 
-  return (
+  const input = (
     <input
       {...rest}
-      className={[styles.input, styles[variant], invalid ? styles.invalid : '', className ?? ''].filter(Boolean).join(' ')}
+      className={[styles.input, styles[variant], invalid ? styles.invalid : '', action ? styles.withAction : '', className ?? ''].filter(Boolean).join(' ')}
       value={v}
       aria-invalid={invalid || undefined}
       onChange={(e) => {
@@ -39,5 +43,14 @@ export function TextInput({
         onChange?.(e.target.value)
       }}
     />
+  )
+  if (action == null) return input
+  return (
+    <div className={styles.wrap}>
+      {input}
+      <button type="button" className={styles.action} aria-label={action.label} title={action.label} onClick={action.onClick} disabled={rest.disabled}>
+        <Icon name={action.icon} size={18} />
+      </button>
+    </div>
   )
 }

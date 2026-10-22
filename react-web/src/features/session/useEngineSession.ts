@@ -563,7 +563,8 @@ export interface LoginFlow {
   authCode: string | null
   /** Abort the in-flight native fresh sign-in. */
   cancelLogin: () => void
-  exploreAsGuest: () => void
+  /** `name`: the one picked on the guest start page, accepted with the terms once signed in. */
+  exploreAsGuest: (name?: string) => void
   /** Reuse the stored SSO identity (hand it to the engine). */
   jumpIn: () => void
   /** The last login failed because the user's profile couldn't be fetched — offer
@@ -712,6 +713,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const storedRef = useRef<StoredLogin | null>(null)
   storedRef.current = stored
   const welcomeRef = useRef<{ terms: boolean; newProfile: boolean } | null>(null)
+  // The guest start page's name: its ACCEPT AND PLAY already accepted the terms, so the welcome
+  // page is answered with it instead of shown.
+  const guestName = useRef<string | null>(null)
   // The address of the engine's actual reusable previous login (drives "Welcome back").
   const [prevUserId, setPrevUserId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -1282,8 +1286,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         case 'lobbyStageReady':
           setLobbyStageReady(true)
           break
-        case 'welcome':
-          setWelcomePending(false)
+        case 'welcome': {
+          const chosen = guestName.current
+          guestName.current = null
+          if (chosen == null || (!msg.terms && !msg.newProfile)) setWelcomePending(false)
           // native, which launches itself, holds a link's world for the terms (src/lib.rs)
           if (msg.terms && driver.launch == null && welcomeLink.current != null) heldDest.current = welcomeLink.current
           if (!msg.terms) termsOk.current = true
@@ -1298,13 +1304,23 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           }
           welcomeRef.current = { terms: msg.terms, newProfile: msg.newProfile }
           if (!msg.terms) termsOk.current = true
+          if (chosen != null) {
+            setWelcomeSaving(true)
+            setWelcomeError(null)
+            driver.send({ kind: 'acceptWelcome', name: msg.newProfile ? chosen : undefined })
+            break
+          }
           screenViewed(msg.newProfile ? 'AVATAR_NAMING' : 'WELCOME')
           setWelcome({ terms: msg.terms, newProfile: msg.newProfile })
           break
+        }
         case 'welcomeAccepted': {
           setWelcomeSaving(false)
+          setWelcomePending(false)
           if (!msg.ok) {
             setWelcomeError(msg.error ?? 'Saving failed')
+            // the guest start page's accept failed: the welcome page shows, with the error
+            if (welcomeRef.current != null) setWelcome((w) => w ?? welcomeRef.current)
             break
           }
           releaseLinkRef.current()
@@ -2507,11 +2523,17 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   }, [])
 
   // The button creates a guest account that persists; ?guest=1 stays a throwaway guest.
-  const exploreAsGuest = useCallback(() => {
-    clickButton('PLAY_GUEST', 'ACCOUNT_HOME')
-    const persistent = driverRef.current?.loginPersistentGuest != null
-    if (submitLogin((d) => d.loginPersistentGuest?.() ?? d.loginGuest(), 'guest') && persistent) screenViewed('ACCOUNT_GUEST_CREATE')
-  }, [submitLogin])
+  const exploreAsGuest = useCallback(
+    (name?: string) => {
+      if (name != null) clickButton('LETS_GO', 'AVATAR_NAMING')
+      else clickButton('PLAY_GUEST', 'ACCOUNT_HOME')
+      const persistent = driverRef.current?.loginPersistentGuest != null
+      guestName.current = name ?? null
+      if (!submitLogin((d) => d.loginPersistentGuest?.() ?? d.loginGuest(), 'guest')) guestName.current = null
+      else if (persistent) screenViewed('ACCOUNT_GUEST_CREATE')
+    },
+    [submitLogin]
+  )
   const autoGuest = useCallback(() => submitLogin((d) => d.loginGuest(), 'guest'), [submitLogin])
   // Reuse the existing login. The driver picks the path its backend supports (console
   // `/login_identity` for the engine, `loginPrevious` over the bridge).
@@ -2549,7 +2571,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // login left to run.
   const startWithAccount = useCallback(() => {
     if (busy) return
-    clickButton('SIGN_IN', 'ACCOUNT_HOME')
+    clickButton('SIGN_IN', 'AVATAR_NAMING')
     const driver = driverRef.current
     if (driver?.loginNew == null) {
       screenViewed('AUTH_BROWSER_OPEN', { method: 'sso' })
@@ -2718,7 +2740,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       phase !== 'login' || boot.current.hideHud
         ? null
         : status === 'sign-in-or-guest'
-          ? 'ACCOUNT_HOME'
+          ? 'AVATAR_NAMING'
           : status === 'reuse-login-or-new' && error != null
             ? 'COMEBACK'
             : null

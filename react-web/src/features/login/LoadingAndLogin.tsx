@@ -1,7 +1,7 @@
 // React port of scene/src/ui-classes/loading-and-login/LoadingAndLogin.tsx.
-// Sign-in is now same-domain SSO: "Start with account" / "Use different account" bounce to
-// the auth site; a stored identity shows the "welcome back" screen and "Jump in" hands the
-// identity straight to the engine. No verification-code / secure-step screen anymore.
+// A stored identity shows the "welcome back" screen and "Jump in" hands it straight to the engine;
+// native shows the sign-in code here. With no session the guest start page shows instead
+// (./GuestStartPage), whose "Create an account" bounces to the same-domain auth site.
 
 import { useEffect, useState } from 'react'
 import { useStoredProfile } from './useStoredProfile'
@@ -41,7 +41,7 @@ function BootProgress({ flow }: { flow: LoginFlow }): React.JSX.Element | null {
 // Pending-CTA label: surface the real boot progress while the WASM downloads (the long phase),
 // e.g. "DOWNLOADING… 47%", then a generic "STARTING…" for the quick compile/GPU tail. The percent
 // is the overall weighted progress (download is weighted ~80%), matching the footer bar.
-function pendingLabel(flow: LoginFlow): string {
+export function pendingLabel(flow: LoginFlow): string {
   if (flow.loadStep === 'download') return `DOWNLOADING… ${Math.round(flow.loadProgress)}%`
   return 'STARTING…'
 }
@@ -148,18 +148,6 @@ function Panel({ flow, name }: { flow: LoginFlow; name?: string }): React.JSX.El
             </Button>
           </>
         )}
-        {status === 'sign-in-or-guest' && !flow.authPending && (
-          <>
-            <Button variant="primary" size="lg" className={styles.cta} onClick={flow.startWithAccount} disabled={flow.busy}>
-              <span className={styles.label}>START WITH ACCOUNT</span>
-              <ArrowIcon />
-            </Button>
-            <Button variant="secondary" size="lg" className={styles.ctaSecondary} onClick={flow.exploreAsGuest} disabled={flow.busy || enginePending}>
-              <span className={styles.label}>{enginePending ? pendingLabel(flow) : 'EXPLORE AS GUEST'}</span>
-            </Button>
-          </>
-        )}
-
         {status === 'reuse-login-or-new' && (
           <>
             <Button variant="primary" size="lg" className={styles.cta} onClick={flow.jumpIn} disabled={flow.busy || enginePending}>
