@@ -564,8 +564,9 @@ export interface LoginFlow {
   /** Engine has booted and can accept the login command. The engine-driven CTAs (Jump in / Explore)
    *  stay disabled until this is true so a click never lands in a silent wait. Always true for mock. */
   engineReady: boolean
-  /** The first avatar has loaded: the lobby stage's, or the player's in world (a link's boot has no
-   *  stage). The boot bar holds short of done until then. Always true without an engine (mock). */
+  /** The first avatar has loaded: the lobby stage's, or the player's in world. The boot bar holds
+   *  short of done until then. Always true without an engine (mock), or with nothing launched
+   *  before the click (a link's destination). */
   avatarLoaded: boolean
   /** Real boot progress (0–100, weighted) from the engine loader, for the login footer bar. */
   loadProgress: number
@@ -617,6 +618,8 @@ export interface WelcomeFlow {
   preloadLook: (look: number, avatar: AvatarLook) => void
   /** A look is on its way to the stage (asked for, not yet shown there): RANDOMIZE waits. */
   lookPending: boolean
+  /** The look last put on the stage, for a fresh pick never to repeat (it would never show). */
+  lastLook: number | null
   /** A look is about to be asked for (its fetch is under way): holds RANDOMIZE until `showLook`. */
   expectLook: () => void
   /** Accept the terms, and for a new profile deploy it under `name` with the look. */
@@ -2092,7 +2095,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   useEffect(() => {
     const driver = driverRef.current
     if (!engineReady || submitted || status !== 'sign-in-or-guest' || driver?.launch == null || launchedRef.current) return
-    if (urlDestination.current != null || boot.current.autoLogin != null) return
+    if (boot.current.autoLogin != null) return
+    // a link's destination launches on the click, with no stage before it: nothing to wait for
+    if (urlDestination.current != null) {
+      setAvatarLoaded(true)
+      return
+    }
     const home = driver.homeScene?.()
     launchEngine(driver, home?.realm ?? DEFAULT_REALM, home?.parcel ?? '0,0', { holdWorld: true })
   }, [engineReady, submitted, status, launchEngine])
@@ -3101,6 +3109,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       showLook,
       preloadLook,
       lookPending: pendingLook != null,
+      lastLook: shownLook.current || null,
       expectLook,
       accept: acceptWelcome,
       openLegal

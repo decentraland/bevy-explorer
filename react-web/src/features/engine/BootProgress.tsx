@@ -22,14 +22,14 @@ const DONE_FLASH_MS = 600
 
 export function BootProgress({ flow }: { flow: LoginFlow }): React.JSX.Element | null {
   const done = flow.engineReady && flow.avatarLoaded
-  // already done when first shown (no engine, or a page mounted late): nothing to show
-  const [hidden, setHidden] = useState(done)
+  const [hidden, setHidden] = useState(false)
   useEffect(() => {
     if (!done || hidden) return
     const id = setTimeout(() => setHidden(true), DONE_FLASH_MS)
     return () => clearTimeout(id)
   }, [done, hidden])
-  if (hidden) return null
+  // a boot that failed (a sign-in error shows instead) has no avatar to wait for
+  if (hidden || flow.error != null) return null
   const label = done ? 'Ready' : ((flow.loadStep != null ? STEP_LABEL[flow.loadStep] : undefined) ?? 'Starting…')
   const pct = done ? 100 : Math.min(AVATAR_HOLD_PCT, Math.round(flow.loadProgress))
   return (

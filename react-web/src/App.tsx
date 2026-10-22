@@ -333,7 +333,7 @@ function Hud(): React.JSX.Element {
   return (
     <SessionProvider value={session}>
       {rpc && <EngineHost rpc={rpc} />}
-      <BootProgress flow={session.login} />
+      {MODE === 'engine' && <BootProgress flow={session.login} />}
       {session.phase === 'login' &&
         (session.login.status === 'sign-in-or-guest' && !session.login.authPending ? (
           <GuestStartPage flow={session.login} />

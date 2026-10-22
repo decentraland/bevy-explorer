@@ -390,6 +390,7 @@ export function syncShape(look?: number): void {
     // the look on show again (a RANDOMIZE taken back before its swap): it turns back to the front
     wanted = null
     swapReady = false
+    standbyWanted = false
     expecting = 0
     if (shownYaw !== YAW_FRONT) startTurn(avatarEntity, shownYaw, YAW_FRONT)
     return

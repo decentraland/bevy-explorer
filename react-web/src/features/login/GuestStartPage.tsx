@@ -32,7 +32,7 @@ export function GuestStartPage({ flow }: { flow: LoginFlow }): React.JSX.Element
   const [name, setName] = useState(() => randomGuestName())
   // the look the new guest deploys with, shown on the stage meanwhile, and the dice's next one
   const [{ look, next }, setLooks] = useState(() => {
-    const look = randomDefaultLook()
+    const look = randomDefaultLook(session.welcome.lastLook ?? undefined)
     return { look, next: randomDefaultLook(look) }
   })
   const { body, look: avatar } = useStoredProfile(`default${look}`)
