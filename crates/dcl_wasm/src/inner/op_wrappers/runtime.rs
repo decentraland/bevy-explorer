@@ -32,6 +32,6 @@ pub async fn op_camera_fov(op_state: &WorkerContext) -> Result<f32, WasmError> {
 }
 
 #[wasm_bindgen]
-pub fn op_get_platform(_op_state: &WorkerContext) -> String {
-    dcl::js::runtime::get_platform().to_string()
+pub fn op_get_platform(op_state: &WorkerContext) -> String {
+    dcl::js::runtime::op_get_platform(&*op_state.rc().borrow())
 }

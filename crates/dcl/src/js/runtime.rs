@@ -137,6 +137,14 @@ pub async fn op_camera_fov(op_state: Rc<RefCell<impl State>>) -> Result<f32, any
     Ok(state.borrow::<CameraFov>().0)
 }
 
+// what getExplorerInformation / EnvironmentApi report to this scene
+pub fn op_get_platform(state: &impl State) -> String {
+    state
+        .try_borrow::<CrdtContext>()
+        .and_then(|context| context.platform.clone())
+        .unwrap_or_else(|| get_platform().to_string())
+}
+
 pub fn get_platform() -> &'static str {
     #[cfg(target_arch = "wasm32")]
     {

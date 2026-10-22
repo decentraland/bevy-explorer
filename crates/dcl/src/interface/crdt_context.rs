@@ -17,6 +17,9 @@ pub struct CrdtContext {
     pub preview: bool,
     #[serde(default)]
     pub is_server: bool,
+    // the platform the scene is told it runs on, instead of this build's own (mobile UI emulation)
+    #[serde(default)]
+    pub platform: Option<String>,
     #[serde(skip, default = "default_live_entities")]
     live_entities: LiveTable,
     #[serde(skip)]
@@ -51,6 +54,7 @@ impl CrdtContext {
             testing,
             preview,
             is_server,
+            platform: None,
             live_entities: default_live_entities(),
             nascent: Default::default(),
             death_row: Default::default(),
