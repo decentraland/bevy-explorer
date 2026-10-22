@@ -229,6 +229,7 @@ export function fakeSession(): EngineSession {
       busy: false,
       error: null,
       engineReady: true,
+      avatarLoaded: true,
       loadProgress: 100,
       loadStep: null,
       startWithAccount: vi.fn(),

@@ -48,9 +48,13 @@ export function currentLook(): AvatarLook | null {
   return draft ?? playerLook() ?? standIn
 }
 
-/** The look to show while there is no player. */
+/** The look to show while there is no player. A look left unsaved by the account signed out since
+ *  (its deploy failed, or sign-out beat it) is not this one's: without it the stage would keep
+ *  showing it, and never take up the pick. */
 export function setStandInLook(look: AvatarLook): void {
   standIn = look
+  draft = null
+  deployed = null
 }
 
 /** Change the draft (seeded from the live player on the first edit). Nothing deploys until commit. */

@@ -162,10 +162,13 @@ export function authReturnUrl(url: string): string {
 
 /** This load is the auth site's return. */
 export const returnedFromAuth = new URLSearchParams(location.search).has(AUTH_RETURN_PARAM)
+// this page as entered, before the attribution params were taken off its address: where the
+// sign-in returns to outside the shell (the shell keeps its own)
+const entryUrl = location.href
 
 // Send the browser to the auth site to sign in (fresh account or switch account). Inside the shell
 // the shell navigates, so the auth site gets the top-level page and returns to the shell's URL.
-export function redirectToAuth(redirectTo: string = location.href): void {
+export function redirectToAuth(redirectTo: string = entryUrl): void {
   if (inShell) postToShell({ type: 'bevy-shell:auth-login', session: sessionId() })
   else location.assign(authLoginUrl(authReturnUrl(redirectTo)))
 }

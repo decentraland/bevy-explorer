@@ -113,10 +113,18 @@ describe('login screen clicks', () => {
   })
 
   it('shows the engine boot progress while loading; ACCEPT AND PLAY takes the click and shows the progress until the engine runs it', async () => {
-    render(<BootProgress flow={flow({ status: 'loading', engineReady: false, loadProgress: 42, loadStep: 'download' })} />)
+    const { rerender: rerenderBar, unmount } = render(<BootProgress flow={flow({ status: 'loading', engineReady: false, avatarLoaded: false, loadProgress: 42, loadStep: 'download' })} />)
     const bar = screen.getByRole('progressbar')
     expect(bar).toHaveTextContent(/Downloading engine · 42%/i)
     expect(bar).toHaveAttribute('aria-valuenow', '42')
+    // the engine can take commands but no avatar has loaded yet: held short of done
+    rerenderBar(<BootProgress flow={flow({ status: 'sign-in-or-guest', engineReady: true, avatarLoaded: false, loadProgress: 100, loadStep: null })} />)
+    expect(screen.getByRole('progressbar')).toHaveTextContent(/Starting… · 95%/i)
+    // the first avatar loaded: full for a moment, then gone
+    rerenderBar(<BootProgress flow={flow({ status: 'sign-in-or-guest', engineReady: true, avatarLoaded: true, loadProgress: 100, loadStep: null })} />)
+    expect(screen.getByRole('progressbar')).toHaveTextContent(/Ready · 100%/i)
+    await waitFor(() => expect(screen.queryByRole('progressbar')).toBeNull(), { timeout: 2000 })
+    unmount()
 
     const f = flow({ status: 'sign-in-or-guest', engineReady: false, loadProgress: 42, loadStep: 'download' })
     const { rerender } = render(guestStart(f))

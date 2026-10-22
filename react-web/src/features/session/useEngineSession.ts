@@ -564,6 +564,9 @@ export interface LoginFlow {
   /** Engine has booted and can accept the login command. The engine-driven CTAs (Jump in / Explore)
    *  stay disabled until this is true so a click never lands in a silent wait. Always true for mock. */
   engineReady: boolean
+  /** The first avatar has loaded: the lobby stage's, or the player's in world (a link's boot has no
+   *  stage). The boot bar holds short of done until then. Always true without an engine (mock). */
+  avatarLoaded: boolean
   /** Real boot progress (0–100, weighted) from the engine loader, for the login footer bar. */
   loadProgress: number
   /** Active boot step id ('download'|'compile'|'init'|'workers'|'gpu') or null. */
@@ -760,6 +763,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [error, setError] = useState<string | null>(null)
   // Engine boots (autostart) while the login screen is up; this flips true once it can take commands.
   const [engineReady, setEngineReady] = useState(false)
+  const [avatarLoaded, setAvatarLoaded] = useState(false)
   // Real WASM-download/boot progress surfaced from the engine (0–100) + the active step id,
   // for the login footer bar. The engine's own loader is hidden (hideLoader=1).
   const [loadProgress, setLoadProgress] = useState(0)
@@ -1005,6 +1009,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           if (msg.name === 'playerReady') {
             playerReadyRef.current = true
             setPlayerReady(true)
+            setAvatarLoaded(true)
             bootPollStop.current = true // world reached → stop watching for a boot panic
             // The bridge pushes bindings at registration, but that can race the page's channel
             // subscription — re-request now that both ends are up (shortcut hints need them).
@@ -1321,6 +1326,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'lobbyStageReady':
           setLobbyStageReady(true)
+          setAvatarLoaded(true)
           break
         case 'lookShown':
           setPendingLook((pending) => (pending === msg.look ? null : pending))
@@ -1454,13 +1460,17 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     // signals together (engine saved login + SSO) into getPreviousLogin().
     const login = getLogin().catch(() => null)
     void login.then(setStored)
+    // an auto-login boot (?guest=1) goes straight in: nothing to pick, the splash stays up
+    const screen = (stored: boolean): void => {
+      if (boot.current.autoLogin == null) setStatus(stored ? 'reuse-login-or-new' : 'sign-in-or-guest')
+    }
     driver
       .getPreviousLogin()
       .then((r) => {
         setPrevUserId(r.userId)
-        setStatus(r.userId ? 'reuse-login-or-new' : 'sign-in-or-guest')
+        screen(Boolean(r.userId))
       })
-      .catch(() => login.then((l) => setStatus(l ? 'reuse-login-or-new' : 'sign-in-or-guest')))
+      .catch(() => login.then((l) => screen(l != null)))
 
     return () => {
       off()
@@ -1477,6 +1487,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     const driver = driverRef.current
     if (driver == null || typeof driver.engineReady !== 'function') {
       setEngineReady(true)
+      setAvatarLoaded(true)
       setLoadProgress(100)
       return
     }
@@ -3232,6 +3243,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       busy,
       error,
       engineReady,
+      avatarLoaded,
       loadProgress,
       loadStep,
       startWithAccount,

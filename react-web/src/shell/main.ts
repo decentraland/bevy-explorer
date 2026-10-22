@@ -17,6 +17,11 @@ import { onInWorld } from './googleTag'
 const outOfScope = !location.pathname.endsWith('/') && !location.pathname.endsWith('.html')
 if (outOfScope) location.replace(location.pathname + '/' + location.search + location.hash)
 
+// Where the sign-in redirect returns to: this page as it was entered, before the attribution
+// params were taken off the address bar (and the engine's url sync rewrote the rest), so the
+// return lands with everything the entry had.
+const entryUrl = location.href
+
 let frame: HTMLIFrameElement | null = null
 let mounting = false
 function mount(): void {
@@ -101,7 +106,7 @@ addEventListener('message', async (e: MessageEvent) => {
     // sign-in: the same-origin auth site, returning here
     case 'bevy-shell:auth-login':
       if (typeof m.session === 'string') sessionStorage.setItem(ANALYTICS_SESSION_KEY, m.session)
-      location.assign(authLoginUrl(authReturnUrl(location.href)))
+      location.assign(authLoginUrl(authReturnUrl(entryUrl)))
       break
     // the session's first scene: the Google Ads conversion (googleTag.ts), and GA4's ids back to
     // the app for Segment
