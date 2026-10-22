@@ -432,14 +432,18 @@ fn handle_settings(
     }
 }
 
-// after the settings schedule, which writes the player's own grass whenever the config changes
+// after the settings schedule, which writes the player's own grass when it changes; like
+// `apply_setting`, only a changed value is written, since every write rebuilds the grass
 fn apply_session_grass(
     session: Res<SessionGraphics>,
     config: Res<AppConfig>,
     mut grass: ResMut<ParcelGrassConfig>,
+    mut applied: Local<Option<ParcelGrassSetting>>,
 ) {
-    if session.is_changed() || config.is_changed() {
-        *grass = *session.parcel_grass(&config);
+    let setting = session.parcel_grass(&config);
+    if *applied != Some(setting) {
+        *applied = Some(setting);
+        *grass = *setting;
     }
 }
 
