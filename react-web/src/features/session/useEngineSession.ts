@@ -1992,6 +1992,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         setDestinationPicked(false)
         setLobby(false)
         setWelcomePending(false)
+        guestName.current = null
       })
   }, [])
 
@@ -2409,6 +2410,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     pendingLoginType.current = null
     lastLoginType.current = null
     welcomeRef.current = null
+    guestName.current = null
     setStatus('sign-in-or-guest')
     closeAllPanels()
     setPlayerReady(false)
@@ -2572,6 +2574,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const startWithAccount = useCallback(() => {
     if (busy) return
     clickButton('SIGN_IN', 'AVATAR_NAMING')
+    guestName.current = null
     const driver = driverRef.current
     if (driver?.loginNew == null) {
       screenViewed('AUTH_BROWSER_OPEN', { method: 'sso' })
