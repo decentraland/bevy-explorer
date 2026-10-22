@@ -22,7 +22,7 @@ const LEGAL = { terms: 'https://decentraland.org/terms/', privacy: 'https://dece
 export function GuestStartPage({ flow }: { flow: LoginFlow }): React.JSX.Element {
   const [name, setName] = useState(() => randomGuestName())
   // the look the new guest deploys with, shown on the stage meanwhile
-  const [look] = useState(randomDefaultLook)
+  const [look, setLook] = useState(() => randomDefaultLook())
   const { body } = useStoredProfile(`default${look}`)
   // the lobby's places, warmed while the visitor picks a name
   useEffect(() => {
@@ -49,7 +49,14 @@ export function GuestStartPage({ flow }: { flow: LoginFlow }): React.JSX.Element
           invalid={trimmed !== '' && !isValidName(trimmed)}
           disabled={flow.busy}
           onChange={setName}
-          action={{ icon: 'dice', label: 'Random name', onClick: () => setName(randomGuestName(trimmed)) }}
+          action={{
+            icon: 'dice',
+            label: 'Random name and look',
+            onClick: () => {
+              setName(randomGuestName(trimmed))
+              setLook(randomDefaultLook(look))
+            }
+          }}
         />
 
         <p className={welcomeStyles.terms}>
@@ -66,7 +73,12 @@ export function GuestStartPage({ flow }: { flow: LoginFlow }): React.JSX.Element
 
         {flow.error != null && <div className={welcomeStyles.error}>{flow.error}</div>}
 
-        <Button variant="primary" size="lg" disabled={flow.busy || enginePending || !isValidName(trimmed)} onClick={() => flow.exploreAsGuest({ name: trimmed, look })}>
+        <Button
+          variant="primary"
+          size="lg"
+          disabled={flow.busy || enginePending || !isValidName(trimmed)}
+          onClick={() => flow.exploreAsGuest({ name: trimmed, look })}
+        >
           {enginePending ? pendingLabel(flow) : 'ACCEPT AND PLAY'}
         </Button>
 

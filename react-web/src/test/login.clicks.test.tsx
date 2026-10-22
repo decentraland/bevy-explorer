@@ -11,17 +11,25 @@ function flow(over: Partial<LoginFlow>): LoginFlow {
 }
 
 describe('login screen clicks', () => {
-  it('no session: ACCEPT AND PLAY plays as a guest with the picked name, CONTINUE WITH AN ACCOUNT signs in', async () => {
+  it('no session: ACCEPT AND PLAY plays as a guest with the picked name and look, CONTINUE WITH AN ACCOUNT signs in', async () => {
     const f = flow({ status: 'sign-in-or-guest' })
     render(<GuestStartPage flow={f} />)
     const field = screen.getByRole('textbox', { name: 'Name' })
-    const first = (field as HTMLInputElement).value
-    await userEvent.click(screen.getByRole('button', { name: 'Random name' }))
-    expect((field as HTMLInputElement).value).not.toBe(first)
+    const play = screen.getByRole('button', { name: /ACCEPT AND PLAY/i })
+    await userEvent.click(play)
+    const first = vi.mocked(f.exploreAsGuest).mock.calls[0][0]!
+    expect(first.name).toBe((field as HTMLInputElement).value)
+    // the dice picks another name and another look
+    await userEvent.click(screen.getByRole('button', { name: 'Random name and look' }))
+    await userEvent.click(play)
+    const second = vi.mocked(f.exploreAsGuest).mock.calls[1][0]!
+    expect(second.name).not.toBe(first.name)
+    expect(second.look).not.toBe(first.look)
+
     await userEvent.clear(field)
     await userEvent.type(field, 'NovaRiverbend')
-    await userEvent.click(screen.getByRole('button', { name: /ACCEPT AND PLAY/i }))
-    expect(vi.mocked(f.exploreAsGuest)).toHaveBeenCalledWith({ name: 'NovaRiverbend', look: expect.any(Number) })
+    await userEvent.click(play)
+    expect(vi.mocked(f.exploreAsGuest)).toHaveBeenLastCalledWith({ name: 'NovaRiverbend', look: second.look })
     await userEvent.click(screen.getByRole('button', { name: /CONTINUE WITH AN ACCOUNT/i }))
     expect(vi.mocked(f.startWithAccount)).toHaveBeenCalledTimes(1)
   })
