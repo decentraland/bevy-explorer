@@ -12,6 +12,12 @@ pub struct LWWEntry {
     pub data: Vec<u8>,
 }
 
+impl LWWEntry {
+    fn value_matches(&self, is_some: bool, data: &[u8]) -> bool {
+        self.is_some == is_some && self.data.as_slice() == data
+    }
+}
+
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct CrdtLWWState {
     pub last_write: HashMap<SceneEntityId, LWWEntry>,
@@ -81,14 +87,13 @@ impl CrdtLWWState {
                 let entry = o.into_mut();
                 let update = match mode {
                     UpdateMode::Force => true,
-                    UpdateMode::ForceIfDifferent => {
-                        entry.is_some != maybe_new_data.is_some()
-                            || entry.data.as_slice()
-                                != maybe_new_data
-                                    .as_ref()
-                                    .map(|r| r.as_slice())
-                                    .unwrap_or_default()
-                    }
+                    UpdateMode::ForceIfDifferent => !entry.value_matches(
+                        maybe_new_data.is_some(),
+                        maybe_new_data
+                            .as_ref()
+                            .map(|r| r.as_slice())
+                            .unwrap_or_default(),
+                    ),
                     UpdateMode::Normal => {
                         Self::check_update(entry, new_timestamp, maybe_new_data.as_deref())
                     }
@@ -168,6 +173,29 @@ impl CrdtLWWState {
 
     pub fn update_lww_timestamp(&mut self, entity: SceneEntityId, timestamp: SceneCrdtTimestamp) {
         self.last_write.entry(entity).or_default().timestamp = timestamp;
+    }
+
+    // merge a delta into this state, marking entities as updated only when the
+    // payload actually changed. identical payloads still advance the timestamp
+    // so future conflict checks behave as if the write had been applied.
+    pub fn merge_dedup(&mut self, delta: CrdtLWWState) {
+        for (entity, entry) in delta.last_write {
+            match self.last_write.entry(entity) {
+                Entry::Occupied(mut o) => {
+                    let prev = o.get_mut();
+                    if prev.value_matches(entry.is_some, &entry.data) {
+                        prev.timestamp = entry.timestamp;
+                    } else {
+                        *prev = entry;
+                        self.updates.insert(entity);
+                    }
+                }
+                Entry::Vacant(v) => {
+                    v.insert(entry);
+                    self.updates.insert(entity);
+                }
+            }
+        }
     }
 }
 
@@ -420,5 +448,94 @@ mod test {
         assert!(state.try_update(entity, newer_timestamp, Some(&mut reader)));
 
         assert_entry_eq(state, entity, newer_timestamp, Some(Vec::<u8>::default()));
+    }
+
+    fn lww_entry(timestamp: u32, data: Option<&[u8]>) -> LWWEntry {
+        LWWEntry {
+            timestamp: SceneCrdtTimestamp(timestamp),
+            is_some: data.is_some(),
+            data: data.unwrap_or_default().to_vec(),
+        }
+    }
+
+    fn lww_state(entity: SceneEntityId, entry: LWWEntry) -> CrdtLWWState {
+        let mut state = CrdtLWWState::default();
+        state.last_write.insert(entity, entry);
+        state
+    }
+
+    const MERGE_ENTITY: SceneEntityId = SceneEntityId {
+        id: 0,
+        generation: 0,
+    };
+
+    #[test]
+    fn merge_dedup_identical_resend_advances_timestamp_without_update_mark() {
+        let mut state = lww_state(MERGE_ENTITY, lww_entry(1, Some(&[1, 2, 3])));
+        state.merge_dedup(lww_state(MERGE_ENTITY, lww_entry(5, Some(&[1, 2, 3]))));
+
+        assert!(state.updates.is_empty());
+        let entry = state.last_write.get(&MERGE_ENTITY).unwrap();
+        assert_eq!(entry.timestamp, SceneCrdtTimestamp(5));
+        assert!(entry.is_some);
+        assert_eq!(entry.data, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn merge_dedup_tombstone_resend_advances_timestamp_without_update_mark() {
+        let mut state = lww_state(MERGE_ENTITY, lww_entry(1, None));
+        state.merge_dedup(lww_state(MERGE_ENTITY, lww_entry(4, None)));
+
+        assert!(state.updates.is_empty());
+        let entry = state.last_write.get(&MERGE_ENTITY).unwrap();
+        assert_eq!(entry.timestamp, SceneCrdtTimestamp(4));
+        assert!(!entry.is_some);
+    }
+
+    #[test]
+    fn merge_dedup_some_to_none_marks_update() {
+        let mut state = lww_state(MERGE_ENTITY, lww_entry(1, Some(&[])));
+        state.merge_dedup(lww_state(MERGE_ENTITY, lww_entry(3, None)));
+
+        assert!(state.updates.contains(&MERGE_ENTITY));
+        let entry = state.last_write.get(&MERGE_ENTITY).unwrap();
+        assert_eq!(entry.timestamp, SceneCrdtTimestamp(3));
+        assert!(!entry.is_some);
+    }
+
+    #[test]
+    fn merge_dedup_none_to_some_marks_update() {
+        let mut state = lww_state(MERGE_ENTITY, lww_entry(1, None));
+        state.merge_dedup(lww_state(MERGE_ENTITY, lww_entry(2, Some(&[7]))));
+
+        assert!(state.updates.contains(&MERGE_ENTITY));
+        let entry = state.last_write.get(&MERGE_ENTITY).unwrap();
+        assert_eq!(entry.timestamp, SceneCrdtTimestamp(2));
+        assert!(entry.is_some);
+        assert_eq!(entry.data, vec![7]);
+    }
+
+    #[test]
+    fn merge_dedup_changed_data_marks_update() {
+        let mut state = lww_state(MERGE_ENTITY, lww_entry(1, Some(&[1])));
+        state.merge_dedup(lww_state(MERGE_ENTITY, lww_entry(2, Some(&[2]))));
+
+        assert!(state.updates.contains(&MERGE_ENTITY));
+        let entry = state.last_write.get(&MERGE_ENTITY).unwrap();
+        assert_eq!(entry.timestamp, SceneCrdtTimestamp(2));
+        assert!(entry.is_some);
+        assert_eq!(entry.data, vec![2]);
+    }
+
+    #[test]
+    fn merge_dedup_vacant_insert_marks_update() {
+        let mut state = CrdtLWWState::default();
+        state.merge_dedup(lww_state(MERGE_ENTITY, lww_entry(1, Some(&[9]))));
+
+        assert!(state.updates.contains(&MERGE_ENTITY));
+        let entry = state.last_write.get(&MERGE_ENTITY).unwrap();
+        assert_eq!(entry.timestamp, SceneCrdtTimestamp(1));
+        assert!(entry.is_some);
+        assert_eq!(entry.data, vec![9]);
     }
 }
