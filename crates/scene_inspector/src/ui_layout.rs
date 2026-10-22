@@ -40,10 +40,15 @@ fn mobile_ui_cmd(
     let Some(Ok(cmd)) = input.take() else {
         return;
     };
+    // set_if_neq: switching to the current state must not rebuild the scene UI roots
     match cmd.state.as_deref() {
         None => {}
-        Some("on") => mobile.0 = true,
-        Some("off") => mobile.0 = false,
+        Some("on") => {
+            mobile.set_if_neq(MobileUiEmulation(true));
+        }
+        Some("off") => {
+            mobile.set_if_neq(MobileUiEmulation(false));
+        }
         Some(other) => {
             input.reply_failed(format!("expected on or off, got '{other}'"));
             return;
@@ -115,7 +120,7 @@ fn ui_layout_cmd(
     });
 
     // under /mobile_ui (or a constrained UI) the scene's root is a box inside the window
-    let origin = links
+    let Some(origin) = links
         .get(scene_ent)
         .ok()
         .and_then(|root| ui_nodes.get(root.ui_entity).ok())
@@ -123,7 +128,10 @@ fn ui_layout_cmd(
             (global.translation().truncate() - computed.size() / 2.0)
                 * computed.inverse_scale_factor()
         })
-        .unwrap_or_default();
+    else {
+        input.reply_failed("no ui root for the active scene");
+        return;
+    };
 
     let order = |ui_entity: Entity| stack.uinodes.iter().position(|e| *e == ui_entity);
     // a node inside a display:none ancestor keeps its last computed size, so walk up
@@ -182,7 +190,7 @@ fn ui_layout_cmd(
                 "rect": rect_json(logical(rect)),
                 "visibleRect": if visible { rect_json(logical(visible_rect)) } else { Value::Null },
                 "visible": visible,
-                "clipped": visible && visible_rect != rect,
+                "clipped": visible_rect != rect,
                 "pointer": pointer,
                 "text": text.map(|t| t.text.as_str()),
                 "fontSize": text.map(|t| t.font_size),

@@ -249,7 +249,7 @@ pub struct InteractableArea(pub Option<Vec4>);
 /// phone canvas's aspect fitted in the window, and the canvas it is told about carries the mobile
 /// client's interactable area. The platform is read when a scene starts, so reload it after
 /// switching. Native touch controls are not drawn.
-#[derive(Default, Resource)]
+#[derive(Default, Resource, PartialEq)]
 pub struct MobileUiEmulation(pub bool);
 
 /// the mobile client's UI canvas and its interactable area on it (left, top, right, bottom),
@@ -260,13 +260,54 @@ pub const MOBILE_INTERACTABLE_AREA: Vec4 = Vec4::new(436.0, 32.0, 108.0, 45.0);
 impl MobileUiEmulation {
     /// the emulated phone screen in window logical px, and its scale from the phone canvas
     pub fn screen(&self, width: f32, height: f32) -> Option<(Rect, f32)> {
-        if !self.0 {
+        let scale = (width / MOBILE_CANVAS.x).min(height / MOBILE_CANVAS.y);
+        if !self.0 || scale <= 0.0 {
             return None;
         }
-        let scale = (width / MOBILE_CANVAS.x).min(height / MOBILE_CANVAS.y);
         let size = MOBILE_CANVAS * scale;
         let min = (Vec2::new(width, height) - size) / 2.0;
         Some((Rect::from_corners(min, min + size), scale))
+    }
+}
+
+#[cfg(test)]
+mod mobile_ui_tests {
+    use super::*;
+
+    fn assert_screen(window: Vec2, rect: Rect, scale: f32) {
+        let (got, got_scale) = MobileUiEmulation(true).screen(window.x, window.y).unwrap();
+        assert!((got_scale - scale).abs() < 1e-4, "{got_scale} != {scale}");
+        assert!(
+            got.min.abs_diff_eq(rect.min, 1e-3) && got.max.abs_diff_eq(rect.max, 1e-3),
+            "{got:?} != {rect:?}"
+        );
+    }
+
+    #[test]
+    fn fits_the_phone_canvas_in_the_window() {
+        assert_screen(
+            Vec2::new(1600.0, 720.0),
+            Rect::new(0.0, 0.0, 1600.0, 720.0),
+            1.0,
+        );
+        // a 16:9 window is taller than the phone: full width, centred vertically
+        assert_screen(
+            Vec2::new(1920.0, 1080.0),
+            Rect::new(0.0, 108.0, 1920.0, 972.0),
+            1.2,
+        );
+        // a wider window: full height, centred horizontally
+        assert_screen(
+            Vec2::new(2000.0, 720.0),
+            Rect::new(200.0, 0.0, 1800.0, 720.0),
+            1.0,
+        );
+    }
+
+    #[test]
+    fn no_screen_when_off_or_without_a_window() {
+        assert_eq!(MobileUiEmulation(false).screen(1600.0, 720.0), None);
+        assert_eq!(MobileUiEmulation(true).screen(0.0, 0.0), None);
     }
 }
 
