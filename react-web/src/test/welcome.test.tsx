@@ -91,6 +91,30 @@ describe('welcome page', () => {
     await waitFor(() => expect(h.session().phase).toBe('lobby'))
   })
 
+  // A failed guest sign-in must not hand its name to the account signed in next on the page.
+  it('shows the page to an account signed in after a failed guest sign-in', async () => {
+    class FailingGuestNative extends FakeDriver {
+      async loginGuest(): Promise<void> {
+        throw new Error('guest wallet unavailable')
+      }
+      async loginNew(): Promise<void> {
+        this.calls.push('loginNew')
+      }
+    }
+    const driver = new FailingGuestNative()
+    driver.welcome = null
+    const h = renderSession({ userId: null }, driver)
+    await waitFor(() => expect(h.session().login.status).toBe('sign-in-or-guest'))
+    act(() => h.session().login.exploreAsGuest('QuillStonehill'))
+    await waitFor(() => expect(h.session().login.error).toBe('guest wallet unavailable'))
+
+    act(() => h.session().login.startWithAccount())
+    await waitFor(() => expect(h.driver.sentOf('getWelcome')).toHaveLength(1))
+    h.driver.emit({ kind: 'welcome', terms: true, newProfile: true })
+    await waitFor(() => expect(h.session().welcome.pending).toBe(false))
+    expect(h.driver.sentOf('acceptWelcome')).toEqual([])
+  })
+
   it('stays on the page with the error when the save fails', async () => {
     const h = renderSession(undefined, manual())
     await signIn(h)
