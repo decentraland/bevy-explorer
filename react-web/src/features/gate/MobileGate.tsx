@@ -10,7 +10,7 @@ import { publicUrl } from '../../lib/publicUrl'
 import { Button, Spinner, Copy, Check } from '../../design'
 import styles from './MobileGate.module.css'
 
-const APP_STORE_URL = 'https://testflight.apple.com/join/KF4r3jlU'
+const APP_STORE_URL = 'https://apps.apple.com/us/app/decentraland/id6478403840'
 const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=org.decentraland.godotexplorer'
 const CHROME_URL = 'https://www.google.com/chrome/'
 
