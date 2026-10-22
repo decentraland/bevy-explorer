@@ -1,5 +1,5 @@
 // What a visitor with no session sees first: pick a name and play as a guest, which creates the
-// guest account only on ACCEPT AND PLAY, or create an account on the auth site. The welcome page
+// guest account only on ACCEPT AND PLAY, or sign in or sign up on the auth site. The welcome page
 // that follows a guest sign-in is answered with this name (useEngineSession exploreAsGuest).
 
 import { useEffect, useState } from 'react'
@@ -68,7 +68,7 @@ export function GuestStartPage({ flow }: { flow: LoginFlow }): React.JSX.Element
         <div className={styles.or}>or</div>
 
         <Button variant="secondary" size="lg" disabled={flow.busy} onClick={flow.startWithAccount}>
-          CREATE AN ACCOUNT
+          CONTINUE WITH AN ACCOUNT
         </Button>
       </section>
     </div>

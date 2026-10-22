@@ -1,7 +1,7 @@
 // React port of scene/src/ui-classes/loading-and-login/LoadingAndLogin.tsx.
 // A stored identity shows the "welcome back" screen and "Jump in" hands it straight to the engine;
 // native shows the sign-in code here. With no session the guest start page shows instead
-// (./GuestStartPage), whose "Create an account" bounces to the same-domain auth site.
+// (./GuestStartPage), whose "Continue with an account" bounces to the same-domain auth site.
 
 import { useEffect, useState } from 'react'
 import { useStoredProfile } from './useStoredProfile'
