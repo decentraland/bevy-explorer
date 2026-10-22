@@ -40,17 +40,15 @@ export function registerWelcome(ctx: Ctx): void {
     ctx.send({ kind: 'welcome', ...state })
   })
 
-  ctx.on('rerollLook', async () => {
-    let n = lastLook
-    while (n === lastLook) n = 1 + Math.floor(Math.random() * DEFAULT_LOOKS)
+  // Puts default look `n` on the draft; false when it could not be fetched or a later one replaced it.
+  const wearDefaultLook = async (n: number): Promise<boolean> => {
     lastLook = n
     const found = await getJson<DefaultLook>(`${await catalystBase()}/lambdas/profiles/default${n}`).catch((e: unknown) => {
       console.error(`[welcome] default look ${n}`, e)
       return undefined
     })
     const look = found?.avatars?.[0]?.avatar
-    // a later reroll has replaced this one
-    if (look?.bodyShape == null || n !== lastLook) return
+    if (look?.bodyShape == null || n !== lastLook) return false
     editLook({
       bodyShape: look.bodyShape,
       wearables: look.wearables ?? [],
@@ -60,6 +58,13 @@ export function registerWelcome(ctx: Ctx): void {
       forceRender: []
     })
     await sendEquipped(ctx)
+    return true
+  }
+
+  ctx.on('rerollLook', async () => {
+    let n = lastLook
+    while (n === lastLook) n = 1 + Math.floor(Math.random() * DEFAULT_LOOKS)
+    await wearDefaultLook(n)
   })
 
   ctx.on('openLegal', async (msg) => {
@@ -72,6 +77,8 @@ export function registerWelcome(ctx: Ctx): void {
     try {
       // The terms first: a held new profile deploys with the first setAvatar after them.
       await BevyApi.acceptTerms?.()
+      // the look the guest start page showed; the engine's own pick stands if it can't be fetched
+      if (msg.look != null) await wearDefaultLook(msg.look)
       if (msg.name != null || hasDraft()) await deployLookAs(msg.name ?? getPlayer()?.name ?? '')
       ctx.send({ kind: 'welcomeAccepted', ok: true })
     } catch (e) {

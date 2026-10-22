@@ -19,7 +19,7 @@ describe('session analytics', () => {
     const from = pending().length
     const h = renderSession({ userId: null })
     await waitFor(() => expect(h.session().login.status).toBe('sign-in-or-guest'))
-    act(() => h.session().login.exploreAsGuest('QuillStonehill'))
+    act(() => h.session().login.exploreAsGuest({ name: 'QuillStonehill', look: 7 }))
     await waitFor(() => expect(h.session().phase).toBe('lobby'))
     await waitFor(() => expect(h.session().login.busy).toBe(false))
 

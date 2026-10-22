@@ -735,6 +735,9 @@ export interface RerollLookRequest {
 export interface AcceptWelcomeRequest {
   kind: 'acceptWelcome'
   name?: string
+  /** One of the curated default looks (`default<look>`), to deploy instead of the current one: the
+   *  look the guest start page showed. */
+  look?: number
 }
 
 /** Open the terms of use or the privacy policy in the user's browser (the scene's openExternalUrl,

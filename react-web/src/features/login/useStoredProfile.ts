@@ -8,10 +8,11 @@ import { serviceUrl } from '../../lib/baseDomain'
 interface ProfileResponse {
   avatars?: Array<{ name?: string; avatar?: { snapshots?: { body?: string } } }>
 }
+/** `address`: an account's, or a curated default look's profile id (`default<N>`). */
 export function useStoredProfile(address?: string): { name?: string; body?: string } {
   const [data, setData] = useState<{ name?: string; body?: string }>({})
   useEffect(() => {
-    if (address == null || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
+    if (address == null || !/^(0x[0-9a-fA-F]{40}|default\d+)$/.test(address)) {
       setData({})
       return
     }
