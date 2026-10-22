@@ -30,9 +30,13 @@ use std::{borrow::Borrow, marker::PhantomData, ops::Deref};
 #[cfg(any(feature = "ffmpeg", feature = "html"))]
 use bevy::ecs::component::Mutable;
 use bevy::prelude::*;
+#[cfg(any(feature = "ffmpeg", feature = "html"))]
+use dcl_component::proto_components::sdk::components::VideoState;
 use dcl_component::proto_components::sdk::components::{PbAudioStream, PbVideoPlayer};
 #[cfg(any(feature = "ffmpeg", feature = "html"))]
 use media::AVCommand;
+#[cfg(any(feature = "ffmpeg", feature = "html"))]
+use tokio::sync::watch;
 
 #[cfg(feature = "ffmpeg")]
 use crate::audio_sink::AudioSink;
@@ -85,6 +89,7 @@ pub struct AVSinks<T: AVPlayer> {
     pub rate: Option<f64>,
     /// The last volume sent, to send only changes.
     pub sent_volume: Option<f32>,
+    pub state: watch::Receiver<VideoState>,
     pub _phantom: PhantomData<T>,
 }
 

@@ -234,6 +234,7 @@ fn player_config_added<T: AVPlayer>(
         command_sender,
         sent_volume: _,
         rate,
+        state: _,
         _phantom,
     } = sinks.as_mut();
 
@@ -270,6 +271,7 @@ fn update_av_volume<T: AVPlayer>(
             command_sender,
             rate: _,
             sent_volume,
+            state: _,
             _phantom,
         } = sinks.as_mut();
 
@@ -365,6 +367,7 @@ fn play_videos(
             command_sender: _,
             rate: sink_rate,
             sent_volume: _,
+            state: _,
             _phantom,
         } = video_player_sinks.as_mut()
         else {

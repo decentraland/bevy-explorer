@@ -54,6 +54,7 @@ pub fn av_sinks<T: AVPlayer>(
 ) -> AVSinks<T> {
     let (command_sender, command_receiver) = tokio::sync::mpsc::unbounded_channel();
     let (video_sender, video_receiver) = tokio::sync::mpsc::channel(10);
+    let (state_sender, state_receiver) = tokio::sync::watch::channel(VideoState::VsNone);
 
     #[cfg(feature = "ffmpeg")]
     let audio = {
@@ -96,6 +97,7 @@ pub fn av_sinks<T: AVPlayer>(
         command_sender,
         rate: None,
         sent_volume: None,
+        state: state_receiver,
         _phantom: Default::default(),
     }
 }
@@ -152,6 +154,7 @@ fn av_thread(
 pub fn noop_sinks<T: AVPlayer>(source: String, image: Handle<Image>) -> AVSinks<T> {
     let (command_sender, command_receiver) = tokio::sync::mpsc::unbounded_channel();
     let (video_sender, video_receiver) = tokio::sync::mpsc::channel(10);
+    let (_, state_receiver) = tokio::sync::watch::channel(VideoState::VsNone);
 
     #[cfg(feature = "ffmpeg")]
     let audio = {
@@ -171,6 +174,7 @@ pub fn noop_sinks<T: AVPlayer>(source: String, image: Handle<Image>) -> AVSinks<
         command_sender,
         rate: None,
         sent_volume: None,
+        state: state_receiver,
         _phantom: Default::default(),
     }
 }
