@@ -6,6 +6,7 @@
 // waits in prefs, so the sign-in screen's events survive the auth redirect.
 
 import { getPref, PREF, setPref } from './prefs'
+import { onShellMessage } from './shell'
 
 export interface QueuedEvent {
   event: string
@@ -139,6 +140,16 @@ export function attributionParams(): [string, string][] {
   return [...entry].filter(([name]) => name.startsWith('utm_'))
 }
 
+/** The shell's answer once its Google tag is up (shell/googleTag.ts): GA4's ids for this browser
+ *  and visit, sent as `Google Tag Linked` so the warehouse joins the session to the GA4 export, the
+ *  way mobile's `firebase_user_id` joins it to Firebase's. */
+export function listenForGoogleTag(): void {
+  onShellMessage('bevy-shell:google-tag', (m) => {
+    if (typeof m.client_id !== 'string' || !m.client_id) return
+    track('Google Tag Linked', { ga_client_id: m.client_id, ga_session_id: typeof m.session_id === 'string' && m.session_id ? m.session_id : null })
+  })
+}
+
 /** What a page load reports before any screen shows, as mobile's app start does. The return from
  *  the sign-in redirect continues the session instead. */
 export function bootAnalytics(): void {
@@ -150,6 +161,29 @@ export function bootAnalytics(): void {
     prev_session_id: '',
     seconds_since_last_seen: -1
   })
+  // the entry's campaign, shaped as mobile's install referrer: the raw string keeps any param a
+  // platform adds later, the columns the ones read most. GA's cross-domain linker (_gl) alone is a
+  // navigation between Decentraland's sites, not a campaign.
+  const campaign = [...entry].filter(([name]) => isCampaignParam(name))
+  if (campaign.some(([name]) => name !== '_gl')) {
+    const param = (name: string): string | null => entry.get(name)
+    track('Install Attribution', {
+      platform: 'web',
+      attribution_source: 'url',
+      // the queue outlives a load that bounces before the engine is up, and the engine stamps the
+      // session of the load that sends it: this is the load the campaign arrived on
+      page_session_id: session,
+      referrer: new URLSearchParams(campaign).toString(),
+      utm_source: param('utm_source'),
+      utm_medium: param('utm_medium'),
+      utm_campaign: param('utm_campaign'),
+      utm_term: param('utm_term'),
+      utm_content: param('utm_content'),
+      gclid: param('gclid'),
+      gbraid: param('gbraid'),
+      wbraid: param('wbraid')
+    })
+  }
   screenViewed('START', { startup_time_ms: Math.round(performance.now()), platform: 'web' })
 }
 

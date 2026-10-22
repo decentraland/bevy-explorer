@@ -2,7 +2,7 @@
 // engine's console, leave together as `/track <base64 batch>`, and a rejected send keeps them.
 
 import { beforeEach, describe, expect, it } from 'vitest'
-import { attachEngine, dropAttributionParams, encodeBatch, pending, screenViewed, track, type QueuedEvent } from '../lib/analytics'
+import { attachEngine, dropAttributionParams, encodeBatch, listenForGoogleTag, pending, screenViewed, track, type QueuedEvent } from '../lib/analytics'
 import { PREF, setPref } from '../lib/prefs'
 import { authLoginUrl } from '../features/auth/sso'
 
@@ -74,5 +74,29 @@ describe('page analytics', () => {
     dropAttributionParams()
     expect(location.search).toBe('?realm=main&position=0%2C0')
     history.replaceState(null, '', '/')
+  })
+
+  it("sends GA4's ids from the shell's google tag as Google Tag Linked, and nothing else it gets", async () => {
+    const lines: string[] = []
+    attachEngine((line) => {
+      lines.push(line)
+      return Promise.resolve('queued')
+    })
+    listenForGoogleTag()
+    // jsdom's window is its own parent, the shell's place
+    const post = (data: unknown, origin = location.origin): void => {
+      window.dispatchEvent(new MessageEvent('message', { data, origin, source: window }))
+    }
+    post({ type: 'bevy-shell:google-tag', client_id: '123.456', session_id: '1792673220' })
+    post({ type: 'bevy-shell:google-tag', client_id: '7.8', session_id: null })
+    post({ type: 'bevy-shell:google-tag', client_id: '' })
+    post({ type: 'bevy-shell:url', search: '' })
+    post({ type: 'bevy-shell:google-tag', client_id: '9.9' }, 'https://evil.example')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const sent = lines.flatMap(decodeLine)
+    expect(sent.map((e) => [e.event, e.properties])).toEqual([
+      ['Google Tag Linked', { ga_client_id: '123.456', ga_session_id: '1792673220' }],
+      ['Google Tag Linked', { ga_client_id: '7.8', ga_session_id: null }]
+    ])
   })
 })
