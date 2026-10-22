@@ -7,7 +7,7 @@ import { authLoginUrl } from '../features/auth/sso'
 import { ANALYTICS_SESSION_PARAM, ANON_USER_ID_PARAM, dropAttributionParams } from '../lib/analytics'
 import { migratePrefs } from '../lib/prefs'
 import { request } from './login'
-import { isLoginType, reportInWorld } from './googleTag'
+import { onInWorld } from './googleTag'
 
 // The service worker's scope is the package DIRECTORY, but the production entry URL has no
 // trailing slash, which puts this page outside it: the worker never sees the request, so the
@@ -105,9 +105,7 @@ addEventListener('message', async (e: MessageEvent) => {
     // the session's first scene: the Google Ads conversion (googleTag.ts), and GA4's ids back to
     // the app for Segment
     case 'bevy-shell:in-world':
-      reportInWorld(isLoginType(m.login_type) ? m.login_type : undefined, typeof m.session_id === 'string' ? m.session_id : undefined, (ids) =>
-        f.contentWindow?.postMessage({ type: 'bevy-shell:google-tag', client_id: ids.clientId, session_id: ids.sessionId }, location.origin)
-      )
+      if (f.contentWindow) onInWorld(m, f.contentWindow)
       break
     // the untrusted-link gate's exit (see src/features/gate/UntrustedLaunchGate.tsx)
     case 'bevy-shell:exit':

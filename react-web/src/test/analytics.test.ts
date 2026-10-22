@@ -88,11 +88,15 @@ describe('page analytics', () => {
       window.dispatchEvent(new MessageEvent('message', { data, origin, source: window }))
     }
     post({ type: 'bevy-shell:google-tag', client_id: '123.456', session_id: '1792673220' })
+    post({ type: 'bevy-shell:google-tag', client_id: '7.8', session_id: null })
     post({ type: 'bevy-shell:google-tag', client_id: '' })
     post({ type: 'bevy-shell:url', search: '' })
     post({ type: 'bevy-shell:google-tag', client_id: '9.9' }, 'https://evil.example')
     await new Promise((resolve) => setTimeout(resolve, 0))
     const sent = lines.flatMap(decodeLine)
-    expect(sent.map((e) => [e.event, e.properties])).toEqual([['Google Tag Linked', { ga_client_id: '123.456', ga_session_id: '1792673220' }]])
+    expect(sent.map((e) => [e.event, e.properties])).toEqual([
+      ['Google Tag Linked', { ga_client_id: '123.456', ga_session_id: '1792673220' }],
+      ['Google Tag Linked', { ga_client_id: '7.8', ga_session_id: null }]
+    ])
   })
 })

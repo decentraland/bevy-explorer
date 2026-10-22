@@ -31,7 +31,17 @@ export function isLoginType(value: unknown): value is LoginType {
 /** GA4's own ids for this browser and visit: its BigQuery export's user_pseudo_id and ga_session_id. */
 export interface GoogleTagIds {
   clientId: string
-  sessionId: string
+  sessionId: string | null
+}
+
+/** The shell's side of `bevy-shell:in-world` (shell/main.ts): the conversion, then GA4's ids posted
+ *  back to the app as `bevy-shell:google-tag`. */
+export function onInWorld(message: Record<string, unknown>, app: Window): void {
+  const loginType = isLoginType(message.login_type) ? message.login_type : undefined
+  const dclSessionId = typeof message.session_id === 'string' ? message.session_id : undefined
+  reportInWorld(loginType, dclSessionId, (ids) =>
+    app.postMessage({ type: 'bevy-shell:google-tag', client_id: ids.clientId, session_id: ids.sessionId }, location.origin)
+  )
 }
 
 /** The conversion, tagged with the Segment session it belongs to (`dcl_session_id`); `onIds` gets
@@ -70,7 +80,7 @@ export function reportInWorld(loginType: LoginType | undefined, dclSessionId?: s
   if (onIds) {
     gtag('get', MEASUREMENT_ID, 'client_id', (clientId: unknown) => {
       gtag('get', MEASUREMENT_ID, 'session_id', (sessionId: unknown) => {
-        if (typeof clientId === 'string' && clientId) onIds({ clientId, sessionId: sessionId == null ? '' : String(sessionId) })
+        if (typeof clientId === 'string' && clientId) onIds({ clientId, sessionId: sessionId == null || sessionId === '' ? null : String(sessionId) })
       })
     })
   }

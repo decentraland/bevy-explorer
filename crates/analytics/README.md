@@ -15,8 +15,9 @@ as host-only web params:
   Without one (native) the engine mints its own per run.
 - `campaign_anon_user_id`: the landing page's Segment anonymous id (the `ajs_anonymous_id` cookie
   the web shell reads, or `anon_user_id` on the link), as the launcher passes it to the desktop
-  client. The warehouse joins the session to the web visit on it; nothing else about the
-  campaign travels, the visit already has the UTMs.
+  client. The warehouse joins the session to the web visit on it. On the web the page also
+  reports the link's own campaign as `Install Attribution` (`react-web/review.md`, "Boot"), for
+  a visit that lands on the explorer without a landing page before it.
 
 Nothing leaves before the user has accepted the terms (`AppConfig::terms_accepted()`, set on the
 welcome page). Events queue meanwhile (2000, the oldest dropped) and go out on the first tick
@@ -34,8 +35,9 @@ The page side is `react-web/src/lib/analytics.ts` (events and sequences in
 `react-web/review.md`, "Analytics"). The web's Google Ads conversion (`bevy_first_move_in_world`, a GA4 event
 the shell page sends on the first scene) is not a Segment event: `react-web/src/shell/googleTag.ts`.
 It carries the Segment session as `dcl_session_id`, and the page sends GA4's ids back to Segment as
-`Google Tag Linked` (`ga_client_id`, the export's `user_pseudo_id`; `ga_session_id`), so the warehouse
-joins the two either way.
+`Google Tag Linked` (`ga_client_id`, the export's `user_pseudo_id`; `ga_session_id`). Both are
+taken at the conversion, once per tab session: `ga_session_id` is GA4's session at that moment (GA4
+starts a new one after 30 minutes idle), and a reload's new Segment session is not linked again.
 
 An engine crash on the web is reported by the page (`crash.rs`): the engine keeps a snapshot of
 what an Explorer Error batch needs (user id, write key, consent, the common fields) in a static,

@@ -233,9 +233,12 @@ back as `analyticsSession`). Expectations:
 
 - **Boot** (`bootAnalytics`, `main.tsx`): `App Opened` then `Screen Viewed` START, except on the
   return from the sign-in redirect. Between them, when the link carries a campaign (`utm_*`,
-  `gad_*`, ad click ids), `Install Attribution` in mobile's install-referrer shape:
-  `attribution_source` `url`, `referrer` the raw campaign params, plus the `utm_*`, `gclid`,
-  `gbraid` and `wbraid` columns.
+  `gad_*`, ad click ids; GA's cross-domain `_gl` alone does not count), `Install Attribution` in
+  mobile's install-referrer shape, told apart from mobile's by `platform` `web` and
+  `attribution_source` `url` (one per page load with a campaign, not per install): `referrer` the
+  raw campaign params, the `utm_*`, `gclid`, `gbraid` and `wbraid` columns, and `page_session_id`,
+  this load's session. Join on that, not on the common `session_id`: the queue outlives a load
+  that bounces before the engine is up, and the engine stamps the session of the load that sends it.
 - **Sign-in link** (`authLoginUrl`): the entry's `utm_*` params ride along, so the auth site's
   own Segment calls carry the campaign and tie it to the address it signs in. Once read, the
   shell and the app take the attribution params (`utm_*`, `gad_*`, ad click ids such as `gclid`,
@@ -261,8 +264,10 @@ back as `analyticsSession`). Expectations:
   Segment session), and as its page the url the tab arrived
   with, keeping only its `utm_*` and ad click ids (`shell/googleTag.ts`). Nothing of Google's loads before that moment.
   Once gtag.js is up the shell posts GA4's ids back (`bevy-shell:google-tag` {client_id, session_id}),
-  and the app sends them as `Google Tag Linked` {ga_client_id, ga_session_id}: the GA4 export's
-  `user_pseudo_id` / `ga_session_id` on the Segment session, the join both ways (`listenForGoogleTag`).
+  and the app sends them as `Google Tag Linked` {ga_client_id, ga_session_id (null when GA4 gives
+  none)}: the GA4 export's `user_pseudo_id` / `ga_session_id` on the Segment session, taken at the
+  conversion (`shell/googleTag.ts` `onInWorld`, `listenForGoogleTag` over `lib/shell.ts`
+  `onShellMessage`).
 - Tests: `src/test/analytics.test.ts` (stamping, the handoff, the rejected send, `Google Tag Linked`),
   `src/test/analytics.boot.test.ts` (the boot events, `Install Attribution`),
   `src/test/analytics.session.test.tsx` (the sequences above), `engineDriver.test.ts` (the session
