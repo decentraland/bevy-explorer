@@ -27,7 +27,7 @@ describe('mobile gate', () => {
     render(<MobileGate />)
     const apple = screen.getByRole('link', { name: /App Store/i })
     const google = screen.getByRole('link', { name: /Google Play/i })
-    expect(apple).toHaveAttribute('href', 'https://testflight.apple.com/join/KF4r3jlU')
+    expect(apple).toHaveAttribute('href', 'https://apps.apple.com/us/app/decentraland/id6478403840')
     expect(google).toHaveAttribute(
       'href',
       'https://play.google.com/store/apps/details?id=org.decentraland.godotexplorer'
