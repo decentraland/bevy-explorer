@@ -2,14 +2,17 @@
 // Owns the driver and exposes the login flow + scene-loading state + phase.
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { clearLogins, getLogin, redirectToAuth, rootAddress, type StoredLogin } from '../auth/sso'
+import { clearLogins, getLogin, redirectToAuth, returnedFromAuth, rootAddress, type StoredLogin } from '../auth/sso'
 import { hoverKey, proximityKey } from '../../engine/pointerKeys'
-import type { LoginDriver } from '../../engine/driver'
+import type { LoginDriver, NewAccountPick } from '../../engine/driver'
 import type { LaunchHostOptions } from '../../engine/engineRpc'
 import { recordVisit } from '../lobby/lobbyApi'
 import type { SatelliteView } from '../../engine/generated'
+import type { AvatarLook } from '../../engine/avatarEquip'
 import type { PreviewFocus } from '../../engine/protocol'
 import { clickButton, screenViewed, sessionId, track } from '../../lib/analytics'
+import { randomDefaultLook } from '../../lib/guestName'
+import { fetchStoredProfile, useStoredProfile, type StoredProfile } from '../login/useStoredProfile'
 import { inShell, postToShell } from '../../lib/shell'
 import { storedLoginType, type LoginType } from './sessionAnalytics'
 import type { InteractableArea } from '../../lib/hudInset'
@@ -528,6 +531,12 @@ const MAX_REVEAL_MS = 1500
 // and the next starting. Revealing the world in that gap flashes the HUD (chat + sidebar) in and
 // out, so we only drop the loader once loading has been stably clear for this long.
 const REVEAL_DEBOUNCE_MS = 600
+// how long, back from the auth site, the stored sign-in waits for the catalyst to have the profile
+const AUTH_PROFILE_WAIT_MS = 30_000
+// the look pending on the stage while RANDOMIZE's fetch is under way (no look number yet)
+const EXPECTED_LOOK = -1
+// how long that fetch is waited for before RANDOMIZE is let go again
+const EXPECTED_LOOK_MS = 15_000
 
 export type LoginStatus =
   | 'loading'
@@ -544,10 +553,7 @@ export type Destination =
   | null
 
 /** What the guest start page picked: the new guest's name and curated default look (`default<look>`). */
-export interface GuestPick {
-  name: string
-  look: number
-}
+export type GuestPick = NewAccountPick
 
 export interface LoginFlow {
   status: LoginStatus
@@ -569,10 +575,14 @@ export interface LoginFlow {
   authCode: string | null
   /** Abort the in-flight native fresh sign-in. */
   cancelLogin: () => void
-  /** `pick`: the guest start page's name and default look, accepted with the terms once signed in. */
+  /** `pick`: the guest start page's name and default look, accepted with the terms once signed in.
+   *  Before the engine is ready the click is kept (`acceptQueued`) and runs once it is. */
   exploreAsGuest: (pick?: GuestPick) => void
+  acceptQueued: boolean
   /** Reuse the stored SSO identity (hand it to the engine). */
   jumpIn: () => void
+  /** The stored account's profile, for the screens before the engine draws it. */
+  profile: StoredProfile
   /** The last login failed because the user's profile couldn't be fetched — offer
    *  resetProfileAndJumpIn as the explicit recovery. */
   profileFetchFailed: boolean
@@ -595,8 +605,17 @@ export interface WelcomeFlow {
   pending: boolean
   saving: boolean
   error: string | null
-  /** Another of the curated default looks on the avatar (deployed on accept). */
+  /** Another of the curated default looks on the avatar, fetched here (deployed on accept). */
   reroll: () => void
+  /** The curated default look `default<look>`, as fetched, on the stage's avatar: the guest start
+   *  page's pick. */
+  showLook: (look: number, avatar: AvatarLook) => void
+  /** The look the next RANDOMIZE shows, for the stage to load out of sight meanwhile. */
+  preloadLook: (look: number, avatar: AvatarLook) => void
+  /** A look is on its way to the stage (asked for, not yet shown there): RANDOMIZE waits. */
+  lookPending: boolean
+  /** A look is about to be asked for (its fetch is under way): holds RANDOMIZE until `showLook`. */
+  expectLook: () => void
   /** Accept the terms, and for a new profile deploy it under `name` with the look. */
   accept: (name?: string) => void
   /** Open the terms of use or the privacy policy in the browser. */
@@ -719,11 +738,22 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const storedRef = useRef<StoredLogin | null>(null)
   storedRef.current = stored
   const welcomeRef = useRef<{ terms: boolean; newProfile: boolean } | null>(null)
-  // The guest start page's pick: its ACCEPT AND PLAY already accepted the terms, so the welcome
-  // page is answered with it instead of shown.
+  // The guest start page's pick went in with the sign-in, and its ACCEPT AND PLAY already accepted
+  // the terms, so the welcome page is answered instead of shown.
   const guestPick = useRef<GuestPick | null>(null)
+  // ACCEPT AND PLAY clicked before the engine was ready: runs once it is
+  const [queuedGuest, setQueuedGuest] = useState<{ pick: GuestPick | null } | null>(null)
+  // the look sent to the stage and not yet shown there (null = none)
+  const [pendingLook, setPendingLook] = useState<number | null>(null)
   // The address of the engine's actual reusable previous login (drives "Welcome back").
   const [prevUserId, setPrevUserId] = useState<string | null>(null)
+  const account = prevUserId ?? (stored ? rootAddress(stored.identity) : null)
+  // The stored account's profile, for the screens before the engine draws it. The stored sign-in
+  // waits for the answer: back from the auth site, the profile it just made can still be syncing
+  // to the catalyst, which the engine's own fetch then asks (and waits for too, login_profile).
+  const accountAddress = status === 'reuse-login-or-new' && account != null ? account : undefined
+  const accountProfile = useStoredProfile(accountAddress, returnedFromAuth ? AUTH_PROFILE_WAIT_MS : 0)
+  const accountChecking = accountAddress != null && !accountProfile.settled
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
   busyRef.current = busy
@@ -1292,6 +1322,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         case 'lobbyStageReady':
           setLobbyStageReady(true)
           break
+        case 'lookShown':
+          setPendingLook((pending) => (pending === msg.look ? null : pending))
+          break
         case 'welcome': {
           const chosen = guestPick.current
           guestPick.current = null
@@ -1310,10 +1343,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           }
           welcomeRef.current = { terms: msg.terms, newProfile: msg.newProfile }
           if (!msg.terms) termsOk.current = true
+          // with the name, so the engine deploys the new profile it holds for the welcome page
           if (chosen != null) {
             setWelcomeSaving(true)
             setWelcomeError(null)
-            driver.send(msg.newProfile ? { kind: 'acceptWelcome', name: chosen.name, look: chosen.look } : { kind: 'acceptWelcome' })
+            driver.send({ kind: 'acceptWelcome', name: chosen.name })
             break
           }
           screenViewed(msg.newProfile ? 'AVATAR_NAMING' : 'WELCOME')
@@ -2040,6 +2074,18 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     []
   )
 
+  // A visitor with no session gets the engine the moment it is ready, holding the world, with no
+  // sign-in: the guest start page's stage then shows the live avatar instead of a snapshot, and
+  // ACCEPT AND PLAY only has the sign-in left to run (submitLogin sees launchedRef). A link's
+  // destination and the auto-login boots launch for themselves.
+  useEffect(() => {
+    const driver = driverRef.current
+    if (!engineReady || submitted || status !== 'sign-in-or-guest' || driver?.launch == null || launchedRef.current) return
+    if (urlDestination.current != null || boot.current.autoLogin != null) return
+    const home = driver.homeScene?.()
+    launchEngine(driver, home?.realm ?? DEFAULT_REALM, home?.parcel ?? '0,0', { holdWorld: true })
+  }, [engineReady, submitted, status, launchEngine])
+
   // A destination for an engine already running at its own start realm (native, mock): runtime
   // directives instead of boot parameters. A world switches realm now (works pre-login); a parcel
   // teleport needs a spawned player, so it's held until playerReady. A parcel pick sends no realm
@@ -2417,6 +2463,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     lastLoginType.current = null
     welcomeRef.current = null
     guestPick.current = null
+    setQueuedGuest(null)
+    setPendingLook(null)
     setStatus('sign-in-or-guest')
     closeAllPanels()
     setPlayerReady(false)
@@ -2494,7 +2542,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       // friends work but no scene loads until a destination is picked (which releases it).
       setLobby(true)
       setWelcomePending(welcomeShown())
-      setLobbyStageReady(false)
+      // an engine launched for the guest start page keeps its stage, avatar and all, into the lobby
+      if (!launchedRef.current) setLobbyStageReady(false)
       setBusy(true)
       let ran = false
       const run = (): void => {
@@ -2518,10 +2567,32 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   )
 
 
+  // the curated default look on the stage, so RANDOMIZE never repeats it
+  const shownLook = useRef(0)
+  const showLook = useCallback((look: number, avatar: AvatarLook) => {
+    shownLook.current = look
+    setPendingLook(look)
+    driverRef.current?.send({ kind: 'showLook', look, avatar })
+  }, [])
+  // A look is pending from the moment it is asked for, so RANDOMIZE can't be hit again while its
+  // profile is fetched; a fetch that never comes back lets go after a while.
+  const expectLook = useCallback(() => {
+    setPendingLook(EXPECTED_LOOK)
+    driverRef.current?.send({ kind: 'expectLook' })
+    setTimeout(() => setPendingLook((pending) => (pending === EXPECTED_LOOK ? null : pending)), EXPECTED_LOOK_MS)
+  }, [])
+  const preloadLook = useCallback((look: number, avatar: AvatarLook) => driverRef.current?.send({ kind: 'preloadLook', look, avatar }), [])
+  // RANDOMIZE: the page picks and fetches the look (the scene's fetches are signed, and it has no
+  // say in the pick), and the stage wears it; a later pick outruns a slow fetch
   const rerollLook = useCallback(() => {
     clickButton('NAME_RANDOMIZE', 'AVATAR_NAMING')
-    driverRef.current?.send({ kind: 'rerollLook' })
-  }, [])
+    expectLook()
+    const look = randomDefaultLook(shownLook.current || undefined)
+    shownLook.current = look
+    void fetchStoredProfile(`default${look}`).then((profile) => {
+      if (profile?.look != null && shownLook.current === look) showLook(look, profile.look)
+    })
+  }, [showLook, expectLook])
   const openLegal = useCallback((doc: 'terms' | 'privacy') => driverRef.current?.send({ kind: 'openLegal', doc }), [])
   const acceptWelcome = useCallback((name?: string) => {
     clickButton('LETS_GO', welcomeRef.current?.newProfile ? 'AVATAR_NAMING' : 'WELCOME')
@@ -2531,17 +2602,33 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   }, [])
 
   // The button creates a guest account that persists; ?guest=1 stays a throwaway guest.
-  const exploreAsGuest = useCallback(
+  const startGuest = useCallback(
     (pick?: GuestPick) => {
-      if (pick != null) clickButton('LETS_GO', 'AVATAR_NAMING')
-      else clickButton('PLAY_GUEST', 'ACCOUNT_HOME')
       const persistent = driverRef.current?.loginPersistentGuest != null
       guestPick.current = pick ?? null
-      if (!submitLogin((d) => d.loginPersistentGuest?.() ?? d.loginGuest(), 'guest')) guestPick.current = null
+      if (!submitLogin((d) => d.loginPersistentGuest?.(pick) ?? d.loginGuest(), 'guest')) guestPick.current = null
       else if (persistent) screenViewed('ACCOUNT_GUEST_CREATE')
     },
     [submitLogin]
   )
+  const exploreAsGuest = useCallback(
+    (pick?: GuestPick) => {
+      if (pick != null) clickButton('LETS_GO', 'AVATAR_NAMING')
+      else clickButton('PLAY_GUEST', 'ACCOUNT_HOME')
+      // before the engine is ready the click is kept, and runs once it is (the effect below)
+      if (!engineReady && driverRef.current != null) {
+        setQueuedGuest({ pick: pick ?? null })
+        return
+      }
+      startGuest(pick)
+    },
+    [engineReady, startGuest]
+  )
+  useEffect(() => {
+    if (queuedGuest == null || !engineReady) return
+    setQueuedGuest(null)
+    startGuest(queuedGuest.pick ?? undefined)
+  }, [queuedGuest, engineReady, startGuest])
   const autoGuest = useCallback(() => submitLogin((d) => d.loginGuest(), 'guest'), [submitLogin])
   // Reuse the existing login. The driver picks the path its backend supports (console
   // `/login_identity` for the engine, `loginPrevious` over the bridge).
@@ -2555,9 +2642,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const autoEntered = useRef(false)
   useEffect(() => {
     if (status !== 'reuse-login-or-new' || submitted || !engineReady || autoEntered.current) return
+    if (accountChecking) return
     autoEntered.current = true
     enterStored()
-  }, [status, submitted, engineReady, enterStored])
+  }, [status, submitted, engineReady, enterStored, accountChecking])
   // The engine tags profile-fetch login failures (vs bad credentials etc.) with this marker —
   // mirrors PROFILE_FETCH_FAILED in system_bridge. Only then do we offer the destructive reset.
   const profileFetchFailed = error != null && error.includes('profile fetch failed')
@@ -2995,6 +3083,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       saving: welcomeSaving,
       error: welcomeError,
       reroll: rerollLook,
+      showLook,
+      preloadLook,
+      lookPending: pendingLook != null,
+      expectLook,
       accept: acceptWelcome,
       openLegal
     },
@@ -3132,7 +3224,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     closeAllPanels,
     login: {
       status,
-      account: prevUserId ?? (stored ? rootAddress(stored.identity) : null),
+      account,
       busy,
       error,
       engineReady,
@@ -3143,7 +3235,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       authCode: auth?.code ?? null,
       cancelLogin,
       exploreAsGuest,
+      acceptQueued: queuedGuest != null,
       jumpIn,
+      profile: accountProfile,
       profileFetchFailed,
       resetProfileAndJumpIn,
       useDifferentAccount

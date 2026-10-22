@@ -4,43 +4,15 @@
 // (./GuestStartPage), whose "Continue with an account" bounces to the same-domain auth site.
 
 import { useEffect, useState } from 'react'
-import { useStoredProfile } from './useStoredProfile'
 import { Button } from '../../design'
 import { prefetchPlaces } from '../places/placesApi'
 import type { LoginFlow, LoginStatus } from '../session/useEngineSession'
 import styles from './LoadingAndLogin.module.css'
 
-// Engine boot steps surfaced from the engine loader (deploy/web/ui.js), shown in the footer bar.
-const STEP_LABEL: Record<string, string> = {
-  download: 'Downloading engine',
-  compile: 'Compiling',
-  init: 'Initializing',
-  workers: 'Starting workers',
-  gpu: 'Preparing graphics'
-}
-
-// Footer progress bar driven by the engine's REAL weighted boot progress (the bundle's own bar is
-// hidden via hideLoader=1). Visible only while the engine is still booting; the user can pick an
-// account meanwhile, and "Jump in" / "Explore as guest" un-gate when it reaches ready.
-function BootProgress({ flow }: { flow: LoginFlow }): React.JSX.Element | null {
-  if (flow.engineReady) return null
-  const label = (flow.loadStep != null ? STEP_LABEL[flow.loadStep] : undefined) ?? 'Starting…'
-  const pct = Math.round(flow.loadProgress)
-  return (
-    <div className={styles.bootBar} role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={label}>
-      <div className={styles.bootLabel}>
-        {label} · {pct}%
-      </div>
-      <div className={styles.bootTrack}>
-        <div className={styles.bootFill} style={{ width: `${pct}%` }} />
-      </div>
-    </div>
-  )
-}
-
 // Pending-CTA label: surface the real boot progress while the WASM downloads (the long phase),
 // e.g. "DOWNLOADING… 47%", then a generic "STARTING…" for the quick compile/GPU tail. The percent
-// is the overall weighted progress (download is weighted ~80%), matching the footer bar.
+// is the overall weighted progress (download is weighted ~80%), matching the boot bar
+// (features/engine/BootProgress, over every page while the engine boots).
 export function pendingLabel(flow: LoginFlow): string {
   if (flow.loadStep === 'download') return `DOWNLOADING… ${Math.round(flow.loadProgress)}%`
   return 'STARTING…'
@@ -90,7 +62,7 @@ export function LoadingAndLogin({ flow }: { flow: LoginFlow }): React.JSX.Elemen
     prefetchPlaces()
   }, [])
   const reuse = flow.status === 'reuse-login-or-new'
-  const profile = useStoredProfile(reuse && flow.account != null ? flow.account : undefined)
+  const profile = flow.profile
 
   // The logo splash covers everything until there is somewhere to go: a stored session heads
   // straight to the lobby, so it never flashes the sign-in screen (unless signing in failed).
@@ -102,14 +74,12 @@ export function LoadingAndLogin({ flow }: { flow: LoginFlow }): React.JSX.Elemen
           <div className={styles.loading}>
             <div className={styles.spinnerLogo} />
           </div>
-          <BootProgress flow={flow} />
         </>
       ) : (
         <>
           <div className={styles.watermark} />
           <Panel flow={flow} name={profile.name} />
           {reuse && profile.body != null && <LoginAvatar body={profile.body} />}
-          <BootProgress flow={flow} />
         </>
       )}
     </div>

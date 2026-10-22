@@ -8,8 +8,9 @@
 import { encodeIdentity, getLogin, rootAddress, type AuthIdentity, type StoredLogin } from '../features/auth/sso'
 import { trackGuestWalletCreation } from '../features/auth/guestWalletEvent'
 import { attachEngine, launchAnalytics } from '../lib/analytics'
+import { serviceUrl } from '../lib/baseDomain'
 import { inShell, shellRequest } from '../lib/shell'
-import type { LoginDriver } from './driver'
+import { newAccountFlags, type LoginDriver, type NewAccountPick } from './driver'
 import type { EngineRpc, LaunchHostOptions } from './engineRpc'
 import { BridgeChannel } from './bridgeChannel'
 import { bridgeChannelName, type PageToScene, type SceneToPage } from './protocol'
@@ -56,10 +57,10 @@ export class EngineDriver implements LoginDriver {
   // The shell creates the guest account and keeps it, key included, like a sign-in; the engine
   // gets the public identity and signs through the shell. Outside the shell (a credentialless
   // embed) there is nowhere to keep it, so the guest is a throwaway one.
-  async loginPersistentGuest(): Promise<void> {
+  async loginPersistentGuest(pick?: NewAccountPick): Promise<void> {
     if (!inShell) return this.loginGuest()
     const login = await trackGuestWalletCreation(() => shellRequest<StoredLogin>('createGuest', undefined, CREATE_GUEST_TIMEOUT_MS))
-    await this.loginWithIdentity(login.identity, false, true)
+    await this.loginWithIdentity(login.identity, false, true, pick)
   }
 
   async loginCancel(): Promise<void> {
@@ -74,8 +75,15 @@ export class EngineDriver implements LoginDriver {
     await this.rpc.command('/logout')
   }
 
-  async loginWithIdentity(identity: AuthIdentity, defaultOnError?: boolean, guest?: boolean): Promise<void> {
-    const flag = (defaultOnError === true ? ' --default-on-error' : '') + (guest === true ? ' --guest' : '')
+  // The profile is fetched from this page's catalyst: the one the auth site deploys a new
+  // account's to, and the one the page asks before signing in (useStoredProfile), rather than the
+  // realm's node, which can lag behind it.
+  async loginWithIdentity(identity: AuthIdentity, defaultOnError?: boolean, guest?: boolean, pick?: NewAccountPick): Promise<void> {
+    const flag =
+      (defaultOnError === true ? ' --default-on-error' : '') +
+      (guest === true ? ' --guest' : '') +
+      newAccountFlags(pick) +
+      ` --profiles ${serviceUrl('catalyst')}/lambdas`
     await this.rpc.command(`/login_identity ${encodeIdentity(identity)}${flag}`)
     this.scheduleReadyFallback()
   }

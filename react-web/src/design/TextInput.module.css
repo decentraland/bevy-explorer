@@ -48,8 +48,15 @@
   width: 100%;
   min-width: 0;
 }
+.large {
+  height: auto;
+  min-height: 74px;
+  padding: 0 18px;
+  font-size: var(--type-36);
+}
 .withAction {
-  padding-right: 40px;
+  padding-right: calc(var(--action-icon, 18px) + 22px);
+  min-height: calc(var(--action-icon, 18px) + 20px);
 }
 .action {
   position: absolute;
@@ -58,8 +65,8 @@
   transform: translateY(-50%);
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: calc(var(--action-icon, 18px) + 10px);
+  height: calc(var(--action-icon, 18px) + 10px);
   padding: 0;
   border: 0;
   border-radius: var(--r-control);

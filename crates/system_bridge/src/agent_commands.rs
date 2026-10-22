@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bevy_console::ConsoleCommand;
 use console::{DoAddConsoleCommand, PendingConsoleResponses};
 
-use crate::{LiveSceneInfo, SystemApi};
+use crate::{LiveSceneInfo, NewAccountPick, SystemApi};
 
 pub struct AgentCommandsPlugin;
 
@@ -83,6 +83,16 @@ struct LoginIdentityCommand {
     /// the identity is a guest account
     #[arg(long)]
     guest: bool,
+    /// the name a first login's new profile takes (alphanumeric, at most 15 characters)
+    #[arg(long)]
+    name: Option<String>,
+    /// the curated default look a first login's new profile wears, 1-based
+    #[arg(long)]
+    look: Option<u32>,
+    /// the lambdas endpoint to fetch the account's profile from (the catalyst the sign-in
+    /// deployed it to), else the realm's
+    #[arg(long)]
+    profiles: Option<String>,
 }
 
 fn login_identity_cmd(
@@ -92,10 +102,16 @@ fn login_identity_cmd(
 ) {
     if let Some(Ok(command)) = input.take() {
         let (sx, rx) = common::rpc::RpcResultSender::<Result<(), String>>::channel();
+        let pick = (command.name.is_some() || command.look.is_some()).then(|| NewAccountPick {
+            name: command.name.clone(),
+            look: command.look,
+        });
         events.write(SystemApi::LoginWithIdentity(
             command.payload.clone(),
             command.default_on_error,
             command.guest,
+            pick,
+            command.profiles.clone(),
             sx,
         ));
         let responder = input.take_responder();

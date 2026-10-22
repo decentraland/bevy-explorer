@@ -12,3 +12,14 @@
   height: 1px;
   background: var(--fill-4);
 }
+
+/* the look's dice, under the avatar's feet on the stage (the lobby frames the avatar at the centre,
+   feet about 350px below it) */
+.lookDice {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 370px);
+  transform: translateX(-50%);
+  width: 96px;
+  height: 96px;
+}

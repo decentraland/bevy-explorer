@@ -9,7 +9,7 @@ import { createGuestIdentity } from '../features/auth/guest'
 import { encodeIdentity, type AuthIdentity } from '../features/auth/sso'
 import type { GuestWallet } from '../features/auth/thirdweb'
 import { BridgeChannel } from './bridgeChannel'
-import type { LoginDriver } from './driver'
+import { newAccountFlags, type LoginDriver, type NewAccountPick } from './driver'
 import {
   bridgeChannelName,
   type LoginPreviousResult,
@@ -61,13 +61,13 @@ export class BridgeClient implements LoginDriver {
   // Native: the bridge scene makes the thirdweb calls and keeps the session id (the page's
   // cef:// origin is not one thirdweb accepts); the identity then goes in through the engine
   // console. The mock has no engine console, so it stays a plain guest.
-  async loginPersistentGuest(): Promise<void> {
+  async loginPersistentGuest(pick?: NewAccountPick): Promise<void> {
     if (!('engine_console_command' in window)) return this.loginGuest()
     const identity = await createGuestIdentity({
       login: (sessionId) => this.rpc<GuestWallet>('guestLogin', { sessionId }),
       sign: (token, message) => this.rpc<string>('guestSign', { token, message })
     })
-    await this.command(`/login_identity ${encodeIdentity(identity)} --guest`)
+    await this.command(`/login_identity ${encodeIdentity(identity)} --guest${newAccountFlags(pick)}`)
   }
 
   loginCancel(): Promise<void> {

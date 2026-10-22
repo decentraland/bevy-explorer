@@ -35,6 +35,7 @@ import { PopupHost, ToastHost, showDialog } from './design'
 import { SessionProvider } from './features/session/SessionContext'
 import { isNativeHud } from './lib/bootMode'
 import { FpsMeter } from './features/debug/FpsMeter'
+import { BootProgress } from './features/engine/BootProgress'
 import { LoadingAndLogin } from './features/login/LoadingAndLogin'
 import { GuestStartPage } from './features/login/GuestStartPage'
 import { SceneLoadingOverlay } from './features/session/SceneLoadingOverlay'
@@ -332,6 +333,7 @@ function Hud(): React.JSX.Element {
   return (
     <SessionProvider value={session}>
       {rpc && <EngineHost rpc={rpc} />}
+      <BootProgress flow={session.login} />
       {session.phase === 'login' &&
         (session.login.status === 'sign-in-or-guest' && !session.login.authPending ? (
           <GuestStartPage flow={session.login} />

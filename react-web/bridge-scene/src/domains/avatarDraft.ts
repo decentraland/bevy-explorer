@@ -20,9 +20,13 @@ let draft: AvatarLook | null = null
 // deploy leaves it behind so the next close retries — the engine keeps the change locally but won't
 // redeploy it by itself.
 let deployed: AvatarLook | null = null
+// The look the stage wears before there is a player: the guest start page's pick, which the
+// sign-in then carries, so the player arrives already wearing it.
+let standIn: AvatarLook | null = null
 identity.onChange(() => {
   draft = null
   deployed = null
+  standIn = null
 })
 
 function playerLook(): AvatarLook | null {
@@ -39,9 +43,14 @@ function playerLook(): AvatarLook | null {
   }
 }
 
-/** What the Backpack shows: the draft, else the live player. */
+/** What the stage shows: the draft, else the live player, else the stand-in. */
 export function currentLook(): AvatarLook | null {
-  return draft ?? playerLook()
+  return draft ?? playerLook() ?? standIn
+}
+
+/** The look to show while there is no player. */
+export function setStandInLook(look: AvatarLook): void {
+  standIn = look
 }
 
 /** Change the draft (seeded from the live player on the first edit). Nothing deploys until commit. */

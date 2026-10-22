@@ -55,6 +55,15 @@ impl Plugin for SystemBridgePlugin {
 /// `default_on_error` bool).
 pub const PROFILE_FETCH_FAILED: &str = "profile fetch failed";
 
+/// What an account without a profile starts as, picked before it existed (the guest start
+/// page): a name, and one of the curated default looks by number (`default<look>`). Either
+/// missing or invalid derives from the address instead.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct NewAccountPick {
+    pub name: Option<String>,
+    pub look: Option<u32>,
+}
+
 #[derive(Event, Clone, Debug, Serialize, Deserialize)]
 pub enum SystemApi {
     ConsoleCommand(String, Vec<String>, RpcResultSender<Result<String, String>>),
@@ -75,8 +84,17 @@ pub enum SystemApi {
     /// JSON read from localStorage) — no auth-server round-trip. The identity is the same
     /// regardless of how the user signed in (wallet, social, OTP, magic).
     /// bools: as for LoginPrevious; the identity is a guest account (see
-    /// `Wallet::is_guest_account`).
-    LoginWithIdentity(String, bool, bool, RpcResultSender<Result<(), String>>),
+    /// `Wallet::is_guest_account`). The pick names and dresses the profile a first login builds;
+    /// the string is the lambdas endpoint to fetch the account's profile from (the catalyst the
+    /// sign-in deployed it to), else the realm's.
+    LoginWithIdentity(
+        String,
+        bool,
+        bool,
+        Option<NewAccountPick>,
+        Option<String>,
+        RpcResultSender<Result<(), String>>,
+    ),
     LoginGuest,
     LoginCancel,
     Logout,

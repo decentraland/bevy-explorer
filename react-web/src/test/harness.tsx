@@ -179,7 +179,7 @@ export function fakeSession(): EngineSession {
     homeScene: () => null,
     avatarPreviewRect: null,
     pickDestination: vi.fn(),
-    welcome: { terms: false, newProfile: false, pending: false, saving: false, error: null, reroll: vi.fn(), accept: vi.fn(), openLegal: vi.fn() },
+    welcome: { terms: false, newProfile: false, pending: false, saving: false, error: null, reroll: vi.fn(), showLook: vi.fn(), preloadLook: vi.fn(), lookPending: false, expectLook: vi.fn(), accept: vi.fn(), openLegal: vi.fn() },
     sceneLoading: null,
     loadingProgress: 0,
     travelError: null,
@@ -236,7 +236,9 @@ export function fakeSession(): EngineSession {
       authCode: null,
       cancelLogin: vi.fn(),
       exploreAsGuest: vi.fn(),
+      acceptQueued: false,
       jumpIn: vi.fn(),
+      profile: {},
       profileFetchFailed: false,
       resetProfileAndJumpIn: vi.fn(),
       useDifferentAccount: vi.fn()

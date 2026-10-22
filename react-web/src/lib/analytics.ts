@@ -127,9 +127,9 @@ export function isAttributionParam(name: string): boolean {
 
 /** Takes the attribution params, and the resumed session, off the address bar once read: a copied
  *  link or a reload must not attribute again, and the engine's url sync echoes what is left. */
-export function dropAttributionParams(): void {
+export function dropAttributionParams(also: string[] = []): void {
   const q = new URLSearchParams(location.search)
-  for (const name of [...q.keys()]) if (isAttributionParam(name) || name === ANALYTICS_SESSION_PARAM) q.delete(name)
+  for (const name of [...q.keys()]) if (isAttributionParam(name) || name === ANALYTICS_SESSION_PARAM || also.includes(name)) q.delete(name)
   const search = q.size > 0 ? '?' + q.toString() : ''
   if (search !== location.search) history.replaceState(null, '', location.pathname + search + location.hash)
 }

@@ -614,7 +614,11 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       return
     }
     // no catalyst looks or browser to open in the mock
-    if (msg.kind === 'rerollLook' || msg.kind === 'openLegal') return
+    if (msg.kind === 'showLook') {
+      reply({ kind: 'lookShown', look: msg.look })
+      return
+    }
+    if (msg.kind === 'expectLook' || msg.kind === 'preloadLook' || msg.kind === 'openLegal') return
 
     if (msg.kind === 'sendChat') {
       // Echo the local player's message back (the engine would broadcast it); a DM is stored first.

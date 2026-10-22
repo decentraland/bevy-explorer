@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { LaunchHostOptions } from '../engine/engineRpc'
 import { SessionProvider } from '../features/session/SessionContext'
 import { WelcomePage } from '../features/welcome/WelcomePage'
@@ -45,6 +45,9 @@ async function withUrl(search: string, run: () => Promise<void>): Promise<void> 
 }
 
 describe('welcome page', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
   it('shows for a new account after sign-in, then the lobby once accepted', async () => {
     const h = renderSession(undefined, manual())
     await signIn(h)
@@ -69,8 +72,10 @@ describe('welcome page', () => {
     expect(h.driver.sentOf('teleport')).toHaveLength(0)
   })
 
-  // The guest start page took the name and the terms before the account existed.
-  it("answers the page with the guest start page's name, and shows it only if that save fails", async () => {
+  // The guest start page took the name, the look and the terms before the account existed: the
+  // sign-in carried the name and the look, so the page is answered, with the name so the new
+  // profile deploys.
+  it("answers the page for the guest start page's pick, and shows it only if that save fails", async () => {
     const h = renderSession({ userId: null }, manual())
     await waitFor(() => expect(h.session().login.status).toBe('sign-in-or-guest'))
     // nothing is created until ACCEPT AND PLAY
@@ -79,7 +84,7 @@ describe('welcome page', () => {
     await waitFor(() => expect(h.driver.sentOf('getWelcome')).toHaveLength(1))
 
     h.driver.emit({ kind: 'welcome', terms: true, newProfile: true })
-    await waitFor(() => expect(h.driver.last('acceptWelcome')).toEqual({ kind: 'acceptWelcome', name: 'QuillStonehill', look: 7 }))
+    await waitFor(() => expect(h.driver.last('acceptWelcome')).toEqual({ kind: 'acceptWelcome', name: 'QuillStonehill' }))
     expect(h.session().welcome.pending).toBe(true)
     h.driver.emit({ kind: 'welcomeAccepted', ok: false, error: 'failed to deploy to server.' })
     await waitFor(() => expect(h.session().welcome.error).toBe('failed to deploy to server.'))
@@ -89,6 +94,42 @@ describe('welcome page', () => {
     act(() => h.session().welcome.accept('QuillStonehill'))
     h.driver.emit({ kind: 'welcomeAccepted', ok: true })
     await waitFor(() => expect(h.session().phase).toBe('lobby'))
+  })
+
+  it('RANDOMIZE tells the stage a look is coming before fetching it', async () => {
+    const h = renderSession(undefined, manual())
+    await signIn(h)
+    h.driver.emit({ kind: 'welcome', terms: true, newProfile: true })
+    await waitFor(() => expect(h.session().phase).toBe('welcome'))
+    vi.stubGlobal('fetch', async () => new Response(null, { status: 404 }))
+    act(() => h.session().welcome.reroll())
+    expect(h.driver.sentOf('expectLook')).toHaveLength(1)
+    expect(h.session().welcome.lookPending).toBe(true)
+  })
+
+  // ACCEPT AND PLAY before the engine is ready keeps the click, and runs it once the engine is.
+  it('runs an ACCEPT AND PLAY clicked before the engine was ready once it is', async () => {
+    class BootingDriver extends FakeDriver {
+      ready = false
+      engineReady(): boolean {
+        return this.ready
+      }
+      launch(): void {
+        this.calls.push('launch')
+      }
+    }
+    const driver = new BootingDriver()
+    driver.welcome = null
+    const h = renderSession({ userId: null }, driver)
+    await waitFor(() => expect(h.session().login.status).toBe('sign-in-or-guest'))
+    expect(h.session().login.engineReady).toBe(false)
+    act(() => h.session().login.exploreAsGuest({ name: 'QuillStonehill', look: 7 }))
+    expect(h.session().login.acceptQueued).toBe(true)
+    expect(driver.calls.filter((c) => /login|launch/i.test(c) && c !== 'getPreviousLogin')).toEqual([])
+    driver.ready = true
+    await waitFor(() => expect(h.session().login.acceptQueued).toBe(false))
+    await waitFor(() => expect(driver.calls).toContain('loginGuest'))
+    expect(driver.calls).toContain('launch')
   })
 
   // A failed guest sign-in must not hand its name to the account signed in next on the page.

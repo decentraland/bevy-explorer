@@ -25,7 +25,7 @@ use comms::profile::{
 };
 use ipfs::{IpfsAssetServer, IpfsIo};
 use scene_runner::Toaster;
-use system_bridge::{NativeUi, SystemApi, WelcomeState, PROFILE_FETCH_FAILED};
+use system_bridge::{NativeUi, NewAccountPick, SystemApi, WelcomeState, PROFILE_FETCH_FAILED};
 use tokio::sync::oneshot::error::TryRecvError;
 use ui_core::{
     button::DuiButton,
@@ -392,6 +392,7 @@ async fn get_profile_with_retry(
     address: Address,
     ipfs: std::sync::Arc<IpfsIo>,
     default_on_error: bool,
+    endpoint: Option<String>,
 ) -> Result<Option<UserProfile>, String> {
     const ATTEMPTS: u32 = 5;
     let mut last_error = String::default();
@@ -399,7 +400,7 @@ async fn get_profile_with_retry(
         if attempt > 0 {
             async_std::task::sleep(std::time::Duration::from_secs(2)).await;
         }
-        match get_remote_profile(address, ipfs.clone(), None).await {
+        match get_remote_profile(address, ipfs.clone(), endpoint.clone()).await {
             Ok(maybe_profile) => return Ok(maybe_profile),
             Err(e) => last_error = e.to_string(),
         }
@@ -419,16 +420,38 @@ enum LoginProfile {
     New(UserProfile),
 }
 
+// How long a sign-in without a pick keeps asking for a profile the catalyst says it doesn't have.
+const MISSING_PROFILE_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
+
 async fn login_profile(
     root_address: Address,
     ipfs: std::sync::Arc<IpfsIo>,
     default_on_error: bool,
+    pick: Option<NewAccountPick>,
+    endpoint: Option<String>,
 ) -> Result<LoginProfile, String> {
-    match get_profile_with_retry(root_address, ipfs.clone(), default_on_error).await? {
-        Some(profile) => Ok(LoginProfile::Deployed(profile)),
-        None => Ok(LoginProfile::New(
-            new_account_profile(root_address, ipfs).await,
-        )),
+    // An account signed in without a pick is expected to have a profile (the auth site makes one
+    // with the account): none can be one still syncing to this realm's catalyst, so it is asked
+    // for again for a while before a default is built over it. A pick is a new account's.
+    let deadline = bevy::platform::time::Instant::now() + MISSING_PROFILE_WAIT;
+    loop {
+        if let Some(profile) = get_profile_with_retry(
+            root_address,
+            ipfs.clone(),
+            default_on_error,
+            endpoint.clone(),
+        )
+        .await?
+        {
+            return Ok(LoginProfile::Deployed(profile));
+        }
+        if pick.is_some() || bevy::platform::time::Instant::now() >= deadline {
+            return Ok(LoginProfile::New(
+                new_account_profile(root_address, ipfs, pick).await,
+            ));
+        }
+        debug!("no profile for {root_address:#x} yet; asking again");
+        async_std::task::sleep(std::time::Duration::from_secs(2)).await;
     }
 }
 
@@ -492,11 +515,24 @@ fn guest_look_index(address: &Address) -> u32 {
     u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) % DEFAULT_LOOKS + 1
 }
 
+/// Whether a name follows the unclaimed-name rule (see GUEST_FIRST_NAMES).
+fn valid_unclaimed_name(name: &str) -> bool {
+    !name.is_empty() && name.len() <= 15 && name.chars().all(|c| c.is_ascii_alphanumeric())
+}
+
 /// An account without a profile gets a name and one of the curated default looks, so it
-/// doesn't start as every other new account. Falls back to the engine's default look if the
-/// catalyst can't provide one.
-async fn new_account_profile(address: Address, ipfs: std::sync::Arc<IpfsIo>) -> UserProfile {
-    let index = guest_look_index(&address);
+/// doesn't start as every other new account: the pick's when it carries them, else derived
+/// from the address. Falls back to the engine's default look if the catalyst can't provide one.
+async fn new_account_profile(
+    address: Address,
+    ipfs: std::sync::Arc<IpfsIo>,
+    pick: Option<NewAccountPick>,
+) -> UserProfile {
+    let pick = pick.unwrap_or_default();
+    let index = pick
+        .look
+        .filter(|look| (1..=DEFAULT_LOOKS).contains(look))
+        .unwrap_or_else(|| guest_look_index(&address));
     let look = match get_default_look(ipfs.clone(), index).await {
         Ok(Some(look)) => Some(look.content.avatar),
         Ok(None) => {
@@ -509,7 +545,10 @@ async fn new_account_profile(address: Address, ipfs: std::sync::Arc<IpfsIo>) -> 
         }
     };
     let mut profile = new_profile(address, &ipfs);
-    profile.content.name = guest_name(&address);
+    profile.content.name = pick
+        .name
+        .filter(|name| valid_unclaimed_name(name))
+        .unwrap_or_else(|| guest_name(&address));
     if let Some(look) = look {
         let own = &mut profile.content.avatar;
         own.body_shape = look.body_shape;
@@ -586,7 +625,8 @@ fn process_login_bridge(
             }
             // the account can only change while the world is held (the lobby): once in
             // world, comms and scenes are bound to the wallet that entered
-            SystemApi::LoginPrevious(_, sender) | SystemApi::LoginWithIdentity(_, _, _, sender)
+            SystemApi::LoginPrevious(_, sender)
+            | SystemApi::LoginWithIdentity(_, _, _, _, _, sender)
                 if account_locked(&wallet, &world_hold) =>
             {
                 sender.send(Err(ACCOUNT_LOCKED.to_owned()));
@@ -616,13 +656,15 @@ fn process_login_bridge(
                         guest_account,
                     } = previous_login;
 
-                    let profile = match login_profile(root_address, ipfs, default_on_error).await {
-                        Ok(profile) => profile,
-                        Err(e) => {
-                            rpc_result_sender.send(Err(e));
-                            return Err(());
-                        }
-                    };
+                    let profile =
+                        match login_profile(root_address, ipfs, default_on_error, None, None).await
+                        {
+                            Ok(profile) => profile,
+                            Err(e) => {
+                                rpc_result_sender.send(Err(e));
+                                return Err(());
+                            }
+                        };
 
                     let local_wallet =
                         PrivateKeySigner::from_bytes(&B256::from_slice(&ephemeral_key)).unwrap();
@@ -663,13 +705,15 @@ fn process_login_bridge(
                             }
                         };
 
-                    let profile = match login_profile(root_address, ipfs, default_on_error).await {
-                        Ok(profile) => profile,
-                        Err(e) => {
-                            result_sender.send(Err(e));
-                            return Err(());
-                        }
-                    };
+                    let profile =
+                        match login_profile(root_address, ipfs, default_on_error, None, None).await
+                        {
+                            Ok(profile) => profile,
+                            Err(e) => {
+                                result_sender.send(Err(e));
+                                return Err(());
+                            }
+                        };
 
                     Ok((
                         root_address,
@@ -685,6 +729,8 @@ fn process_login_bridge(
                 payload,
                 default_on_error,
                 guest_account,
+                pick,
+                profiles,
                 rpc_result_sender,
             ) => {
                 // The web page already holds a signed AuthIdentity (read from localStorage,
@@ -700,13 +746,16 @@ fn process_login_bridge(
                         }
                     };
 
-                    let profile = match login_profile(root_address, ipfs, default_on_error).await {
-                        Ok(profile) => profile,
-                        Err(e) => {
-                            rpc_result_sender.send(Err(e));
-                            return Err(());
-                        }
-                    };
+                    let profile =
+                        match login_profile(root_address, ipfs, default_on_error, pick, profiles)
+                            .await
+                        {
+                            Ok(profile) => profile,
+                            Err(e) => {
+                                rpc_result_sender.send(Err(e));
+                                return Err(());
+                            }
+                        };
 
                     Ok((
                         root_address,
