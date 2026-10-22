@@ -423,6 +423,8 @@ web-sys = { workspace = true }
 once_cell = { workspace = true }
 web-fs = { workspace = true }
 async-std = { workspace = true }
+# for WindowExtWebSys::set_render_scale (Render Resolution); patched to the fork below
+winit = { version = "0.30", default-features = false }
 
 [build-dependencies]
 prost-build = "0.11.8"
@@ -514,7 +516,8 @@ deno_webstorage = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfi
 gltf = { git = "https://github.com/gltf-rs/gltf", rev = "12fc1b7c" }
 gltf-json = { git = "https://github.com/gltf-rs/gltf", rev = "12fc1b7c" }
 
-winit = { git = "https://github.com/robtfm/winit", branch = "v0.30.x" }
+# set_render_scale (robtfm/winit#2); back to branch v0.30.x once it merges
+winit = { git = "https://github.com/leanmendoza/winit", branch = "render-scale" }
 wgpu = { git = "https://github.com/robtfm/wgpu", branch = "24.0.5-dcl" }
 wgpu-types = { git = "https://github.com/robtfm/wgpu", branch = "24.0.5-dcl" }
 naga = { git = "https://github.com/robtfm/wgpu", branch = "24.0.5-dcl" }

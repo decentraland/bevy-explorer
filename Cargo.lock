@@ -4463,6 +4463,7 @@ dependencies = [
  "web-sys",
  "web-time",
  "wgpu",
+ "winit",
  "world_ui",
  "zip 2.4.2",
 ]
@@ -4969,7 +4970,7 @@ dependencies = [
 [[package]]
 name = "dpi"
 version = "0.1.1"
-source = "git+https://github.com/robtfm/winit?branch=v0.30.x#29c7b96d1baa87be9c31c34228dee1937503be76"
+source = "git+https://github.com/leanmendoza/winit?branch=render-scale#b5ecba0c06b7695991205ee9fc6d0d1a8415e6f0"
 
 [[package]]
 name = "draco-nd-vector"
@@ -14387,7 +14388,7 @@ checksum = "d6bbff5f0aada427a1e5a6da5f1f98158182f26556f345ac9e04d36d0ebed650"
 [[package]]
 name = "winit"
 version = "0.30.12"
-source = "git+https://github.com/robtfm/winit?branch=v0.30.x#29c7b96d1baa87be9c31c34228dee1937503be76"
+source = "git+https://github.com/leanmendoza/winit?branch=render-scale#b5ecba0c06b7695991205ee9fc6d0d1a8415e6f0"
 dependencies = [
  "android-activity",
  "atomic-waker",
