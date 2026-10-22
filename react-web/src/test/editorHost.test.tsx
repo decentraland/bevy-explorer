@@ -15,6 +15,7 @@ import { MainMenuShell } from '../features/menu/MainMenuShell'
 import { Sidebar } from '../features/sidebar/Sidebar'
 import { bridgeChannelName, type Envelope } from '../engine/protocol'
 import { PAGE_DIR } from '../lib/publicUrl'
+import { pending } from '../lib/analytics'
 import { fakeSession } from './harness'
 
 type HostWindow = Window & {
@@ -206,6 +207,15 @@ describe('editor host', () => {
     await host().engineConsole('/walk_player_to 5 2 3.5 5')
     expect(engineConsole.mock.calls.map(([line]) => line)).toEqual(['/time', `/reload ${own}`, `set_scene ${own}`, '/walk_player_to 5 2 3.5 5'])
     engineConsole.mockClear()
+
+    // its analytics join the page's queue, as its one event and nothing else
+    const queued = pending().length
+    host().track('App Opened', { trigger: 'icon' })
+    host().track('Creator Action', ['editor_opened'] as unknown as Record<string, unknown>)
+    host().track('Creator Action', { action: 'editor_opened', surface: 'web_editor' })
+    expect(pending().slice(queued).map(({ event, properties }) => ({ event, properties }))).toEqual([
+      { event: 'Creator Action', properties: { action: 'editor_opened', surface: 'web_editor' } }
+    ])
 
     // the engine's url sync, as boot.js receives it while on the preview realm
     w.set_url_params!(JSON.stringify({ realm, position: '4,-2', editor: false }))
