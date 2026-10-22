@@ -61,9 +61,11 @@ const pick = (words: string[]): string => words[Math.floor(Math.random() * words
 // comms::profile::DEFAULT_LOOKS: the curated looks a new account gets, `default1` to `default160`
 const DEFAULT_LOOKS = 160
 
-/** One of the curated default looks, by number. */
-export function randomDefaultLook(): number {
-  return 1 + Math.floor(Math.random() * DEFAULT_LOOKS)
+/** One of the curated default looks, by number, never `previous`. */
+export function randomDefaultLook(previous?: number): number {
+  let look = previous
+  while (look === previous) look = 1 + Math.floor(Math.random() * DEFAULT_LOOKS)
+  return look as number
 }
 
 /** A random name, never `previous` (the dice always changes it). */
