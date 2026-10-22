@@ -232,7 +232,10 @@ return from the sign-in redirect continues it (the shell keeps it in sessionStor
 back as `analyticsSession`). Expectations:
 
 - **Boot** (`bootAnalytics`, `main.tsx`): `App Opened` then `Screen Viewed` START, except on the
-  return from the sign-in redirect.
+  return from the sign-in redirect. Between them, when the link carries a campaign (`utm_*`,
+  `gad_*`, ad click ids), `Install Attribution` in mobile's install-referrer shape:
+  `attribution_source` `url`, `referrer` the raw campaign params, plus the `utm_*`, `gclid`,
+  `gbraid` and `wbraid` columns.
 - **Sign-in link** (`authLoginUrl`): the entry's `utm_*` params ride along, so the auth site's
   own Segment calls carry the campaign and tie it to the address it signs in. Once read, the
   shell and the app take the attribution params (`utm_*`, `gad_*`, ad click ids such as `gclid`,
@@ -260,6 +263,7 @@ back as `analyticsSession`). Expectations:
   Once gtag.js is up the shell posts GA4's ids back (`bevy-shell:google-tag` {client_id, session_id}),
   and the app sends them as `Google Tag Linked` {ga_client_id, ga_session_id}: the GA4 export's
   `user_pseudo_id` / `ga_session_id` on the Segment session, the join both ways (`listenForGoogleTag`).
-- Tests: `src/test/analytics.test.ts` (stamping, the handoff, the rejected send),
+- Tests: `src/test/analytics.test.ts` (stamping, the handoff, the rejected send, `Google Tag Linked`),
+  `src/test/analytics.boot.test.ts` (the boot events, `Install Attribution`),
   `src/test/analytics.session.test.tsx` (the sequences above), `engineDriver.test.ts` (the session
   id at launch), `entryParams.test.ts` (campaign params).

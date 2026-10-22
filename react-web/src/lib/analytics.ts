@@ -162,6 +162,24 @@ export function bootAnalytics(): void {
     prev_session_id: '',
     seconds_since_last_seen: -1
   })
+  // the entry's campaign, shaped as mobile's install referrer: the raw string keeps any param a
+  // platform adds later, the columns the ones read most
+  const campaign = [...entry].filter(([name]) => isCampaignParam(name))
+  if (campaign.length > 0) {
+    const param = (name: string): string | null => entry.get(name)
+    track('Install Attribution', {
+      attribution_source: 'url',
+      referrer: new URLSearchParams(campaign).toString(),
+      utm_source: param('utm_source'),
+      utm_medium: param('utm_medium'),
+      utm_campaign: param('utm_campaign'),
+      utm_term: param('utm_term'),
+      utm_content: param('utm_content'),
+      gclid: param('gclid'),
+      gbraid: param('gbraid'),
+      wbraid: param('wbraid')
+    })
+  }
   screenViewed('START', { startup_time_ms: Math.round(performance.now()), platform: 'web' })
 }
 
