@@ -145,6 +145,10 @@ impl Plugin for SettingBridgePlugin {
         schedule.add_systems(
             apply_setting::<ShadowSetting>.after(apply_setting::<ShadowDistanceSetting>),
         );
+        app.add_systems(
+            Update,
+            apply_to_camera::<ShadowSetting>.in_set(SceneSets::RestrictedActions),
+        );
 
         add_enum_setting::<ImposterSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<ParcelGrassSetting>(app, &mut settings, &mut schedule, &config);
@@ -235,7 +239,7 @@ impl Display for SettingCategory {
     }
 }
 
-pub trait AppSetting: Eq + 'static {
+pub trait AppSetting: Eq + Send + Sync + 'static {
     type Param: SystemParam + 'static;
     fn title() -> String;
     fn description(&self) -> String;
@@ -460,14 +464,22 @@ impl ActiveCameras {
     }
 }
 
+// Only a changed value is applied: the config also changes for reasons that are no setting
+// (terms, home scene), and re-applying touches every camera and light.
 fn apply_setting<S: AppSetting>(
     params: StaticSystemParam<S::Param>,
     config: Res<AppConfig>,
     mut commands: Commands,
     mut cameras: ResMut<ActiveCameras>,
+    mut applied: Local<Option<S>>,
 ) {
+    let setting = S::load(&config);
+    if applied.as_ref() == Some(&setting) {
+        return;
+    }
     let cameras = cameras.get(&mut commands);
-    S::load(&config).apply(params.into_inner(), commands, cameras);
+    setting.apply(params.into_inner(), commands, cameras);
+    *applied = Some(setting);
 }
 
 pub fn record_cameras(
