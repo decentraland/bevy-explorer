@@ -104,6 +104,19 @@ describe('untrustedLaunchParams', () => {
     }
   })
 
+  it('gates a pulse certificate pin whatever its value, native exempt', () => {
+    window.history.replaceState(null, '', '/?pulseServer=pulse-server.decentraland.zone&pulseCertificateHash=' + 'ab'.repeat(32))
+    try {
+      const [p, ...rest] = untrustedLaunchParams({ native: false })
+      expect(rest).toEqual([])
+      expect(p.name).toBe('pulseCertificateHash')
+      expect(p.warning).toMatch(/self-signed certificate/)
+      expect(untrustedLaunchParams({ native: true })).toEqual([])
+    } finally {
+      window.history.replaceState(null, '', '/')
+    }
+  })
+
   it('gates an authority service by its host like the rest', () => {
     window.history.replaceState(null, '', '/?pulseServer=pulse-server.decentraland.zone:7777')
     try {

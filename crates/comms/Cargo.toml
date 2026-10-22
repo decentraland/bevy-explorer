@@ -18,6 +18,7 @@ wallet = { workspace = true }
 platform = { workspace = true }
 system_bridge = { workspace = true }
 livestream_manager = { workspace = true }
+input_manager = { workspace = true }
 
 bevy = { workspace = true }
 bimap = { workspace = true }
@@ -43,6 +44,7 @@ num-traits = { workspace = true }
 http = { workspace = true }
 multihash-codetable = { workspace = true }
 web-time = { workspace = true }
+base64 = { workspace = true }
 
 modular-bitfield = "0.11"
 

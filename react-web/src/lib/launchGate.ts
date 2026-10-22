@@ -81,6 +81,16 @@ for (const s of SERVICES) {
   }
 }
 for (const name of Object.keys(GATES)) webParam(name)
+// The Pulse certificate pin is a PAGE param (lib/entryParams.ts), not a table one: it makes the
+// browser accept a non-CA certificate for the comms server, so whoever holds that certificate and
+// the network path could stand in for it. No value is trusted; a developer pinning a local server
+// clicks through once.
+GATES.pulseCertificateHash = {
+  warning:
+    'Makes the Explorer accept a self-signed certificate for its comms server. Whoever holds that certificate could stand in for the server and see where players are.',
+  read: (native) => (native ? null : new URLSearchParams(location.search).get('pulseCertificateHash')),
+  isTrusted: () => false
+}
 
 /** The gated params whose entry-url value this front-end doesn't recognise. Empty = boot. */
 export function untrustedLaunchParams({ native }: { native: boolean }): UntrustedParam[] {

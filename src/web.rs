@@ -283,6 +283,21 @@ pub fn engine_terms_accepted() -> bool {
         .is_some_and(|config| config.terms_accepted())
 }
 
+/// Page side, before [`engine_start`]: pin the Pulse server's certificate for the WebTransport
+/// driver, so a self-signed server (a local or test deployment, named by `pulseServer`) is
+/// reachable. `hash` is the certificate's SHA-256, in hex or in the base64 the Pulse dev server
+/// logs; anything else throws, failing the boot rather than silently falling back to the CA
+/// chain. The browser's `serverCertificateHashes` rules apply: ECDSA, valid for at most 14 days.
+/// Unset, production's CA-signed certificate is trusted by default. Not a launch option: native
+/// speaks ENet and could never use it.
+#[wasm_bindgen]
+pub fn engine_set_pulse_certificate_hash(hash: &str) -> Result<(), JsValue> {
+    let digest =
+        comms::pulse::plugin::parse_certificate_hash(hash).map_err(|e| JsValue::from_str(&e))?;
+    comms::pulse::plugin::set_certificate_hash(digest);
+    Ok(())
+}
+
 /// The Segment request for an Explorer Error, as JSON `{ url, body }`, built on the page thread
 /// from the snapshot the engine keeps (`analytics::crash`): for boot.js's crash watchdog, once
 /// the engine worker can no longer send anything itself. Null before the terms are accepted, or

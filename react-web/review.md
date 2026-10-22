@@ -232,11 +232,18 @@ return from the sign-in redirect continues it (the shell keeps it in sessionStor
 back as `analyticsSession`). Expectations:
 
 - **Boot** (`bootAnalytics`, `main.tsx`): `App Opened` then `Screen Viewed` START, except on the
-  return from the sign-in redirect.
+  return from the sign-in redirect. Between them, when the link carries a campaign (`utm_*`,
+  `gad_*`, ad click ids; GA's cross-domain `_gl` alone does not count), `Install Attribution` in
+  mobile's install-referrer shape, told apart from mobile's by `platform` `web` and
+  `attribution_source` `url` (one per page load with a campaign, not per install): `referrer` the
+  raw campaign params, the `utm_*`, `gclid`, `gbraid` and `wbraid` columns, and `page_session_id`,
+  this load's session. Join on that, not on the common `session_id`: the queue outlives a load
+  that bounces before the engine is up, and the engine stamps the session of the load that sends it.
 - **Sign-in link** (`authLoginUrl`): the entry's `utm_*` params ride along, so the auth site's
   own Segment calls carry the campaign and tie it to the address it signs in. Once read, the
-  shell and the app take the attribution params off the address bar (`dropAttributionParams`),
-  so a copied link or a reload does not attribute again.
+  shell and the app take the attribution params (`utm_*`, `gad_*`, ad click ids such as `gclid`,
+  the landing page's anonymous id) off the address bar (`dropAttributionParams`), so a copied link
+  or a reload does not attribute again; the Google tag gets them from what the shell kept at load.
 - **Sign-in** (`useEngineSession`): ACCOUNT_HOME, COMEBACK (after a failed stored sign-in),
   ACCOUNT_GUEST_CREATE, AUTH_BROWSER_OPEN, AUTH_SUCCESS {login_type}, AUTH_ERROR {error}; clicks
   SIGN_IN, PLAY_GUEST, lets_go, use_another_account, try_again. `Guest Wallet Creation` wraps the
@@ -249,11 +256,19 @@ back as `analyticsSession`). Expectations:
   (`crates/analytics/src/loading.rs`), the one `sceneLoading` mirrors here.
 - **Social**: Friend Request, Friend Accept, Unfriend, Block User on the action.
 - **In world**: the first `world` phase of a page load, with the terms accepted (the welcome
-  flow's answer, or the engine's persisted config), posts `bevy-shell:in-world` {login_type} to
-  the shell, the one message that leaves the page for anyone but the engine. On decentraland.org
+  flow's answer, or the engine's persisted config), posts `bevy-shell:in-world` {login_type,
+  session_id} to the shell, the one message that leaves the page for anyone but the engine. On decentraland.org
   only, never for a `preview=true` page, once per tab session, the shell then loads the Google
-  tag for the Explorer GA4 stream and sends `web_in_world`, the Google Ads conversion
-  (`shell/googleTag.ts`). Nothing of Google's loads before that moment.
-- Tests: `src/test/analytics.test.ts` (stamping, the handoff, the rejected send),
+  tag for the Explorer GA4 stream and sends `bevy_first_move_in_world`, the Google Ads conversion,
+  with the user property `login_type` `guest` or `web3`, the event param `dcl_session_id` (the
+  Segment session), and as its page the url the tab arrived
+  with, keeping only its `utm_*` and ad click ids (`shell/googleTag.ts`). Nothing of Google's loads before that moment.
+  Once gtag.js is up the shell posts GA4's ids back (`bevy-shell:google-tag` {client_id, session_id}),
+  and the app sends them as `Google Tag Linked` {ga_client_id, ga_session_id (null when GA4 gives
+  none)}: the GA4 export's `user_pseudo_id` / `ga_session_id` on the Segment session, taken at the
+  conversion (`shell/googleTag.ts` `onInWorld`, `listenForGoogleTag` over `lib/shell.ts`
+  `onShellMessage`).
+- Tests: `src/test/analytics.test.ts` (stamping, the handoff, the rejected send, `Google Tag Linked`),
+  `src/test/analytics.boot.test.ts` (the boot events, `Install Attribution`),
   `src/test/analytics.session.test.tsx` (the sequences above), `engineDriver.test.ts` (the session
   id at launch), `entryParams.test.ts` (campaign params).

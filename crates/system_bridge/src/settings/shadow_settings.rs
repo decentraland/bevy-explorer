@@ -66,51 +66,7 @@ impl AppSetting for ShadowSetting {
         mut commands: Commands,
         cameras: &HashSet<Entity>,
     ) {
-        let value = if config.graphics.shadow_distance == 0.0 {
-            ShadowSetting::Off
-        } else {
-            *self
-        };
-
-        for (mut light, mut cascades) in lights.iter_mut() {
-            match value {
-                ShadowSetting::Off => {
-                    light.shadows_enabled = false;
-                }
-                ShadowSetting::Low => {
-                    light.shadows_enabled = true;
-                    *cascades = CascadeShadowConfigBuilder {
-                        num_cascades: 1,
-                        minimum_distance: MIN_CASCADE,
-                        maximum_distance: config
-                            .graphics
-                            .shadow_distance
-                            .max(MIN_CASCADE + f32::EPSILON),
-                        first_cascade_far_bound: config
-                            .graphics
-                            .shadow_distance
-                            .max(MIN_CASCADE + f32::EPSILON),
-                        overlap_proportion: 0.2,
-                    }
-                    .build()
-                }
-                ShadowSetting::High => {
-                    light.shadows_enabled = true;
-                    *cascades = CascadeShadowConfigBuilder {
-                        num_cascades: 4,
-                        minimum_distance: MIN_CASCADE,
-                        maximum_distance: config
-                            .graphics
-                            .shadow_distance
-                            .max(MIN_CASCADE + f32::EPSILON),
-                        first_cascade_far_bound: (config.graphics.shadow_distance / 15.0)
-                            .max(MIN_CASCADE + f32::EPSILON),
-                        overlap_proportion: 0.2,
-                    }
-                    .build()
-                }
-            }
-        }
+        apply_shadows(*self, config.graphics.shadow_distance, &mut lights);
 
         let res = &(config, cam_res, lights);
         for &cam in cameras {
@@ -139,6 +95,49 @@ impl AppSetting for ShadowSetting {
     }
 }
 
+// The sun's shadows for a quality and a distance (settings of their own, each applying this).
+fn apply_shadows(
+    setting: ShadowSetting,
+    distance: f32,
+    lights: &mut Query<(&mut DirectionalLight, &mut CascadeShadowConfig)>,
+) {
+    let value = if distance == 0.0 {
+        ShadowSetting::Off
+    } else {
+        setting
+    };
+
+    for (mut light, mut cascades) in lights.iter_mut() {
+        match value {
+            ShadowSetting::Off => {
+                light.shadows_enabled = false;
+            }
+            ShadowSetting::Low => {
+                light.shadows_enabled = true;
+                *cascades = CascadeShadowConfigBuilder {
+                    num_cascades: 1,
+                    minimum_distance: MIN_CASCADE,
+                    maximum_distance: distance.max(MIN_CASCADE + f32::EPSILON),
+                    first_cascade_far_bound: distance.max(MIN_CASCADE + f32::EPSILON),
+                    overlap_proportion: 0.2,
+                }
+                .build()
+            }
+            ShadowSetting::High => {
+                light.shadows_enabled = true;
+                *cascades = CascadeShadowConfigBuilder {
+                    num_cascades: 4,
+                    minimum_distance: MIN_CASCADE,
+                    maximum_distance: distance.max(MIN_CASCADE + f32::EPSILON),
+                    first_cascade_far_bound: (distance / 15.0).max(MIN_CASCADE + f32::EPSILON),
+                    overlap_proportion: 0.2,
+                }
+                .build()
+            }
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct ShadowDistanceSetting(i32);
 
@@ -161,7 +160,19 @@ impl IntAppSetting for ShadowDistanceSetting {
 }
 
 impl AppSetting for ShadowDistanceSetting {
-    type Param = ();
+    type Param = (
+        SRes<AppConfig>,
+        SQuery<(Write<DirectionalLight>, Write<CascadeShadowConfig>)>,
+    );
+
+    fn apply(
+        &self,
+        (config, mut lights): SystemParamItem<Self::Param>,
+        _: Commands,
+        _: &HashSet<Entity>,
+    ) {
+        apply_shadows(ShadowSetting::load(&config), self.0 as f32, &mut lights);
+    }
 
     fn title() -> String {
         "Shadow Distance".to_owned()

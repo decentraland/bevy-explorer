@@ -12,6 +12,15 @@ export function postToShell(message: { type: string; [key: string]: unknown }): 
   window.parent.postMessage(message, location.origin)
 }
 
+/** A message the shell posts on its own rather than as an answer to a request, by type. */
+export function onShellMessage(type: string, handler: (message: Record<string, unknown>) => void): void {
+  window.addEventListener('message', (e: MessageEvent) => {
+    if (e.source !== window.parent || e.origin !== location.origin) return
+    const m = e.data as Record<string, unknown> | null
+    if (m?.type === type) handler(m)
+  })
+}
+
 const REQUEST_TIMEOUT_MS = 10_000
 let nextId = 0
 const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>()

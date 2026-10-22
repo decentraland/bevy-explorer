@@ -53,6 +53,11 @@ function injectEngine(): void {
     baseDomain: BASE_DOMAIN,
     systemScene: bootMode().systemScene ?? SYSTEM_SCENE
   }
+  // A page switch, not a launch option (native could never use it): boot.js hands it to the wasm
+  // directly. Gated like a service override (lib/launchGate.ts). A query value decodes `+` as a
+  // space; base64 has no spaces, so each one was a `+`.
+  const pulseCertificateHash = params.get('pulseCertificateHash')?.replaceAll(' ', '+')
+  if (pulseCertificateHash) window.__bevyPulseCertificateHash = pulseCertificateHash
 
   // The engine's signer for an identity whose key the web shell holds (crates/wallet remote_signer):
   // the ephemeral address and the message to sign, answered with the signature's hex.
@@ -79,6 +84,9 @@ declare global {
     // Forwarded verbatim to the engine's launch options (src/web_options.rs, keyed by the web
     // param table) — an unknown key fails the launch.
     __bevyBootConfig?: LaunchOptions
+    // The SHA-256 (hex or base64) of a self-signed Pulse server's certificate to pin the
+    // WebTransport connection to; boot.js passes it to engine_set_pulse_certificate_hash.
+    __bevyPulseCertificateHash?: string
     __signMessage?: (signer: string, message: string) => Promise<string>
   }
 }

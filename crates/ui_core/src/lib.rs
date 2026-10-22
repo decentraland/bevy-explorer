@@ -182,35 +182,22 @@ fn setup(
         .load_font_data(include_bytes!("NotoColorEmoji.ttf").to_vec());
 
     // tracker.load_asset(asset_server.load_folder("ui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/app_settings.dui"));
     tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/avatar.dui"));
     tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/button.dui"));
     tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/change-realm.dui"));
     tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/chat.dui"));
     tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/combo.dui"));
     tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/dialog.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/discover.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/emote-select.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/emote.dui"));
-    tracker
-        .load_asset(asset_server.load::<DuiNodeList>("embedded://ui/foreign-profile-dialog.dui"));
     tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/fullscreen-block.dui"));
     tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/login.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/map.dui"));
     tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/minimap.dui"));
     tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/motd.dui"));
     tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/nft-dialog.dui"));
     tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/oow.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/permissions-dialog.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/permissions.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/profile-detail.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/profile.dui"));
     tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/spinner.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/toast.dui"));
     tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/tracker.dui"));
     tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/update.dui"));
     tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/utils.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/wearables.dui"));
 
     // tracker.load_asset(asset_server.load_folder("embedded://images"));
 

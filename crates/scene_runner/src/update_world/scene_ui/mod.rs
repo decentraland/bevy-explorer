@@ -738,6 +738,16 @@ fn create_ui_roots(
                 }
             };
 
+            // A root already up is restyled in place: a new root relinks, and so rebuilds, every
+            // node beneath it.
+            if let Some(mut existing) = maybe_link
+                .as_ref()
+                .and_then(|link| commands.get_entity(link.ui_entity).ok())
+            {
+                existing.try_insert(root_style);
+                continue;
+            }
+
             let window_root = commands
                 .spawn((
                     root_style,
@@ -994,7 +1004,6 @@ fn layout_scene_ui(
     player: Query<Entity, With<PrimaryUser>>,
     containing_scene: ContainingScene,
     ui_nodes: Query<(&SceneEntity, Ref<UiTransform>, &ChildOf)>,
-    config: Res<AppConfig>,
     mut removed_transforms: RemovedComponents<UiTransform>,
     ui_links: Query<&UiLink>,
     dui: Res<DuiRegistry>,
@@ -1014,16 +1023,13 @@ fn layout_scene_ui(
         }
 
         let any_removed = removed_transforms.iter().any(|r| ui_data.nodes.contains(r));
-        if !(ui_data.relayout || config.is_changed() || any_removed) {
+        if !(ui_data.relayout || any_removed) {
             continue;
         }
 
         debug!(
-            "redraw {:?} ui (removed: {}, relayout: {}, config changed: {})",
-            scene_root,
-            any_removed,
-            ui_data.relayout,
-            config.is_changed()
+            "redraw {:?} ui (removed: {}, relayout: {})",
+            scene_root, any_removed, ui_data.relayout
         );
         ui_data.relayout = false;
 

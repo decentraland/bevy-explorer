@@ -10,6 +10,7 @@ import type { Signer } from './signer'
 import type { SignMessage } from './sign'
 import { inShell, shellRequest } from '../../../lib/shell'
 import { entryRealm } from '../../../lib/entryParams'
+import { track } from '../../../lib/analytics'
 // Vite's worker pipeline is what bundles a file on its own; this one is loaded by script tag.
 import signerUrl from './signer.ts?worker&url'
 
@@ -74,6 +75,9 @@ export interface DclEditorHostV1 {
   /** Ask the player to confirm a Worlds deployment, then sign its entity id. Rejects 'cancelled'
    *  when declined and 'not-signed-in' for a guest. */
   signDeployment: (request: DeploymentRequest) => Promise<AuthChainLink[]>
+  /** Queue a `Creator Action` event with the page's own (lib/analytics), which the engine posts
+   *  with its common fields. Any other event name is dropped. */
+  track: (event: string, properties?: Record<string, unknown>) => void
   /** Leave the scene as exit() does, then show the HUD's Create page. */
   openCreatePage: () => void
   /** Unmount the editor, kill its scene, restore the HUD and the clock, and travel back. */
@@ -128,6 +132,8 @@ interface Home {
 }
 
 const PARCEL = /^(-?\d+),(-?\d+)$/
+// the editor's only event: it must not pass for the page's funnel or the engine's
+const EDITOR_EVENT = 'Creator Action'
 // engine.js runs each scene server in a hidden frame and has no stop: removing the frame ends it
 const SERVER_FRAME = 'iframe[src$="/headless.html"]'
 // What the editor drives through the console: the scene it edits. Never spawn, kill, login or a
@@ -473,6 +479,10 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
       if (!(await deps.confirmDeployment(request, identity.authChain[0].payload, server))) throw new Error('cancelled')
       const loaded = await loadSigner()
       return loaded.signDeployment(identity, request.entityId, signerFor(loaded, identity))
+    },
+    track(event, properties = {}) {
+      if (event !== EDITOR_EVENT || typeof properties !== 'object' || properties === null || Array.isArray(properties)) return
+      track(event, { ...properties })
     },
     openCreatePage() {
       leave()

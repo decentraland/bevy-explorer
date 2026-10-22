@@ -2,7 +2,7 @@ use alloy_core::primitives::Address;
 use bevy::{platform::collections::HashMap, prelude::*};
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
-    structs::{ShowProfileEvent, SystemAudio},
+    structs::SystemAudio,
     util::{format_address, TryPushChildrenEx},
 };
 use comms::profile::ProfileManager;
@@ -263,10 +263,6 @@ pub fn update_friends(
                                     format!("<b>{}</b>", format_address(friend, None)),
                                 )
                                 .with_prop(
-                                    "profile",
-                                    ShowProfileEvent(friend).send_value_on::<Click>(),
-                                )
-                                .with_prop(
                                     "chat",
                                     ShowConversationEvent(friend).send_value_on::<Click>(),
                                 ),
@@ -298,7 +294,6 @@ pub fn update_friends(
                                     "name",
                                     format!("<b>{}</b>", format_address(friend, None)),
                                 )
-                                .with_prop("profile", ShowProfileEvent(friend).send_value_on::<Click>())
                                 .with_prop(
                                     "cancel",
                                     On::<Click>::new(move |mut client: ResMut<SocialClient>, mut commands: Commands| {
@@ -340,7 +335,6 @@ pub fn update_friends(
                                     "name",
                                     format!("<b>{}</b>", format_address(friend, None)),
                                 )
-                                .with_prop("profile", ShowProfileEvent(friend).send_value_on::<Click>())
                                 .with_prop(
                                     "accept",
                                     On::<Click>::new(move |mut client: ResMut<SocialClient>, mut commands: Commands| {

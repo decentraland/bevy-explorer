@@ -14,6 +14,7 @@ describe('acceptedEntryParams', () => {
     expect(new Set(names).size).toBe(names.length)
     expect(names).toContain('guest')
     expect(names).toContain('fps')
+    expect(names).toContain('pulseCertificateHash')
     // host-forced and debug switches are known, not advertised
     for (const internal of ['native', 'hud', 'mock', 'gate', 'simerror']) expect(names).not.toContain(internal)
   })
@@ -25,6 +26,9 @@ describe('unrecognisedEntryParams', () => {
     expect(unrecognisedEntryParams(new URLSearchParams('?native=1&hud=0&gate=gpu&simerror=realm'))).toEqual([])
     // campaign links: Segment reads them, never called out
     expect(unrecognisedEntryParams(new URLSearchParams('?utm_source=x&utm_campaign=y&anon_user_id=abc&analyticsSession=s'))).toEqual([])
+    // ad clicks: a Google Ads final url as the ad serves it, and other platforms' click ids
+    expect(unrecognisedEntryParams(new URLSearchParams('?gad_source=1&gad_campaignid=2231&gbraid=0AAAAA_KoQHo8&gclid=Cj0K'))).toEqual([])
+    expect(unrecognisedEntryParams(new URLSearchParams('?fbclid=a&msclkid=b&ttclid=c&twclid=d&li_fat_id=e&rdt_cid=f'))).toEqual([])
   })
 
   it('names each unknown key once, including the host-only editor flag', () => {

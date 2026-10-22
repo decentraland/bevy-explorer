@@ -9,7 +9,7 @@ import type { LaunchHostOptions } from '../../engine/engineRpc'
 import { recordVisit } from '../lobby/lobbyApi'
 import type { SatelliteView } from '../../engine/generated'
 import type { PreviewFocus } from '../../engine/protocol'
-import { clickButton, screenViewed, track } from '../../lib/analytics'
+import { clickButton, screenViewed, sessionId, track } from '../../lib/analytics'
 import { inShell, postToShell } from '../../lib/shell'
 import { storedLoginType, type LoginType } from './sessionAnalytics'
 import type { InteractableArea } from '../../lib/hudInset'
@@ -2703,10 +2703,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     else if (phase === 'picking') screenViewed('PLACES_PICKER')
     else if (phase === 'world' && !inWorldReported.current) {
       // the first scene of the page load, the shell's Google Ads conversion (shell/googleTag.ts):
-      // only with the terms accepted, like every event the engine sends
+      // only with the terms accepted, like every event the engine sends; the session id goes to
+      // Google with it, so the GA4 export joins the Segment session
       inWorldReported.current = true
       const terms = termsOk.current || driverRef.current?.termsAccepted?.() === true
-      if (inShell && terms) postToShell({ type: 'bevy-shell:in-world', login_type: lastLoginType.current })
+      if (inShell && terms) postToShell({ type: 'bevy-shell:in-world', login_type: lastLoginType.current, session_id: sessionId() })
     }
   }, [phase])
   // The sign-in screens as mobile names them, once per showing (an error flip on the same screen
