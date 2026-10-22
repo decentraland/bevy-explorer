@@ -876,7 +876,7 @@ pub struct GraphicsSettings {
     /// draw the dark edge outline around avatars
     pub avatar_outline: bool,
     pub gpu_bytes_per_frame: usize,
-    /// share of the screen's device pixels the web canvas renders at (src/web.rs)
+    /// share of the screen's device pixels the web canvas renders at
     pub render_scale: f32,
 }
 
@@ -922,6 +922,11 @@ pub struct SessionGraphics {
 }
 
 impl SessionGraphics {
+    /// The lowest render scale a host can set. It is below the player's Render Resolution floor
+    /// (50%) on purpose: a player needs the world sharp enough to play in, while a host such as
+    /// the editor on a weak machine may trade more sharpness for frame rate.
+    pub const MIN_RENDER_SCALE: f32 = 0.25;
+
     pub fn fps_target(&self, config: &AppConfig) -> usize {
         self.fps_target.unwrap_or(config.graphics.fps_target)
     }

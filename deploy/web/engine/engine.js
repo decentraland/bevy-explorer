@@ -7,10 +7,6 @@ import { createSandboxHost } from "./sandbox_host.js";
 // Re-export for main.js
 export { engine_home_scene, engine_terms_accepted, engine_crash_event, gpu_cache_hash };
 
-// At module load, before anything of winit's runs: it caches on first use whether
-// devicePixelContentBoxSize exists.
-installRenderScale();
-
 // Spawns the render worker ahead of start(), so gpu_cache.js warms its device there (src/web.rs
 // engine_render_setup) while the user is still on the login screen; resolves once it has.
 // start() attaches the engine to that worker.
@@ -372,75 +368,6 @@ export async function initEngine() {
  * @param {URLSearchParams} urlParams
  * @param {Record<string, string | boolean | null | undefined>} options
  */
-// Render Resolution (src/web.rs update_render_scale): the canvas renders at a share of the
-// screen's device pixels, which the browser stretches to fill it. winit's DOM side measures the
-// canvas here, as CSS size x devicePixelRatio once devicePixelContentBoxSize is hidden, and
-// learns of a ratio change from a `(resolution: Ndppx)` media query. So the scaled ratio is what
-// devicePixelRatio reports, and a change answers winit's query the way a browser zoom would,
-// keeping the engine's logical size, its UI and the cursor where they were.
-function installRenderScale() {
-  const descriptor = Object.getOwnPropertyDescriptor(window, "devicePixelRatio")
-    ?? Object.getOwnPropertyDescriptor(Object.getPrototypeOf(window), "devicePixelRatio");
-  const screenRatio = () => descriptor.get.call(window);
-  let scale = 1;
-  let ratio = screenRatio();
-  const queries = new Set();
-  const realMatchMedia = window.matchMedia.bind(window);
-
-  delete ResizeObserverEntry.prototype.devicePixelContentBoxSize;
-  Object.defineProperty(window, "devicePixelRatio", { configurable: true, get: () => ratio });
-  window.matchMedia = (media) => {
-    const resolution = /\(resolution:\s*([\d.]+)dppx\)/.exec(media);
-    if (resolution === null) return realMatchMedia(media);
-    const wanted = Number(resolution[1]);
-    const listeners = new Set();
-    const query = {
-      media,
-      get matches() { return ratio === wanted; },
-      onchange: null,
-      addListener: (listener) => { listeners.add(listener); queries.add(query); },
-      removeListener: (listener) => {
-        listeners.delete(listener);
-        if (listeners.size === 0) queries.delete(query);
-      },
-      addEventListener: (type, listener) => { if (type === "change") query.addListener(listener); },
-      removeEventListener: (type, listener) => { if (type === "change") query.removeListener(listener); },
-      notify: () => {
-        const event = { matches: query.matches, media };
-        for (const listener of [...listeners]) listener.call(query, event);
-        query.onchange?.(event);
-      },
-    };
-    return query;
-  };
-
-  const update = () => {
-    const next = screenRatio() * scale;
-    if (next === ratio) return;
-    const matched = [...queries].filter((query) => query.matches);
-    ratio = next;
-    for (const query of matched) query.notify();
-    // winit re-measures on its next resize; nudge one, since a ratio change resizes nothing
-    const canvas = document.getElementById("mygame-canvas");
-    if (canvas === null) return;
-    const width = canvas.style.width;
-    canvas.style.width = "calc(100% - 1px)";
-    requestAnimationFrame(() => requestAnimationFrame(() => { canvas.style.width = width; }));
-  };
-  window.__setRenderScale = (next) => {
-    scale = Math.min(1, Math.max(0.25, Math.round(next * 100) / 100));
-    update();
-  };
-  // a real zoom or a move to another screen changes the ratio under the scale
-  const watchScreen = () => {
-    realMatchMedia(`(resolution: ${screenRatio()}dppx)`).addEventListener("change", () => {
-      update();
-      watchScreen();
-    }, { once: true });
-  };
-  watchScreen();
-}
-
 export function applyOptionsToUrlParams(urlParams, options) {
   for (const [name, value] of Object.entries(options)) {
     if (value == null || value === false || value === '') urlParams.delete(name);

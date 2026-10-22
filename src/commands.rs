@@ -165,7 +165,8 @@ pub fn set_fps(mut input: ConsoleCommand<FpsCommand>, mut config: ResMut<AppConf
 }
 
 /// set graphics for this session only, without saving them: `fps <n>`, `grass <off|low|mid|high>`,
-/// `render_scale <0.25-1>`; without a value, that one goes back to the player's setting
+/// `render_scale <0.25-1>` (below the player setting's 50% floor, see
+/// `SessionGraphics::MIN_RENDER_SCALE`); without a value, that one goes back to the player's setting
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/session_graphics")]
 pub struct SessionGraphicsCommand {
@@ -204,12 +205,18 @@ pub fn session_graphics(
             }
             Some(None) => false,
         },
+        #[cfg(not(target_arch = "wasm32"))]
+        "render_scale" => {
+            input.reply_failed("render_scale only applies to the web canvas");
+            return;
+        }
+        #[cfg(target_arch = "wasm32")]
         "render_scale" => match value.map(str::parse::<f32>) {
             None => {
                 session.render_scale = None;
                 true
             }
-            Some(Ok(scale)) if (0.25..=1.0).contains(&scale) => {
+            Some(Ok(scale)) if (SessionGraphics::MIN_RENDER_SCALE..=1.0).contains(&scale) => {
                 session.render_scale = Some(scale);
                 true
             }

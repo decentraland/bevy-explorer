@@ -14,6 +14,7 @@ impl IntAppSetting for RenderScaleSetting {
         self.0
     }
 
+    // Players stop at 50%; hosts may go lower for the session (SessionGraphics::MIN_RENDER_SCALE).
     fn min() -> i32 {
         50
     }
@@ -47,6 +48,8 @@ impl AppSetting for RenderScaleSetting {
     }
 
     fn load(config: &AppConfig) -> Self {
-        Self((config.graphics.render_scale * 100.0).round() as i32)
+        Self(
+            ((config.graphics.render_scale * 100.0).round() as i32).clamp(Self::min(), Self::max()),
+        )
     }
 }

@@ -101,11 +101,6 @@ extern "C" {
     /// EngineHost only when the page runs inside the shell.
     #[wasm_bindgen(js_name = "__signMessage")]
     fn page_sign_message(signer: &str, message: &str) -> js_sys::Promise;
-
-    /// The share of the screen's device pixels the canvas renders at; engine.js reports it to
-    /// winit as a device pixel ratio change.
-    #[wasm_bindgen(js_name = "__setRenderScale")]
-    fn page_set_render_scale(scale: f32);
 }
 
 fn remote_sign(signer: String, message: String) -> wallet::remote_signer::RemoteSignFuture {
@@ -471,7 +466,7 @@ pub fn engine_run(options: JsValue) -> Result<(), JsValue> {
     // The systems that call the page hooks take `JsThread` so the multi-threaded
     // executor keeps them on this thread, off the compute workers (see `JsThread`).
     app.insert_non_send_resource(());
-    app.add_systems(Update, (update_winit_fps, update_render_scale))
+    app.add_systems(Update, update_winit_fps)
         .add_systems(Update, update_url_params)
         .add_systems(Update, update_text_focus)
         .add_systems(Last, engine_heartbeat_system);
@@ -603,18 +598,6 @@ pub fn update_winit_fps(
             react_to_window_events: false,
         };
         winit.unfocused_mode = winit.focused_mode;
-    }
-}
-
-pub fn update_render_scale(
-    config: Res<AppConfig>,
-    session: Res<SessionGraphics>,
-    mut last_scale: Local<Option<f32>>,
-) {
-    let scale = session.render_scale(&config).clamp(0.25, 1.0);
-    if *last_scale != Some(scale) {
-        *last_scale = Some(scale);
-        page_set_render_scale(scale);
     }
 }
 

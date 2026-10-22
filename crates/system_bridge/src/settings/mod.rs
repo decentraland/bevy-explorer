@@ -171,7 +171,7 @@ impl Plugin for SettingBridgePlugin {
         }
 
         add_enum_setting::<FpsTargetSetting>(app, &mut settings, &mut schedule, &config);
-        // the web canvas is the only one drawn at a share of the screen (src/web.rs)
+        // only the web canvas can be drawn at a share of the screen
         #[cfg(target_arch = "wasm32")]
         add_int_setting::<render_scale_setting::RenderScaleSetting>(
             app,
