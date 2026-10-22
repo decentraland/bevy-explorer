@@ -543,6 +543,12 @@ export type Destination =
   | { kind: 'world'; realm: string; position?: string }
   | null
 
+/** What the guest start page picked: the new guest's name and curated default look (`default<look>`). */
+export interface GuestPick {
+  name: string
+  look: number
+}
+
 export interface LoginFlow {
   status: LoginStatus
   /** Root wallet address of the stored SSO identity (shown on the "welcome back" screen). */
@@ -563,8 +569,8 @@ export interface LoginFlow {
   authCode: string | null
   /** Abort the in-flight native fresh sign-in. */
   cancelLogin: () => void
-  /** `name`: the one picked on the guest start page, accepted with the terms once signed in. */
-  exploreAsGuest: (name?: string) => void
+  /** `pick`: the guest start page's name and default look, accepted with the terms once signed in. */
+  exploreAsGuest: (pick?: GuestPick) => void
   /** Reuse the stored SSO identity (hand it to the engine). */
   jumpIn: () => void
   /** The last login failed because the user's profile couldn't be fetched — offer
@@ -713,9 +719,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const storedRef = useRef<StoredLogin | null>(null)
   storedRef.current = stored
   const welcomeRef = useRef<{ terms: boolean; newProfile: boolean } | null>(null)
-  // The guest start page's name: its ACCEPT AND PLAY already accepted the terms, so the welcome
+  // The guest start page's pick: its ACCEPT AND PLAY already accepted the terms, so the welcome
   // page is answered with it instead of shown.
-  const guestName = useRef<string | null>(null)
+  const guestPick = useRef<GuestPick | null>(null)
   // The address of the engine's actual reusable previous login (drives "Welcome back").
   const [prevUserId, setPrevUserId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -1287,8 +1293,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           setLobbyStageReady(true)
           break
         case 'welcome': {
-          const chosen = guestName.current
-          guestName.current = null
+          const chosen = guestPick.current
+          guestPick.current = null
           if (chosen == null || (!msg.terms && !msg.newProfile)) setWelcomePending(false)
           // native, which launches itself, holds a link's world for the terms (src/lib.rs)
           if (msg.terms && driver.launch == null && welcomeLink.current != null) heldDest.current = welcomeLink.current
@@ -1307,7 +1313,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           if (chosen != null) {
             setWelcomeSaving(true)
             setWelcomeError(null)
-            driver.send({ kind: 'acceptWelcome', name: msg.newProfile ? chosen : undefined })
+            driver.send(msg.newProfile ? { kind: 'acceptWelcome', name: chosen.name, look: chosen.look } : { kind: 'acceptWelcome' })
             break
           }
           screenViewed(msg.newProfile ? 'AVATAR_NAMING' : 'WELCOME')
@@ -1992,7 +1998,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         setDestinationPicked(false)
         setLobby(false)
         setWelcomePending(false)
-        guestName.current = null
+        guestPick.current = null
       })
   }, [])
 
@@ -2410,7 +2416,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     pendingLoginType.current = null
     lastLoginType.current = null
     welcomeRef.current = null
-    guestName.current = null
+    guestPick.current = null
     setStatus('sign-in-or-guest')
     closeAllPanels()
     setPlayerReady(false)
@@ -2526,12 +2532,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
 
   // The button creates a guest account that persists; ?guest=1 stays a throwaway guest.
   const exploreAsGuest = useCallback(
-    (name?: string) => {
-      if (name != null) clickButton('LETS_GO', 'AVATAR_NAMING')
+    (pick?: GuestPick) => {
+      if (pick != null) clickButton('LETS_GO', 'AVATAR_NAMING')
       else clickButton('PLAY_GUEST', 'ACCOUNT_HOME')
       const persistent = driverRef.current?.loginPersistentGuest != null
-      guestName.current = name ?? null
-      if (!submitLogin((d) => d.loginPersistentGuest?.() ?? d.loginGuest(), 'guest')) guestName.current = null
+      guestPick.current = pick ?? null
+      if (!submitLogin((d) => d.loginPersistentGuest?.() ?? d.loginGuest(), 'guest')) guestPick.current = null
       else if (persistent) screenViewed('ACCOUNT_GUEST_CREATE')
     },
     [submitLogin]
@@ -2574,7 +2580,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const startWithAccount = useCallback(() => {
     if (busy) return
     clickButton('SIGN_IN', 'AVATAR_NAMING')
-    guestName.current = null
+    guestPick.current = null
     const driver = driverRef.current
     if (driver?.loginNew == null) {
       screenViewed('AUTH_BROWSER_OPEN', { method: 'sso' })

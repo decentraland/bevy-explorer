@@ -75,11 +75,11 @@ describe('welcome page', () => {
     await waitFor(() => expect(h.session().login.status).toBe('sign-in-or-guest'))
     // nothing is created until ACCEPT AND PLAY
     expect(h.driver.calls.filter((c) => /login/i.test(c) && c !== 'getPreviousLogin')).toEqual([])
-    act(() => h.session().login.exploreAsGuest('QuillStonehill'))
+    act(() => h.session().login.exploreAsGuest({ name: 'QuillStonehill', look: 7 }))
     await waitFor(() => expect(h.driver.sentOf('getWelcome')).toHaveLength(1))
 
     h.driver.emit({ kind: 'welcome', terms: true, newProfile: true })
-    await waitFor(() => expect(h.driver.last('acceptWelcome')).toEqual({ kind: 'acceptWelcome', name: 'QuillStonehill' }))
+    await waitFor(() => expect(h.driver.last('acceptWelcome')).toEqual({ kind: 'acceptWelcome', name: 'QuillStonehill', look: 7 }))
     expect(h.session().welcome.pending).toBe(true)
     h.driver.emit({ kind: 'welcomeAccepted', ok: false, error: 'failed to deploy to server.' })
     await waitFor(() => expect(h.session().welcome.error).toBe('failed to deploy to server.'))
@@ -105,7 +105,7 @@ describe('welcome page', () => {
     driver.welcome = null
     const h = renderSession({ userId: null }, driver)
     await waitFor(() => expect(h.session().login.status).toBe('sign-in-or-guest'))
-    act(() => h.session().login.exploreAsGuest('QuillStonehill'))
+    act(() => h.session().login.exploreAsGuest({ name: 'QuillStonehill', look: 7 }))
     await waitFor(() => expect(h.session().login.error).toBe('guest wallet unavailable'))
 
     act(() => h.session().login.startWithAccount())

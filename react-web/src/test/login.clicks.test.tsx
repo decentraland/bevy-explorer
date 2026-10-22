@@ -21,7 +21,7 @@ describe('login screen clicks', () => {
     await userEvent.clear(field)
     await userEvent.type(field, 'NovaRiverbend')
     await userEvent.click(screen.getByRole('button', { name: /ACCEPT AND PLAY/i }))
-    expect(vi.mocked(f.exploreAsGuest)).toHaveBeenCalledWith('NovaRiverbend')
+    expect(vi.mocked(f.exploreAsGuest)).toHaveBeenCalledWith({ name: 'NovaRiverbend', look: expect.any(Number) })
     await userEvent.click(screen.getByRole('button', { name: /CONTINUE WITH AN ACCOUNT/i }))
     expect(vi.mocked(f.startWithAccount)).toHaveBeenCalledTimes(1)
   })
