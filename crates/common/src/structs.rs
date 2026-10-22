@@ -876,8 +876,6 @@ pub struct GraphicsSettings {
     /// draw the dark edge outline around avatars
     pub avatar_outline: bool,
     pub gpu_bytes_per_frame: usize,
-    /// share of the screen's device pixels the web canvas renders at
-    pub render_scale: f32,
 }
 
 impl Default for GraphicsSettings {
@@ -907,7 +905,6 @@ impl Default for GraphicsSettings {
             } else {
                 0
             },
-            render_scale: 1.0,
         }
     }
 }
@@ -918,25 +915,15 @@ impl Default for GraphicsSettings {
 pub struct SessionGraphics {
     pub fps_target: Option<usize>,
     pub parcel_grass: Option<ParcelGrassSetting>,
-    pub render_scale: Option<f32>,
 }
 
 impl SessionGraphics {
-    /// The lowest render scale a host can set. It is below the player's Render Resolution floor
-    /// (50%) on purpose: a player needs the world sharp enough to play in, while a host such as
-    /// the editor on a weak machine may trade more sharpness for frame rate.
-    pub const MIN_RENDER_SCALE: f32 = 0.25;
-
     pub fn fps_target(&self, config: &AppConfig) -> usize {
         self.fps_target.unwrap_or(config.graphics.fps_target)
     }
 
     pub fn parcel_grass(&self, config: &AppConfig) -> ParcelGrassSetting {
         self.parcel_grass.unwrap_or(config.parcel_grass_setting)
-    }
-
-    pub fn render_scale(&self, config: &AppConfig) -> f32 {
-        self.render_scale.unwrap_or(config.graphics.render_scale)
     }
 }
 
