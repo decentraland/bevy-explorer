@@ -28,7 +28,15 @@ export function isLoginType(value: unknown): value is LoginType {
   return value === 'guest' || value === 'fully_registered'
 }
 
-export function reportInWorld(loginType: LoginType | undefined): void {
+/** GA4's own ids for this browser and visit: its BigQuery export's user_pseudo_id and ga_session_id. */
+export interface GoogleTagIds {
+  clientId: string
+  sessionId: string
+}
+
+/** The conversion, tagged with the Segment session it belongs to (`dcl_session_id`); `onIds` gets
+ *  GA4's ids back once gtag.js is up, for the app to send to Segment: the two sides join both ways. */
+export function reportInWorld(loginType: LoginType | undefined, dclSessionId?: string, onIds?: (ids: GoogleTagIds) => void): void {
   if (reported) return
   // the stream is the production page's: previews and local runs must not count as conversions
   if (location.hostname !== 'decentraland.org') return
@@ -57,5 +65,13 @@ export function reportInWorld(loginType: LoginType | undefined): void {
   // guest or signed in, so web never reports web2 and a social or email sign-in counts as web3
   if (loginType) gtag('set', 'user_properties', { login_type: loginType === 'guest' ? 'guest' : 'web3' })
   gtag('config', MEASUREMENT_ID, { send_page_view: false, page_location: ENTRY_LOCATION })
-  gtag('event', 'bevy_first_move_in_world')
+  gtag('event', 'bevy_first_move_in_world', dclSessionId ? { dcl_session_id: dclSessionId } : {})
+  // gtag.js answers a get once it has loaded; blocked, it never does and nothing is sent back
+  if (onIds) {
+    gtag('get', MEASUREMENT_ID, 'client_id', (clientId: unknown) => {
+      gtag('get', MEASUREMENT_ID, 'session_id', (sessionId: unknown) => {
+        if (typeof clientId === 'string' && clientId) onIds({ clientId, sessionId: sessionId == null ? '' : String(sessionId) })
+      })
+    })
+  }
 }

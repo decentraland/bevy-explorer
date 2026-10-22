@@ -250,12 +250,16 @@ back as `analyticsSession`). Expectations:
   (`crates/analytics/src/loading.rs`), the one `sceneLoading` mirrors here.
 - **Social**: Friend Request, Friend Accept, Unfriend, Block User on the action.
 - **In world**: the first `world` phase of a page load, with the terms accepted (the welcome
-  flow's answer, or the engine's persisted config), posts `bevy-shell:in-world` {login_type} to
-  the shell, the one message that leaves the page for anyone but the engine. On decentraland.org
+  flow's answer, or the engine's persisted config), posts `bevy-shell:in-world` {login_type,
+  session_id} to the shell, the one message that leaves the page for anyone but the engine. On decentraland.org
   only, never for a `preview=true` page, once per tab session, the shell then loads the Google
   tag for the Explorer GA4 stream and sends `bevy_first_move_in_world`, the Google Ads conversion,
-  with the user property `login_type` `guest` or `web3`, and as its page the url the tab arrived
+  with the user property `login_type` `guest` or `web3`, the event param `dcl_session_id` (the
+  Segment session), and as its page the url the tab arrived
   with, keeping only its `utm_*` and ad click ids (`shell/googleTag.ts`). Nothing of Google's loads before that moment.
+  Once gtag.js is up the shell posts GA4's ids back (`bevy-shell:google-tag` {client_id, session_id}),
+  and the app sends them as `Google Tag Linked` {ga_client_id, ga_session_id}: the GA4 export's
+  `user_pseudo_id` / `ga_session_id` on the Segment session, the join both ways (`listenForGoogleTag`).
 - Tests: `src/test/analytics.test.ts` (stamping, the handoff, the rejected send),
   `src/test/analytics.session.test.tsx` (the sequences above), `engineDriver.test.ts` (the session
   id at launch), `entryParams.test.ts` (campaign params).

@@ -139,6 +139,18 @@ export function attributionParams(): [string, string][] {
   return [...entry].filter(([name]) => name.startsWith('utm_'))
 }
 
+/** The shell's answer once its Google tag is up (shell/googleTag.ts): GA4's ids for this browser
+ *  and visit, sent as `Google Tag Linked` so the warehouse joins the session to the GA4 export, the
+ *  way mobile's `firebase_user_id` joins it to Firebase's. */
+export function listenForGoogleTag(): void {
+  window.addEventListener('message', (e: MessageEvent) => {
+    if (e.source !== window.parent || e.origin !== location.origin) return
+    const m = e.data as { type?: unknown; client_id?: unknown; session_id?: unknown } | null
+    if (m?.type !== 'bevy-shell:google-tag' || typeof m.client_id !== 'string' || !m.client_id) return
+    track('Google Tag Linked', { ga_client_id: m.client_id, ga_session_id: typeof m.session_id === 'string' ? m.session_id : '' })
+  })
+}
+
 /** What a page load reports before any screen shows, as mobile's app start does. The return from
  *  the sign-in redirect continues the session instead. */
 export function bootAnalytics(): void {

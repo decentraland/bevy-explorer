@@ -10,7 +10,7 @@ import { countLaunch } from './lib/launchCount'
 import { isNativeHud } from './lib/bootMode'
 import { inShell } from './lib/shell'
 import { loadPrefs } from './lib/prefs'
-import { bootAnalytics, dropAttributionParams } from './lib/analytics'
+import { bootAnalytics, dropAttributionParams, listenForGoogleTag } from './lib/analytics'
 import './styles/global.css'
 
 // Before anything fetches: annotate loopback/local-network requests so Chrome's Local Network
@@ -58,6 +58,7 @@ if (isNativeHud()) {
 if (!redirecting) void loadPrefs().then(() => {
   countLaunch()
   bootAnalytics()
+  if (inShell) listenForGoogleTag()
   dropAttributionParams()
   createRoot(document.getElementById('root')!).render(
     <StrictMode>

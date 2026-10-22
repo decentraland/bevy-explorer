@@ -33,6 +33,9 @@ every tick so a realm change updates it.
 The page side is `react-web/src/lib/analytics.ts` (events and sequences in
 `react-web/review.md`, "Analytics"). The web's Google Ads conversion (`bevy_first_move_in_world`, a GA4 event
 the shell page sends on the first scene) is not a Segment event: `react-web/src/shell/googleTag.ts`.
+It carries the Segment session as `dcl_session_id`, and the page sends GA4's ids back to Segment as
+`Google Tag Linked` (`ga_client_id`, the export's `user_pseudo_id`; `ga_session_id`), so the warehouse
+joins the two either way.
 
 An engine crash on the web is reported by the page (`crash.rs`): the engine keeps a snapshot of
 what an Explorer Error batch needs (user id, write key, consent, the common fields) in a static,

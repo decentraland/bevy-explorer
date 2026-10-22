@@ -102,9 +102,12 @@ addEventListener('message', async (e: MessageEvent) => {
       if (typeof m.session === 'string') sessionStorage.setItem(ANALYTICS_SESSION_KEY, m.session)
       location.assign(authLoginUrl(location.href))
       break
-    // the session's first scene: the Google Ads conversion (googleTag.ts)
+    // the session's first scene: the Google Ads conversion (googleTag.ts), and GA4's ids back to
+    // the app for Segment
     case 'bevy-shell:in-world':
-      reportInWorld(isLoginType(m.login_type) ? m.login_type : undefined)
+      reportInWorld(isLoginType(m.login_type) ? m.login_type : undefined, typeof m.session_id === 'string' ? m.session_id : undefined, (ids) =>
+        f.contentWindow?.postMessage({ type: 'bevy-shell:google-tag', client_id: ids.clientId, session_id: ids.sessionId }, location.origin)
+      )
       break
     // the untrusted-link gate's exit (see src/features/gate/UntrustedLaunchGate.tsx)
     case 'bevy-shell:exit':
