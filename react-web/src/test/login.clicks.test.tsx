@@ -11,7 +11,7 @@ function flow(over: Partial<LoginFlow>): LoginFlow {
 }
 
 describe('login screen clicks', () => {
-  it('no session: ACCEPT AND PLAY plays as a guest with the picked name, CREATE AN ACCOUNT signs in', async () => {
+  it('no session: ACCEPT AND PLAY plays as a guest with the picked name, CONTINUE WITH AN ACCOUNT signs in', async () => {
     const f = flow({ status: 'sign-in-or-guest' })
     render(<GuestStartPage flow={f} />)
     const field = screen.getByRole('textbox', { name: 'Name' })
@@ -22,7 +22,7 @@ describe('login screen clicks', () => {
     await userEvent.type(field, 'NovaRiverbend')
     await userEvent.click(screen.getByRole('button', { name: /ACCEPT AND PLAY/i }))
     expect(vi.mocked(f.exploreAsGuest)).toHaveBeenCalledWith('NovaRiverbend')
-    await userEvent.click(screen.getByRole('button', { name: /CREATE AN ACCOUNT/i }))
+    await userEvent.click(screen.getByRole('button', { name: /CONTINUE WITH AN ACCOUNT/i }))
     expect(vi.mocked(f.startWithAccount)).toHaveBeenCalledTimes(1)
   })
 
@@ -49,7 +49,7 @@ describe('login screen clicks', () => {
   it('CTAs are disabled while busy', () => {
     render(<GuestStartPage flow={flow({ status: 'sign-in-or-guest', busy: true })} />)
     expect(screen.getByRole('button', { name: /ACCEPT AND PLAY/i })).toBeDisabled()
-    expect(screen.getByRole('button', { name: /CREATE AN ACCOUNT/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /CONTINUE WITH AN ACCOUNT/i })).toBeDisabled()
   })
 
   it('shows the engine boot progress while loading, and holds ACCEPT AND PLAY until it is ready', () => {
