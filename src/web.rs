@@ -617,7 +617,7 @@ pub fn update_winit_fps(
     }
 }
 
-// winit's page-side window draws the canvas at this share of its device pixels, reported to the
+// winit's page-side window draws the canvas at this share of its device pixels, reported  to the
 // app as a scale factor change, so the logical size, UI and cursor keep their places.
 pub fn update_render_scale(
     config: Res<AppConfig>,
