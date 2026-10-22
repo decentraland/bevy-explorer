@@ -423,6 +423,8 @@ web-sys = { workspace = true }
 once_cell = { workspace = true }
 web-fs = { workspace = true }
 async-std = { workspace = true }
+# for WindowExtWebSys::set_render_scale (Render Resolution); patched to the fork below
+winit = { version = "0.30", default-features = false }
 
 [build-dependencies]
 prost-build = "0.11.8"
