@@ -2527,7 +2527,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   }, [])
 
   // engine_run briefly blocks the main thread, so the lobby (or the loader) paints first and the
-  // launch runs behind it, never under the interactive sign-in screen. On failure, back to sign-in.
+  // launch runs behind it (the guest start page's early launch, above, is the one that runs under
+  // an interactive screen). On failure, back to sign-in.
   const submitLogin = useCallback(
     (loginCall: (driver: LoginDriver) => Promise<unknown>, loginType: LoginType | 'stored' | null): boolean => {
       const driver = driverRef.current
@@ -2575,11 +2576,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     driverRef.current?.send({ kind: 'showLook', look, avatar })
   }, [])
   // A look is pending from the moment it is asked for, so RANDOMIZE can't be hit again while its
-  // profile is fetched; a fetch that never comes back lets go after a while.
+  // profile is fetched; a fetch that never comes back lets go after a while (timed from the last
+  // ask: an earlier ask's timer must not let a later one go).
+  const expectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const expectLook = useCallback(() => {
     setPendingLook(EXPECTED_LOOK)
     driverRef.current?.send({ kind: 'expectLook' })
-    setTimeout(() => setPendingLook((pending) => (pending === EXPECTED_LOOK ? null : pending)), EXPECTED_LOOK_MS)
+    if (expectTimer.current != null) clearTimeout(expectTimer.current)
+    expectTimer.current = setTimeout(() => setPendingLook((pending) => (pending === EXPECTED_LOOK ? null : pending)), EXPECTED_LOOK_MS)
   }, [])
   const preloadLook = useCallback((look: number, avatar: AvatarLook) => driverRef.current?.send({ kind: 'preloadLook', look, avatar }), [])
   // RANDOMIZE: the page picks and fetches the look (the scene's fetches are signed, and it has no

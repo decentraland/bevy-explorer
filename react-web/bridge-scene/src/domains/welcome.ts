@@ -5,12 +5,13 @@
 //   from: getWelcome / expectLook / showLook / acceptWelcome (the page), BevyApi.getWelcome
 //   to:   welcome / welcomeAccepted / wearables (the page), BevyApi.setAvatar + acceptTerms,
 //         RestrictedActions.openExternalUrl (openLegal)
+import { AvatarEquippedData, engine } from '@dcl/sdk/ecs'
 import { getPlayer } from '@dcl/sdk/players'
 import { openExternalUrl } from '~system/RestrictedActions'
 import { BevyApi } from '../bevy-api'
 import type { Ctx } from '../bridge'
 import { deployLookAs, editLook, hasDraft, setStandInLook } from './avatarDraft'
-import { expectLook, syncShape } from './avatarPreview'
+import { expectLook, syncShape, waitFrames } from './avatarPreview'
 import type { AvatarLook } from '../../../src/engine/avatarEquip'
 import { sendEquipped } from './wearables'
 
@@ -18,6 +19,8 @@ const LEGAL = {
   terms: 'https://decentraland.org/terms/',
   privacy: 'https://decentraland.org/privacy/'
 }
+// Frames to wait for a signed-in player's equipped data before the accept deploys the look
+const PLAYER_LOOK_FRAMES = 600
 
 export function registerWelcome(ctx: Ctx): void {
   ctx.on('getWelcome', async () => {
@@ -63,7 +66,12 @@ export function registerWelcome(ctx: Ctx): void {
       // The terms first: a held new profile deploys with the first setAvatar after them (the guest
       // start page's accept carries its name for that).
       await BevyApi.acceptTerms?.()
-      if (msg.name != null || hasDraft()) await deployLookAs(msg.name ?? getPlayer()?.name ?? '')
+      if (msg.name != null || hasDraft()) {
+        // the look deploys as the player wears it, which reaches the scene after the player's
+        // identity (the sign-in's accept can land between): deployed before, it would be bare
+        for (let waited = 0; !AvatarEquippedData.has(engine.PlayerEntity) && waited < PLAYER_LOOK_FRAMES; waited++) await waitFrames(1)
+        await deployLookAs(msg.name ?? getPlayer()?.name ?? '')
+      }
       ctx.send({ kind: 'welcomeAccepted', ok: true })
     } catch (e) {
       console.error('[welcome] accept failed', e)

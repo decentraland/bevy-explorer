@@ -73,10 +73,10 @@ describe('login screen clicks', () => {
     await waitFor(() => expect(session.welcome.showLook).toHaveBeenCalledTimes(2))
     expect(vi.mocked(session.welcome.showLook).mock.calls[1][0]).toBe(second.look)
     // the dice showed the look fetched ahead, and fetches the one after it ahead too
+    await waitFor(() => expect(session.welcome.preloadLook).toHaveBeenCalledTimes(2))
     const preloaded = vi.mocked(session.welcome.preloadLook).mock.calls.map((c) => c[0])
     expect(preloaded[0]).toBe(second.look)
-    await waitFor(() => expect(vi.mocked(session.welcome.preloadLook).mock.calls.length).toBe(2))
-    expect(preloaded[1] ?? vi.mocked(session.welcome.preloadLook).mock.calls[1][0]).not.toBe(second.look)
+    expect(preloaded[1]).not.toBe(second.look)
 
     await userEvent.clear(field)
     await userEvent.type(field, 'NovaRiverbend')

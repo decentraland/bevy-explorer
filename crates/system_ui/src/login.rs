@@ -420,9 +420,6 @@ enum LoginProfile {
     New(UserProfile),
 }
 
-// How long a sign-in without a pick keeps asking for a profile the catalyst says it doesn't have.
-const MISSING_PROFILE_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
-
 async fn login_profile(
     root_address: Address,
     ipfs: std::sync::Arc<IpfsIo>,
@@ -430,28 +427,11 @@ async fn login_profile(
     pick: Option<NewAccountPick>,
     endpoint: Option<String>,
 ) -> Result<LoginProfile, String> {
-    // An account signed in without a pick is expected to have a profile (the auth site makes one
-    // with the account): none can be one still syncing to this realm's catalyst, so it is asked
-    // for again for a while before a default is built over it. A pick is a new account's.
-    let deadline = bevy::platform::time::Instant::now() + MISSING_PROFILE_WAIT;
-    loop {
-        if let Some(profile) = get_profile_with_retry(
-            root_address,
-            ipfs.clone(),
-            default_on_error,
-            endpoint.clone(),
-        )
-        .await?
-        {
-            return Ok(LoginProfile::Deployed(profile));
-        }
-        if pick.is_some() || bevy::platform::time::Instant::now() >= deadline {
-            return Ok(LoginProfile::New(
-                new_account_profile(root_address, ipfs, pick).await,
-            ));
-        }
-        debug!("no profile for {root_address:#x} yet; asking again");
-        async_std::task::sleep(std::time::Duration::from_secs(2)).await;
+    match get_profile_with_retry(root_address, ipfs.clone(), default_on_error, endpoint).await? {
+        Some(profile) => Ok(LoginProfile::Deployed(profile)),
+        None => Ok(LoginProfile::New(
+            new_account_profile(root_address, ipfs, pick).await,
+        )),
     }
 }
 

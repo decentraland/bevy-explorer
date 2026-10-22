@@ -125,7 +125,8 @@ let lastShapeKey = ''
 let standbyEntity: Entity | null = null
 let shownKey = ''
 let standbyKey = ''
-// the curated default look numbers behind the keys, for the page (`lookShown`)
+// the curated default look numbers behind the keys, for the page (`lookShown`); the requested
+// one is the page's pick, held until the stage takes it up (a shape change without one is an equip)
 let shownLook: number | null = null
 let standbyLook: number | null = null
 let requestedLook: number | null = null
@@ -330,8 +331,10 @@ async function announceLobbyStage(ctx: Ctx): Promise<void> {
   // the avatar renders nothing until its look has arrived and loaded; a reroll meanwhile keeps
   // the stand-in until the new look is on show and facing front
   const landed = (): boolean => shownLoaded && wanted == null && turn == null
+  // a stage already on show (a page taking it over) has nothing left to settle
+  const settled = landed()
   for (let waited = 0; current() && !landed() && waited < 2 * LOBBY_LOOK_FRAMES; waited += 5) await waitFrames(5)
-  await waitFrames(LOBBY_SETTLE_FRAMES)
+  if (!settled) await waitFrames(LOBBY_SETTLE_FRAMES)
   if (current()) ctx.send({ kind: 'lobbyStageReady' })
 }
 
@@ -363,6 +366,7 @@ function disposePreview(): void {
   expecting = 0
   wanted = null
   standbyWanted = false
+  preload = null
   showLoad = null
   standbyLoad = null
   shownLoaded = false
@@ -376,6 +380,8 @@ export function syncShape(look?: number): void {
   if (avatarEntity == null) return
   const current = currentLook()
   if (!current?.bodyShape) return
+  const pick = requestedLook
+  requestedLook = null
   const shape = shapeOf(current, previewUrns)
   const key = shapeKey(shape)
   if (key === lastShapeKey) return
@@ -392,19 +398,21 @@ export function syncShape(look?: number): void {
     setShape(avatarEntity, shape)
     if (stage === 'lobby') {
       shownKey = key
-      shownLook = requestedLook
+      shownLook = pick
       shownLoaded = false
       showLoad = watchLoad(avatarEntity)
     }
     return
   }
-  wanted = { key, shape, look: requestedLook }
+  wanted = { key, shape, look: pick }
   expecting = 0
   // the avatar on show turns away meanwhile; the new one takes the stage once it has, and is loaded
   if (shownYaw !== YAW_AWAY) startTurn(avatarEntity, shownYaw, YAW_AWAY)
-  // already loaded on the standby (a look loaded ahead, or the one before)
+  // already loaded on the standby (a look loaded ahead, or the one before): on show now if the
+  // shown avatar has already turned away (RANDOMIZE turns it ahead of the look), else once it has
   if (key === standbyKey && standbyLoad == null) {
-    swapReady = true
+    if (shownYaw === YAW_AWAY && turn == null) swapToStandby()
+    else swapReady = true
     return
   }
   loadOnStandby()
@@ -437,13 +445,16 @@ function pollTurn(dt: number): void {
   if (done.entity !== avatarEntity) return
   if (done.to === YAW_FRONT && shownLook != null && announce != null) announce(shownLook)
   if (done.to === YAW_AWAY && swapReady) swapToStandby()
+  // a look loaded meanwhile (one asked for after the one just shown): turn away for it
+  else if (done.to === YAW_FRONT && swapReady) startTurn(done.entity, YAW_FRONT, YAW_AWAY)
 }
 
 // The look wanted on show goes on the standby (unless already there, loaded ahead); the next
-// RANDOMIZE's look goes there once the one on show has loaded and nothing else is wanted.
+// RANDOMIZE's look goes there once the one on show has loaded and nothing else is wanted, nor on
+// its way (a RANDOMIZE's look, usually the one loaded ahead, must find it there).
 function loadOnStandby(): void {
   if (standbyEntity == null || standbyLoad != null) return
-  const next = wanted != null && wanted.key !== standbyKey ? wanted : wanted == null && preload != null && shownLoaded && preload.key !== standbyKey ? preload : null
+  const next = wanted != null && wanted.key !== standbyKey ? wanted : wanted == null && expecting === 0 && preload != null && shownLoaded && preload.key !== standbyKey ? preload : null
   if (next == null) return
   setShape(standbyEntity, next.shape)
   standbyKey = next.key
@@ -499,7 +510,11 @@ function pollStage(dt: number): void {
       // then loads on what was on show. It waits for the shown avatar to have turned away.
       if (wanted?.key === standbyKey || standbyWanted) {
         if (shownYaw === YAW_AWAY && turn == null) swapToStandby()
-        else swapReady = true
+        else {
+          swapReady = true
+          // facing front and still (the look before took the stage while this one was wanted)
+          if (turn == null && avatarEntity != null) startTurn(avatarEntity, shownYaw, YAW_AWAY)
+        }
       }
     }
   }
@@ -526,17 +541,10 @@ export function registerAvatarPreview(ctx: Ctx): void {
     disposeIn = 0
     // the same region again (a page re-reporting its viewport) leaves the stage as it is
     const same = rect != null && rect.x === msg.rect.x && rect.y === msg.rect.y && rect.width === msg.rect.width && rect.height === msg.rect.height && dpr === (msg.dpr ?? 1)
-    if (same && avatarEntity != null && nextStage === stage) return
     rect = msg.rect
     dpr = msg.dpr ?? 1
-    if (avatarEntity == null) {
-      createPreview()
-      if (stage === 'lobby') {
-        announceLobbyStage(ctx).catch((e) => {
-          console.error('[avatarPreview] lobby stage', e)
-        })
-      }
-    } else if (cameraEntity != null) {
+    if (avatarEntity == null) createPreview()
+    else if (!same && cameraEntity != null) {
       // Window resized → re-size the render target to the hole, not just re-aspect it.
       const res = camRes(rect)
       const cam = TextureCamera.getMutableOrNull(cameraEntity)
@@ -544,6 +552,13 @@ export function registerAvatarPreview(ctx: Ctx): void {
         cam.width = res.width
         cam.height = res.height
       }
+    }
+    // told again for a stage carried over (the guest start page's into the lobby, the lobby's
+    // back to it on logout): the page taking it over may have put its stand-in back up
+    if (stage === 'lobby') {
+      announceLobbyStage(ctx).catch((e) => {
+        console.error('[avatarPreview] lobby stage', e)
+      })
     }
   })
 
