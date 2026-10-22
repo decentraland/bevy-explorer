@@ -51,6 +51,7 @@ export type IconName =
   | 'voice-speaking'
   | 'create'
   | 'permissions'
+  | 'dice'
 
 const MASK_ART: Partial<Record<IconName, string>> = {
   backpack: backpackPng,
@@ -86,7 +87,10 @@ const PATHS: Partial<Record<IconName, string>> = {
     'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
   // a padlock: the scene permissions the player has granted or refused
   permissions:
-    'M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z'
+    'M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z',
+  // a die: pick another at random
+  dice:
+    'M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zM7.5 18a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zm0-9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zm4.5 4.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zm4.5 4.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zm0-9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z'
 }
 
 export function Icon({

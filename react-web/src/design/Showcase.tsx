@@ -333,6 +333,7 @@ export function Showcase(): React.JSX.Element {
             <TextInput value={name} onChange={setName} placeholder="Your name" maxLength={15} />
             <TextInput value={name} onChange={setName} variant="light" placeholder="light variant" maxLength={15} />
             <TextInput value="not-a-url" onChange={() => {}} invalid aria-label="Invalid example" />
+            <TextInput value={name} onChange={setName} maxLength={15} aria-label="With an action" action={{ icon: 'dice', label: 'Random name', onClick: () => setName('RuneStarfall') }} />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <span style={{ fontSize: 14 }}>About me</span>

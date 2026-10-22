@@ -15,15 +15,15 @@ const names = (from: number): string[] =>
     .map((e) => `${e.event}:${String(e.properties.button_text ?? e.properties.screen_name)}`)
 
 describe('session analytics', () => {
-  it('explore as guest: ACCOUNT_HOME → Click PLAY_GUEST → AUTH_SUCCESS guest → LOBBY', async () => {
+  it('play as guest: AVATAR_NAMING → Click LETS_GO → AUTH_SUCCESS guest → LOBBY', async () => {
     const from = pending().length
     const h = renderSession({ userId: null })
     await waitFor(() => expect(h.session().login.status).toBe('sign-in-or-guest'))
-    act(() => h.session().login.exploreAsGuest())
+    act(() => h.session().login.exploreAsGuest('QuillStonehill'))
     await waitFor(() => expect(h.session().phase).toBe('lobby'))
     await waitFor(() => expect(h.session().login.busy).toBe(false))
 
-    expect(names(from)).toEqual(['Screen Viewed:ACCOUNT_HOME', 'Click Button:PLAY_GUEST', 'Screen Viewed:AUTH_SUCCESS', 'Screen Viewed:LOBBY'])
+    expect(names(from)).toEqual(['Screen Viewed:AVATAR_NAMING', 'Click Button:LETS_GO', 'Screen Viewed:AUTH_SUCCESS', 'Screen Viewed:LOBBY'])
     expect(pending()[from + 2].properties).toEqual({ screen_name: 'AUTH_SUCCESS', extra_properties: '{"login_type":"guest"}' })
   })
 

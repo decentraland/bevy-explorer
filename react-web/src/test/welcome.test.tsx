@@ -69,6 +69,28 @@ describe('welcome page', () => {
     expect(h.driver.sentOf('teleport')).toHaveLength(0)
   })
 
+  // The guest start page took the name and the terms before the account existed.
+  it("answers the page with the guest start page's name, and shows it only if that save fails", async () => {
+    const h = renderSession({ userId: null }, manual())
+    await waitFor(() => expect(h.session().login.status).toBe('sign-in-or-guest'))
+    // nothing is created until ACCEPT AND PLAY
+    expect(h.driver.calls.filter((c) => /login/i.test(c) && c !== 'getPreviousLogin')).toEqual([])
+    act(() => h.session().login.exploreAsGuest('QuillStonehill'))
+    await waitFor(() => expect(h.driver.sentOf('getWelcome')).toHaveLength(1))
+
+    h.driver.emit({ kind: 'welcome', terms: true, newProfile: true })
+    await waitFor(() => expect(h.driver.last('acceptWelcome')).toEqual({ kind: 'acceptWelcome', name: 'QuillStonehill' }))
+    expect(h.session().welcome.pending).toBe(true)
+    h.driver.emit({ kind: 'welcomeAccepted', ok: false, error: 'failed to deploy to server.' })
+    await waitFor(() => expect(h.session().welcome.error).toBe('failed to deploy to server.'))
+    expect(h.session().welcome.pending).toBe(false)
+    expect(h.session().phase).toBe('welcome')
+
+    act(() => h.session().welcome.accept('QuillStonehill'))
+    h.driver.emit({ kind: 'welcomeAccepted', ok: true })
+    await waitFor(() => expect(h.session().phase).toBe('lobby'))
+  })
+
   it('stays on the page with the error when the save fails', async () => {
     const h = renderSession(undefined, manual())
     await signIn(h)

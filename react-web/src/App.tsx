@@ -36,6 +36,7 @@ import { SessionProvider } from './features/session/SessionContext'
 import { isNativeHud } from './lib/bootMode'
 import { FpsMeter } from './features/debug/FpsMeter'
 import { LoadingAndLogin } from './features/login/LoadingAndLogin'
+import { GuestStartPage } from './features/login/GuestStartPage'
 import { SceneLoadingOverlay } from './features/session/SceneLoadingOverlay'
 import { openTravelError } from './features/session/TravelError'
 import { useEngineSession } from './features/session/useEngineSession'
@@ -331,7 +332,12 @@ function Hud(): React.JSX.Element {
   return (
     <SessionProvider value={session}>
       {rpc && <EngineHost rpc={rpc} />}
-      {session.phase === 'login' && <LoadingAndLogin flow={session.login} />}
+      {session.phase === 'login' &&
+        (session.login.status === 'sign-in-or-guest' && !session.login.authPending ? (
+          <GuestStartPage flow={session.login} />
+        ) : (
+          <LoadingAndLogin flow={session.login} />
+        ))}
       {session.phase === 'welcome' && <WelcomePage setEngineViewport={session.setEngineViewport} />}
       {session.phase === 'picking' && <PlacesPicker onPick={session.pickDestination} />}
       {session.phase === 'lobby' && (

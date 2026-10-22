@@ -244,9 +244,12 @@ back as `analyticsSession`). Expectations:
   shell and the app take the attribution params (`utm_*`, `gad_*`, ad click ids such as `gclid`,
   the landing page's anonymous id) off the address bar (`dropAttributionParams`), so a copied link
   or a reload does not attribute again; the Google tag gets them from what the shell kept at load.
-- **Sign-in** (`useEngineSession`): ACCOUNT_HOME, COMEBACK (after a failed stored sign-in),
-  ACCOUNT_GUEST_CREATE, AUTH_BROWSER_OPEN, AUTH_SUCCESS {login_type}, AUTH_ERROR {error}; clicks
-  SIGN_IN, PLAY_GUEST, lets_go, use_another_account, try_again. `Guest Wallet Creation` wraps the
+- **Sign-in** (`useEngineSession`): with no session the guest start page (`GuestStartPage`) is
+  AVATAR_NAMING, its ACCEPT AND PLAY a LETS_GO click and CREATE AN ACCOUNT a SIGN_IN click; the
+  guest account is created only on that click, and the welcome page it then needs is answered with
+  the picked name instead of shown. COMEBACK (after a failed stored sign-in), ACCOUNT_GUEST_CREATE,
+  AUTH_BROWSER_OPEN, AUTH_SUCCESS {login_type}, AUTH_ERROR {error}; clicks lets_go,
+  use_another_account, try_again. `Guest Wallet Creation` wraps the
   thirdweb guest step (`features/auth/guestWalletEvent.ts`).
 - **Welcome / lobby**: WELCOME or AVATAR_NAMING, AUTH_DEPLOY_SUCCESS; clicks LETS_GO,
   NAME_RANDOMIZE; LOBBY, PLACES_PICKER; clicks JUMP_IN {kind, place_id|event_id}, CUSTOMIZE,
