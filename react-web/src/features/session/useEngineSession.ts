@@ -564,9 +564,8 @@ export interface LoginFlow {
   /** Engine has booted and can accept the login command. The engine-driven CTAs (Jump in / Explore)
    *  stay disabled until this is true so a click never lands in a silent wait. Always true for mock. */
   engineReady: boolean
-  /** The first avatar has loaded: the lobby stage's, or the player's in world. The boot bar holds
-   *  short of done until then. Always true without an engine (mock), or with nothing launched
-   *  before the click (a link's destination). */
+  /** The lobby stage's avatar has loaded. The boot bar holds short of done until then. Always true
+   *  without an engine (mock), or for a link's destination (straight into the world, no stage). */
   avatarLoaded: boolean
   /** Real boot progress (0–100, weighted) from the engine loader, for the login footer bar. */
   loadProgress: number
@@ -1012,7 +1011,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           if (msg.name === 'playerReady') {
             playerReadyRef.current = true
             setPlayerReady(true)
-            setAvatarLoaded(true)
             bootPollStop.current = true // world reached → stop watching for a boot panic
             // The bridge pushes bindings at registration, but that can race the page's channel
             // subscription — re-request now that both ends are up (shortcut hints need them).
@@ -2088,6 +2086,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     []
   )
 
+  // A link's destination goes straight into the world, with no stage before it: the boot bar has
+  // no avatar to wait for (the lobby's stage reports its own).
+  useEffect(() => {
+    if (engineReady && urlDestination.current != null) setAvatarLoaded(true)
+  }, [engineReady])
+
   // A visitor with no session gets the engine the moment it is ready, holding the world, with no
   // sign-in: the guest start page's stage then shows the live avatar instead of a snapshot, and
   // ACCEPT AND PLAY only has the sign-in left to run (submitLogin sees launchedRef). A link's
@@ -2095,12 +2099,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   useEffect(() => {
     const driver = driverRef.current
     if (!engineReady || submitted || status !== 'sign-in-or-guest' || driver?.launch == null || launchedRef.current) return
-    if (boot.current.autoLogin != null) return
-    // a link's destination launches on the click, with no stage before it: nothing to wait for
-    if (urlDestination.current != null) {
-      setAvatarLoaded(true)
-      return
-    }
+    if (urlDestination.current != null || boot.current.autoLogin != null) return
     const home = driver.homeScene?.()
     launchEngine(driver, home?.realm ?? DEFAULT_REALM, home?.parcel ?? '0,0', { holdWorld: true })
   }, [engineReady, submitted, status, launchEngine])
