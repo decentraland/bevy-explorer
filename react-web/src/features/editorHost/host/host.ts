@@ -140,10 +140,14 @@ const SERVER_FRAME = 'iframe[src$="/headless.html"]'
 // realm change, which would go around spawnEditorScene and openPreview.
 const EDITOR_COMMANDS = new Set([
   'component_default', 'component_names', 'component_schema', 'crdt_initial', 'crdt_snapshot', 'debug_colliders',
-  'delete_component', 'delete_entity', 'freeze_scene', 'highlight', 'move_player_to', 'new_entity', 'player_position',
+  'delete_component', 'delete_entity', 'freeze_scene', 'highlight', 'mobile_ui', 'move_player_to', 'new_entity', 'player_position',
   'reload', 'save_composite', 'scene_content', 'scene_logs', 'scene_stats', 'screenshot', 'set_component',
-  'set_component_raw', 'set_scene', 'texture_camera_screenshot', 'tick_scene', 'time', 'unfreeze_scene', 'walk_player_to'
+  'set_component_raw', 'set_scene', 'texture_camera_screenshot', 'tick_scene', 'time', 'ui_layout', 'unfreeze_scene', 'walk_player_to'
 ])
+// /mobile_ui tells scenes they are on a phone; the page makes the canvas phone-shaped (1600x720),
+// letterboxed in the window, so the 3D view, the scene UI and /screenshot all come out that shape
+const PHONE_CANVAS = { width: 'min(100vw, calc(100vh * 20 / 9))', height: 'min(100vh, calc(100vw * 9 / 20))', position: 'absolute', inset: '0', margin: 'auto' }
+const FULL_CANVAS = { width: '100%', height: '100%', position: '', inset: '', margin: '' }
 // headers the editor may send on a request signed as the player
 const SIGNED_FETCH_HEADERS = new Set(['accept', 'content-type', 'if-match', 'if-none-match', 'x-confirm-delete-all'])
 // what the editor may ask of each service a scene's signed fetch reaches
@@ -169,6 +173,13 @@ let clock: Promise<string | null> | null = null
 let published = false
 let editorAttempts = 0
 let editor: Promise<EditorPackage> | null = null
+let phone = false
+
+function phoneCanvas(on: boolean): void {
+  phone = on
+  const canvas = document.getElementById('mygame-canvas')
+  if (canvas != null) Object.assign(canvas.style, on ? PHONE_CANVAS : FULL_CANVAS)
+}
 
 /** The engine's url-sync options as the page records them: `editor` as the entry url had it (the
  *  engine echoes its own, unset, flag) and a preview realm replaced by the place to go back to. */
@@ -326,6 +337,10 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
 
   const leave = (): void => {
     w.__bevySetViewportActive?.(true)
+    if (phone) {
+      phoneCanvas(false)
+      deps.engineConsole('/mobile_ui off').catch((e: unknown) => console.error('[editor host] leaving the phone canvas failed', e))
+    }
     void serveScene(null)
     try {
       w.__dclEditor?.unmount?.()
@@ -374,7 +389,13 @@ function publishHost(source: EditorSource, pageDir: string, deps: EditorHostDeps
       const [name = '', ...args] = line.trim().replace(/^\//, '').split(/\s+/)
       const namesScene = name === 'reload' || (name === 'set_scene' && args.length > 0)
       if (!EDITOR_COMMANDS.has(name) || (namesScene && !editedScene(args.at(0)))) return Promise.reject(new Error('not-allowed'))
-      return deps.engineConsole(line)
+      const reply = deps.engineConsole(line)
+      const state = args.at(0)
+      if (name !== 'mobile_ui' || (state !== 'on' && state !== 'off')) return reply
+      return reply.then((r) => {
+        phoneCanvas(state === 'on')
+        return r
+      })
     },
     identity: deps.identity,
     setViewportActive(active) {

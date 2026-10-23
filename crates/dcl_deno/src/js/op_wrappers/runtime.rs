@@ -52,6 +52,6 @@ async fn op_camera_fov(op_state: Rc<RefCell<OpState>>) -> Result<f32, AnyError> 
 
 #[op2]
 #[string]
-fn op_get_platform() -> &'static str {
-    dcl::js::runtime::get_platform()
+fn op_get_platform(state: &mut OpState) -> String {
+    dcl::js::runtime::op_get_platform(state)
 }

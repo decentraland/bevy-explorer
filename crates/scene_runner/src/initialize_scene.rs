@@ -49,8 +49,8 @@ use crate::{
     parcel_to_vec3,
     renderer_context::{RendererSceneContext, SceneState, FROZEN_BLOCK},
     update_world::{visibility::VisibilityComponent, ComponentTracker},
-    vec3_to_parcel, ContainerEntity, DeletedSceneEntities, OutOfWorld, SceneEntity,
-    SceneThreadHandle,
+    vec3_to_parcel, ContainerEntity, DeletedSceneEntities, MobileUiEmulation, OutOfWorld,
+    SceneEntity, SceneThreadHandle,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -651,6 +651,7 @@ pub(crate) fn initialize_scene(
     time: Res<Time>,
     editor_mode: Res<EditorMode>,
     portable_scenes: Res<PortableScenes>,
+    mobile_ui: Res<MobileUiEmulation>,
 ) {
     for (root, mut state, initial_data, mut context, super_user) in loading_scenes.iter_mut() {
         if !matches!(state.as_mut(), SceneLoading::Javascript { .. }) || context.tick_number != 1 {
@@ -702,7 +703,7 @@ pub(crate) fn initialize_scene(
             .as_ref()
             .is_some_and(|inspect_hash| **inspect_hash == *context.hash);
 
-        let scene_context = CrdtContext::new(
+        let mut scene_context = CrdtContext::new(
             context.scene_id,
             context.hash.to_string(),
             context.title.clone(),
@@ -710,6 +711,9 @@ pub(crate) fn initialize_scene(
             preview_mode.is_preview,
             server_mode(),
         );
+        if mobile_ui.0 && super_user.is_none() {
+            scene_context.platform = Some("mobile".to_owned());
+        }
 
         let (main_sx, kill_guard) = spawn_scene(
             context.crdt_store.clone(),

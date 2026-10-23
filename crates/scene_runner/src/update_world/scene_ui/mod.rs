@@ -29,7 +29,7 @@ use crate::{
     initialize_scene::{LiveScenes, SuperUserScene},
     renderer_context::RendererSceneContext,
     update_world::scene_ui::ui_pointer::manage_scene_ui_interact,
-    ContainerEntity, ContainingScene, InteractableArea, SceneEntity, SceneSets,
+    ContainerEntity, ContainingScene, InteractableArea, MobileUiEmulation, SceneEntity, SceneSets,
 };
 use common::{
     asset_cache::{clean_asset_cache, AssetCache},
@@ -207,6 +207,20 @@ pub struct UiTransform {
     border_radius: BorderRadius,
     border_color: BorderColor,
     block_pointer: bool,
+}
+
+impl UiTransform {
+    pub fn parent(&self) -> SceneEntityId {
+        self.parent
+    }
+
+    pub fn element_id(&self) -> Option<&str> {
+        self.element_id.as_deref()
+    }
+
+    pub fn zindex(&self) -> Option<i32> {
+        self.zindex
+    }
 }
 
 impl From<PbUiTransform> for UiTransform {
@@ -601,6 +615,18 @@ pub struct LinkedScene {
     element_id: Option<String>,
 }
 
+impl UiLink {
+    // false for nodes drawn into a UiCanvas texture rather than on the screen
+    pub fn is_window_ui(&self) -> bool {
+        self.is_window_ui
+    }
+
+    // what makes this node take the pointer: "pointer_events", "pointer_filter", "input", …
+    pub fn interactors(&self) -> impl Iterator<Item = &'static str> + '_ {
+        self.interactors.iter().copied()
+    }
+}
+
 impl Default for UiLink {
     fn default() -> Self {
         Self {
@@ -638,6 +664,7 @@ fn create_ui_roots(
     images: ResMut<Assets<Image>>,
     hidden_uis: Res<HiddenSceneUis>,
     interactable_area: Res<InteractableArea>,
+    mobile: Res<MobileUiEmulation>,
     window: Query<&Window, With<PrimaryWindow>>,
     mut atlases: ResMut<SceneCanvasAtlases>,
 ) {
@@ -709,7 +736,10 @@ fn create_ui_roots(
         };
 
         if current_scenes.contains(&ent)
-            && (maybe_link.is_none() || config.is_changed() || interactable_area.is_changed())
+            && (maybe_link.is_none()
+                || config.is_changed()
+                || interactable_area.is_changed()
+                || mobile.is_changed())
         {
             let display = if maybe_super.is_some()
                 || hidden_uis
@@ -723,7 +753,8 @@ fn create_ui_roots(
                 Display::None
             };
 
-            let root_style = if config.constrain_scene_ui && maybe_super.is_none() {
+            // a phone gives the scene the whole screen; it applies the interactable area itself
+            let root_style = if config.constrain_scene_ui && maybe_super.is_none() && !mobile.0 {
                 Node {
                     display,
                     ..constrained_root_style.clone()

@@ -245,6 +245,55 @@ pub struct SceneLoopSchedule {
 #[derive(Default, Resource)]
 pub struct InteractableArea(pub Option<Vec4>);
 
+/// Tells scenes they run on a phone: they get the mobile platform and the mobile client's
+/// interactable area, scaled to the window. The window keeps its own size, so the host makes it
+/// phone-shaped (on web, the editor host sizes `#mygame-canvas`). The platform is fixed in a
+/// scene's `CrdtContext` when it spawns and the SDK caches `getExplorerInformation` at module
+/// load, so a scene picks the switch up when reloaded; the canvas size and interactable area
+/// apply live. Native touch controls are not drawn.
+#[derive(Default, Resource, PartialEq)]
+pub struct MobileUiEmulation(pub bool);
+
+/// the mobile client's UI canvas width and its interactable area on it (left, top, right,
+/// bottom), as godot-explorer reports them for a 1600x720 landscape phone
+pub const MOBILE_CANVAS_WIDTH: f32 = 1600.0;
+pub const MOBILE_INTERACTABLE_AREA: Vec4 = Vec4::new(436.0, 32.0, 108.0, 45.0);
+
+impl MobileUiEmulation {
+    /// the mobile interactable area on a window this wide, or None when off
+    pub fn interactable_area(&self, width: f32) -> Option<Vec4> {
+        self.0
+            .then(|| MOBILE_INTERACTABLE_AREA * (width / MOBILE_CANVAS_WIDTH))
+    }
+}
+
+#[cfg(test)]
+mod mobile_ui_tests {
+    use super::*;
+
+    #[test]
+    fn scales_the_interactable_area_from_the_phone_width() {
+        let on = MobileUiEmulation(true);
+        assert_eq!(on.interactable_area(1600.0), Some(MOBILE_INTERACTABLE_AREA));
+        let half = on.interactable_area(800.0).unwrap();
+        assert!(
+            half.abs_diff_eq(Vec4::new(218.0, 16.0, 54.0, 22.5), 1e-4),
+            "{half}"
+        );
+    }
+
+    #[test]
+    fn no_area_when_off() {
+        assert_eq!(MobileUiEmulation(false).interactable_area(1600.0), None);
+    }
+}
+
+#[derive(SystemParam)]
+struct ScreenAreas<'w> {
+    interactable: Res<'w, InteractableArea>,
+    mobile: Res<'w, MobileUiEmulation>,
+}
+
 /// A full-screen HUD surface covers the world (`SystemApi::SetUiFocus.covered`).
 #[derive(Default, Resource)]
 pub struct HudFullscreen(pub bool);
@@ -288,6 +337,7 @@ impl Plugin for SceneRunnerPlugin {
         app.init_resource::<Toasts>();
         app.init_resource::<TestingData>();
         app.init_resource::<InteractableArea>();
+        app.init_resource::<MobileUiEmulation>();
         app.init_resource::<HudFullscreen>();
         app.init_resource::<HudFocus>();
         // shared by pointer results, trigger areas and the avatar crate — owned here so
@@ -845,7 +895,7 @@ fn send_scene_updates(
     data_channel: Res<SceneRoomConnection>,
     server_rooms: Res<comms::ServerSceneRooms>,
     scene_realms: Res<comms::global_crdt::SceneRealms>,
-    interactable_area: Res<InteractableArea>,
+    screen_areas: ScreenAreas,
     preview_mode: Res<PreviewMode>,
     mut buf: Local<Vec<u8>>,
     mut realm_info_cache: Local<RealmInfoCache>,
@@ -1008,9 +1058,25 @@ fn send_scene_updates(
     let canvas_info = if let Ok(window) = window.single() {
         let width = window.resolution.width();
         let height = window.resolution.height();
-        let interactable = interactable_area.get_or_default(width, height);
+        let interactable = screen_areas.interactable.get_or_default(width, height);
+        let mobile_area = screen_areas
+            .mobile
+            .interactable_area(width)
+            .filter(|_| !is_super);
 
-        if config.constrain_scene_ui && !is_super {
+        if let Some(area) = mobile_area {
+            PbUiCanvasInformation {
+                device_pixel_ratio: window.resolution.scale_factor(),
+                width: width as i32,
+                height: height as i32,
+                interactable_area: Some(BorderRect {
+                    left: area.x,
+                    top: area.y,
+                    right: area.z,
+                    bottom: area.w,
+                }),
+            }
+        } else if config.constrain_scene_ui && !is_super {
             // we optionally misreport window size and constrain scene ui directly as nobody uses this info properly
             PbUiCanvasInformation {
                 device_pixel_ratio: window.resolution.scale_factor(),

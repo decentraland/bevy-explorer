@@ -8,6 +8,7 @@ mod asset_commands;
 mod manual_registry;
 mod read_commands;
 pub mod snapshot;
+mod ui_layout;
 mod write_commands;
 
 pub use active_scene::ActiveInspectionScene;
@@ -27,6 +28,7 @@ impl Plugin for SceneInspectorPlugin {
         read_commands::add_read_commands(app);
         write_commands::add_write_commands(app);
         asset_commands::add_asset_commands(app);
+        ui_layout::add_ui_layout_command(app);
 
         // after the scene loop so replies are handled the frame they arrive, and before pruning
         // so a reply that raced a scene breaking is still delivered
