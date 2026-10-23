@@ -490,9 +490,7 @@ fn exit_transmission_kind<'w, R: RelationshipTarget>(
     livestream_manager: Single<'w, (&R, &mut LivestreamManager)>,
 ) {
     let (r, livestream_manager) = livestream_manager.into_inner();
-    livestream_manager
-        .state
-        .send_modify(|state| *state = VideoState::VsNone);
+    livestream_manager.send_if_modified(VideoState::VsNone);
     for entity in r.collection().iter() {
         commands
             .entity(entity)
