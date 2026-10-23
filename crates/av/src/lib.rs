@@ -51,13 +51,12 @@ pub trait AVPlayer: Component {
     type Position: Component + Deref<Target = f32> + PartialEq;
 
     const ALLOWS_LIVESTREAM: bool;
+    const HAS_VIDEO: bool;
 
     fn url(&self) -> &str;
     fn source(&self) -> Self::Source;
     fn config(&self) -> Self::Config;
     fn position(&self) -> Self::Position;
-
-    fn has_video() -> bool;
 }
 
 pub trait AVPlayerConfig {
@@ -131,6 +130,7 @@ impl AVPlayer for AudioStream {
     type Position = AudioStreamPosition;
 
     const ALLOWS_LIVESTREAM: bool = false;
+    const HAS_VIDEO: bool = false;
 
     fn url(&self) -> &str {
         &self.url
@@ -150,10 +150,6 @@ impl AVPlayer for AudioStream {
     fn position(&self) -> Self::Position {
         AudioStreamPosition(0.)
     }
-
-    fn has_video() -> bool {
-        false
-    }
 }
 
 #[derive(Component, Deref)]
@@ -172,6 +168,7 @@ impl AVPlayer for VideoPlayer {
     type Position = VideoPlayerPosition;
 
     const ALLOWS_LIVESTREAM: bool = true;
+    const HAS_VIDEO: bool = true;
 
     fn url(&self) -> &str {
         &self.src
@@ -192,10 +189,6 @@ impl AVPlayer for VideoPlayer {
 
     fn position(&self) -> Self::Position {
         VideoPlayerPosition(self.position.unwrap_or(0.))
-    }
-
-    fn has_video() -> bool {
-        true
     }
 }
 

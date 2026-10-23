@@ -465,12 +465,12 @@ fn publish_av_player_state<T: AVPlayer>(
 
         let new_state = *state.borrow_and_update();
         if &new_state != sent_state
-            || (T::has_video()
+            || (T::HAS_VIDEO
                 && video.as_ref().is_some_and(|video| {
                     video.current_time >= video.last_reported_time + VIDEO_REPORT_FREQUENCY
                 }))
         {
-            if T::has_video() {
+            if T::HAS_VIDEO {
                 let Some(video) = video else {
                     continue;
                 };

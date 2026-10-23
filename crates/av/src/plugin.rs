@@ -516,7 +516,7 @@ fn set_state<T: AVPlayer>(
     };
     let tick_number = context.tick_number;
 
-    if T::has_video() {
+    if T::HAS_VIDEO {
         context.update_crdt(
             SceneComponentId::VIDEO_EVENT,
             CrdtType::GO_ANY,

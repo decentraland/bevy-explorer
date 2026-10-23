@@ -63,7 +63,7 @@ pub fn av_sinks<T: AVPlayer>(
         spawn_av_thread(
             ipfs,
             command_receiver,
-            T::has_video().then_some(video_sender),
+            T::HAS_VIDEO.then_some(video_sender),
             audio_sender,
             state_sender,
             handle_receiver,
@@ -82,7 +82,7 @@ pub fn av_sinks<T: AVPlayer>(
             video_sender,
             state_sender,
             Some(url),
-            T::has_video(),
+            T::HAS_VIDEO,
             &image,
         );
     }
@@ -95,7 +95,7 @@ pub fn av_sinks<T: AVPlayer>(
     AVSinks {
         #[cfg(feature = "ffmpeg")]
         audio,
-        video: T::has_video().then_some(VideoSink::new(source, video_receiver, image)),
+        video: T::HAS_VIDEO.then_some(VideoSink::new(source, video_receiver, image)),
         command_sender,
         rate: None,
         state: state_receiver,
@@ -186,7 +186,7 @@ pub fn noop_sinks<T: AVPlayer>(source: String, image: Handle<Image>) -> AVSinks<
         video_sender,
         state_sender,
         None,
-        T::has_video(),
+        T::HAS_VIDEO,
         &image,
     );
 
