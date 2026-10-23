@@ -1,20 +1,17 @@
-use std::{cmp::Ordering, collections::BTreeSet, marker::PhantomData};
+use std::{cmp::Ordering, collections::BTreeSet};
 
-use bevy::{diagnostic::FrameCount, math::FloatOrd, prelude::*};
+use bevy::{math::FloatOrd, prelude::*};
 use common::{
     sets::SceneSets,
     structs::{AppConfig, PrimaryUser},
 };
 use dcl::interface::ComponentPosition;
 use dcl_component::{
-    proto_components::sdk::components::{
-        PbAudioEvent, PbAudioStream, PbVideoEvent, PbVideoPlayer, VideoState,
-    },
-    CrdtType, SceneComponentId,
+    proto_components::sdk::components::{PbAudioStream, PbVideoPlayer},
+    SceneComponentId,
 };
-use livestream_manager::{states::Transmitter, ActiveReceiver, ReceiverImage, ReceiverVolume};
+use livestream_manager::{ActiveReceiver, ReceiverImage, ReceiverVolume};
 use scene_runner::{
-    renderer_context::RendererSceneContext,
     update_world::{material::VideoTextureOutput, AddCrdtInterfaceExt},
     ContainerEntity, ContainingScene,
 };
@@ -84,9 +81,6 @@ impl Plugin for AVPlayerPlugin {
 
         app.add_systems(Update, receiver_image_updated);
 
-        app.add_observer(set_state::<AudioStream>);
-        app.add_observer(set_state::<VideoPlayer>);
-
         #[cfg(feature = "av_player_debug")]
         app.add_plugins(crate::av_player_debug::AvPlayerDebugPlugin);
     }
@@ -98,7 +92,6 @@ fn av_player_on_insert<T: AVPlayer>(
     mut commands: Commands,
     mut av_players: Query<(
         &T,
-        &ContainerEntity,
         Option<&T::Source>,
         Option<&T::Config>,
         Option<&T::Position>,
@@ -106,7 +99,7 @@ fn av_player_on_insert<T: AVPlayer>(
 ) {
     let entity = trigger.target();
     debug!("{} {} updated.", disqualified::ShortName::of::<T>(), entity);
-    let Ok((av_player, container_entity, maybe_source, mut maybe_config, mut maybe_position)) =
+    let Ok((av_player, maybe_source, mut maybe_config, mut maybe_position)) =
         av_players.get_mut(entity)
     else {
         return;
@@ -122,11 +115,6 @@ fn av_player_on_insert<T: AVPlayer>(
         );
 
         let new_source = av_player.source();
-        commands.trigger(SetState::<T> {
-            entity: *container_entity,
-            state: VideoState::VsLoading,
-            _phantom: PhantomData,
-        });
         commands.entity(entity).try_insert(new_source);
 
         let _ = maybe_config.take();
@@ -154,11 +142,7 @@ fn av_player_on_insert<T: AVPlayer>(
     }
 }
 
-fn av_player_on_remove<T: AVPlayer>(
-    trigger: Trigger<OnRemove, T>,
-    mut commands: Commands,
-    av_players: Query<&ContainerEntity, With<T>>,
-) {
+fn av_player_on_remove<T: AVPlayer>(trigger: Trigger<OnRemove, T>, mut commands: Commands) {
     let entity = trigger.target();
     commands.entity(entity).try_remove::<(
         T::Source,
@@ -170,16 +154,6 @@ fn av_player_on_remove<T: AVPlayer>(
     )>();
     #[cfg(feature = "ffmpeg")]
     commands.entity(entity).try_remove::<AVSinks<T>>();
-
-    let Ok(container_entity) = av_players.get(entity) else {
-        return;
-    };
-
-    commands.trigger(SetState::<T> {
-        entity: *container_entity,
-        state: VideoState::VsNone,
-        _phantom: PhantomData,
-    });
 }
 
 #[expect(clippy::type_complexity)]
@@ -249,23 +223,10 @@ fn should_be_playing_on_add<T: AVPlayer>(
 fn should_be_playing_on_remove<T: AVPlayer>(
     trigger: Trigger<OnRemove, ShouldBePlaying<T>>,
     mut commands: Commands,
-    av_players: Query<(Has<Stream>, &ContainerEntity), With<T>>,
 ) {
     let entity = trigger.target();
     debug!("Stream {} no longer playing.", entity);
     commands.entity(entity).try_remove::<ActiveReceiver>();
-
-    let Ok((has_stream, container_entity)) = av_players.get(entity) else {
-        debug!("AVPlayer {entity} not a scene entity.");
-        return;
-    };
-    if has_stream {
-        commands.trigger(SetState::<VideoPlayer> {
-            entity: *container_entity,
-            state: VideoState::VsPaused,
-            _phantom: PhantomData,
-        });
-    }
 }
 
 #[expect(clippy::type_complexity)]
@@ -424,28 +385,18 @@ fn video_player_should_be_playing(
     scratch_shouldnt_be_playing.clear();
 }
 
-#[expect(clippy::type_complexity)]
 fn receiver_image_added(
     trigger: Trigger<OnAdd, ReceiverImage>,
     mut commands: Commands,
-    video_players: Query<(&ContainerEntity, &ReceiverImage), (With<VideoPlayer>, With<Stream>)>,
-    transmitter_state: Res<State<Transmitter>>,
+    video_players: Query<&ReceiverImage, (With<VideoPlayer>, With<Stream>)>,
 ) {
     let entity = trigger.target();
 
-    if let Ok((container_entity, receiver_image)) = video_players.get(entity) {
+    if let Ok(receiver_image) = video_players.get(entity) {
         debug!("ReceiverImage added to {}", entity);
         commands
             .entity(entity)
             .try_insert(VideoTextureOutput(receiver_image.image.clone()));
-
-        if transmitter_state.get() == &Transmitter::On {
-            commands.trigger(SetState::<VideoPlayer> {
-                entity: *container_entity,
-                state: VideoState::VsPlaying,
-                _phantom: PhantomData,
-            });
-        }
     }
 }
 
@@ -468,54 +419,6 @@ fn receiver_image_updated(av_players: Query<(Entity, &ReceiverImage, &mut VideoT
     }
 }
 
-#[derive(Event)]
-struct SetState<T: AVPlayer> {
-    entity: ContainerEntity,
-    state: VideoState,
-    _phantom: PhantomData<T>,
-}
-
-fn set_state<T: AVPlayer>(
-    trigger: Trigger<SetState<T>>,
-    mut renderer_context: Query<&mut RendererSceneContext>,
-    frame: Res<FrameCount>,
-) {
-    let SetState {
-        entity: container_entity,
-        state,
-        _phantom,
-    } = trigger.event();
-
-    let Ok(mut context) = renderer_context.get_mut(container_entity.root) else {
-        return;
-    };
-    let tick_number = context.tick_number;
-
-    if T::HAS_VIDEO {
-        context.update_crdt(
-            SceneComponentId::VIDEO_EVENT,
-            CrdtType::GO_ANY,
-            container_entity.container_id,
-            &PbVideoEvent {
-                timestamp: frame.0,
-                tick_number,
-                current_offset: 0.,
-                video_length: 0.,
-                state: *state as i32,
-            },
-        );
-    } else {
-        context.update_crdt(
-            SceneComponentId::AUDIO_EVENT,
-            CrdtType::GO_ANY,
-            container_entity.container_id,
-            &PbAudioEvent {
-                timestamp: frame.0,
-                state: *state as i32,
-            },
-        );
-    }
-}
 #[cfg(test)]
 mod tests {
     #[cfg(target_arch = "wasm32")]
