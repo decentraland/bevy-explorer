@@ -13,7 +13,6 @@ pub struct LivestreamManagerPlugin;
 impl Plugin for LivestreamManagerPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<TransmissionUpdated>();
-        app.add_event::<TransmissionStopped>();
 
         app.init_state::<TransmissionKind>();
         app.init_state::<Transmitter>();
@@ -95,6 +94,16 @@ impl ComputedStates for TransmissionState {
 struct LivestreamManager {
     image: Handle<Image>,
     state: tokio::sync::watch::Sender<VideoState>,
+}
+
+impl LivestreamManager {
+    pub fn send_if_modified(&self, new_state: VideoState) -> bool {
+        self.state.send_if_modified(|state| {
+            let diff = state != &new_state;
+            *state = new_state;
+            diff
+        })
+    }
 }
 
 #[derive(Component)]
@@ -509,6 +518,6 @@ fn send_update_event(mut transmission_updated: EventWriter<TransmissionUpdated>)
     transmission_updated.write(TransmissionUpdated);
 }
 
-fn send_stopped_event(mut transmission_stopped: EventWriter<TransmissionStopped>) {
-    transmission_stopped.write(TransmissionStopped);
+fn send_stopped_event(livestream_manager: Single<&LivestreamManager>) {
+    livestream_manager.send_if_modified(VideoState::VsLoading);
 }
