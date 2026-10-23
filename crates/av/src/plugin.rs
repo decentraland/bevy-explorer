@@ -12,9 +12,7 @@ use dcl_component::{
     },
     CrdtType, SceneComponentId,
 };
-use livestream_manager::{
-    states::Transmitter, ActiveReceiver, ReceiverImage, ReceiverVolume, TransmissionUpdated,
-};
+use livestream_manager::{states::Transmitter, ActiveReceiver, ReceiverImage, ReceiverVolume};
 use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::{material::VideoTextureOutput, AddCrdtInterfaceExt},
@@ -457,21 +455,15 @@ fn receiver_image_removed(trigger: Trigger<OnRemove, ReceiverImage>, mut command
     commands.entity(entity).try_remove::<VideoTextureOutput>();
 }
 
-fn receiver_image_updated(
-    mut commands: Commands,
-    av_players: Query<(Entity, &ContainerEntity, &mut VideoTextureOutput), With<ReceiverImage>>,
-    mut transmission_updated: EventReader<TransmissionUpdated>,
-) {
-    if transmission_updated.read().count() > 0 {
-        for (entity, container_entity, mut video_texture_output) in av_players {
+fn receiver_image_updated(av_players: Query<(Entity, &ReceiverImage, &mut VideoTextureOutput)>) {
+    for (entity, receiver_image, mut video_texture_output) in av_players {
+        if receiver_image
+            .state
+            .has_changed()
+            .is_ok_and(std::convert::identity)
+        {
             debug!("ReceiverImage of {entity} was updated.");
             video_texture_output.set_changed();
-
-            commands.trigger(SetState::<VideoPlayer> {
-                entity: *container_entity,
-                state: VideoState::VsPlaying,
-                _phantom: PhantomData,
-            });
         }
     }
 }

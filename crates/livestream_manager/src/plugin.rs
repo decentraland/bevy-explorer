@@ -12,8 +12,6 @@ pub struct LivestreamManagerPlugin;
 
 impl Plugin for LivestreamManagerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<TransmissionUpdated>();
-
         app.init_state::<TransmissionKind>();
         app.init_state::<Transmitter>();
         app.init_state::<Receiver>();
@@ -401,7 +399,6 @@ fn manage_casts(
         )>,
     )>,
     active_transmission: Option<Single<Entity, With<ActiveTransmitter>>>,
-    mut transmission_updated: EventWriter<TransmissionUpdated>,
 ) {
     let (livestream_manager, any_streamer) = livestream_manager.into_inner();
     let collection = match any_streamer {
@@ -433,7 +430,7 @@ fn manage_casts(
                 state: livestream_manager.state.clone(),
             });
 
-        transmission_updated.write(TransmissionUpdated);
+        livestream_manager.send_if_modified(VideoState::VsPlaying);
     }
 }
 
@@ -512,8 +509,8 @@ fn transfer_receiver_volume(
     }
 }
 
-fn send_update_event(mut transmission_updated: EventWriter<TransmissionUpdated>) {
-    transmission_updated.write(TransmissionUpdated);
+fn send_update_event(livestream_manager: Single<&LivestreamManager>) {
+    livestream_manager.send_if_modified(VideoState::VsPlaying);
 }
 
 fn send_stopped_event(livestream_manager: Single<&LivestreamManager>) {

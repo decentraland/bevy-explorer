@@ -4,9 +4,11 @@ use bevy::{
     render::render_resource::Extent3d,
 };
 use common::{debug_panic, util::AsH160};
+#[cfg(not(target_arch = "wasm32"))]
+use dcl_component::proto_components::sdk::components::VideoState;
 use livestream_manager::{
     ActiveAudioTransmitter, ActiveTransmitter, ActiveVideoCast, AudioTransmitterKind,
-    AudioTransmitterVolume, TransmissionUpdated, TransmitterKind,
+    AudioTransmitterVolume, TransmitterKind,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use {
@@ -638,7 +640,6 @@ fn video_track_is_now_unsubscribed(
 fn queue_frame_copy(
     mut video_tracks: Query<&mut HtmlMediaEntity, (With<Video>, With<Subscribed>)>,
     mut images: ResMut<Assets<Image>>,
-    mut transmission_updated: EventWriter<TransmissionUpdated>,
 ) {
     for mut html_media_entity in video_tracks.iter_mut() {
         while let Ok(data) = html_media_entity.video.try_recv() {
@@ -657,7 +658,6 @@ fn queue_frame_copy(
                 height: info.height,
                 depth_or_array_layers: 1,
             };
-            transmission_updated.write(TransmissionUpdated);
         }
     }
 }
@@ -683,7 +683,6 @@ fn copy_frame(
     mut commands: Commands,
     active_transmitter: Single<(Entity, &ActiveTransmitter, &mut VideoFrameReceiver)>,
     mut images: ResMut<Assets<Image>>,
-    mut transmission_updated: EventWriter<TransmissionUpdated>,
 ) {
     let (entity, active_transmitter, mut video_frame_receiver): (
         Entity,
@@ -715,7 +714,7 @@ fn copy_frame(
                 height: frame.height(),
                 depth_or_array_layers: 1,
             });
-            transmission_updated.write(TransmissionUpdated);
+            active_transmitter.send_if_modified(VideoState::VsPlaying);
         }
         if let Some(data) = &mut image.data {
             // TODO verify this transfer priority

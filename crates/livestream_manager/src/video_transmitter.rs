@@ -23,3 +23,13 @@ pub struct ActiveTransmitter {
     pub image: Handle<Image>,
     pub state: tokio::sync::watch::Sender<VideoState>,
 }
+
+impl ActiveTransmitter {
+    pub fn send_if_modified(&self, new_state: VideoState) -> bool {
+        self.state.send_if_modified(|state| {
+            let diff = state != &new_state;
+            *state = new_state;
+            diff
+        })
+    }
+}
