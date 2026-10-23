@@ -130,7 +130,7 @@ fn serve_av_sources(mut sources: ResMut<AvSources>, mut receiver: ResMut<MediaEv
                         source.duration = duration;
                         source.send_info();
                     }
-                    source.send(VideoData::State(state));
+                    source.send_state(state);
                 }
             }
             MediaEvent::Frame {

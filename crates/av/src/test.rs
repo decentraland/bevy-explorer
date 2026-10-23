@@ -23,7 +23,7 @@ use wasm_bindgen_test::*;
 #[cfg(any(feature = "ffmpeg", feature = "html"))]
 use crate::AVSinks;
 use crate::{
-    AVPlayer, AVPlayerPlugin, AudioStream, InScene, ShouldBePlaying, Stream, VideoPlayer,
+    plugin::AVPlayerPlugin, AVPlayer, AudioStream, InScene, ShouldBePlaying, Stream, VideoPlayer,
     LIVEKIT_VIDEO_STREAM,
 };
 

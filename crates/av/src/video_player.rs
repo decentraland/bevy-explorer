@@ -15,11 +15,11 @@ use common::{
 };
 use dcl::interface::CrdtType;
 use dcl_component::{
-    proto_components::sdk::components::{PbVideoEvent, VideoState},
+    proto_components::sdk::components::{PbAudioEvent, PbVideoEvent},
     SceneComponentId,
 };
 use ipfs::IpfsResource;
-use livestream_manager::ReceiverVolume;
+use livestream_manager::{ReceiverImage, ReceiverVolume};
 use media::{AVCommand, VideoData, VideoInfo};
 use scene_runner::{
     renderer_context::RendererSceneContext,
@@ -38,6 +38,15 @@ pub struct VideoPlayerPlugin;
 impl Plugin for VideoPlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Update, play_videos.before(update_materials));
+        app.add_systems(
+            Update,
+            (
+                publish_av_player_state::<AudioStream>,
+                publish_av_player_state::<VideoPlayer>,
+                publish_stream_state,
+            )
+                .after(play_videos),
+        );
         app.add_systems(
             Update,
             (
@@ -232,8 +241,10 @@ fn player_config_added<T: AVPlayer>(
             audio: _,
         video: _,
         command_sender,
-        sent_volume: _,
         rate,
+        state: _,
+        sent_volume: _,
+        sent_state: _,
         _phantom,
     } = sinks.as_mut();
 
@@ -269,7 +280,9 @@ fn update_av_volume<T: AVPlayer>(
             video: _,
             command_sender,
             rate: _,
+            state: _,
             sent_volume,
+            sent_state: _,
             _phantom,
         } = sinks.as_mut();
 
@@ -349,22 +362,18 @@ fn av_player_should_be_playing_on_remove<T: AVPlayer>(
 
 fn play_videos(
     mut images: ResMut<Assets<Image>>,
-    mut q: Query<(
-        &mut AVSinks<VideoPlayer>,
-        &ContainerEntity,
-        &mut VideoTextureOutput,
-    )>,
-    mut scenes: Query<&mut RendererSceneContext>,
-    frame: Res<FrameCount>,
+    mut q: Query<(&mut AVSinks<VideoPlayer>, &mut VideoTextureOutput)>,
 ) {
-    for (mut video_player_sinks, container, mut output) in q.iter_mut() {
+    for (mut video_player_sinks, mut output) in q.iter_mut() {
         let AVSinks {
             #[cfg(feature = "ffmpeg")]
                 audio: _,
             video: Some(video),
             command_sender: _,
             rate: sink_rate,
+            state: _,
             sent_volume: _,
+            sent_state: _,
             _phantom,
         } = video_player_sinks.as_mut()
         else {
@@ -372,7 +381,6 @@ fn play_videos(
         };
 
         let mut last_frame_received = None;
-        let mut new_state = None;
         loop {
             match video.video_receiver.try_recv() {
                 Ok(VideoData::Info(VideoInfo {
@@ -402,7 +410,6 @@ fn play_videos(
                     last_frame_received = Some(frame);
                     video.current_time = time;
                 }
-                Ok(VideoData::State(state)) => new_state = Some(state),
                 Err(_) => break,
             }
         }
@@ -429,24 +436,51 @@ fn play_videos(
                 output.set_changed();
             }
         }
+    }
+}
 
-        const VIDEO_REPORT_FREQUENCY: f64 = 1.0;
-        if new_state.is_none()
-            && (video.current_time > video.last_reported_time + VIDEO_REPORT_FREQUENCY
-                || video.current_time < video.last_reported_time)
+const VIDEO_REPORT_FREQUENCY: f64 = 1.0;
+
+fn publish_av_player_state<T: AVPlayer>(
+    mut q: Query<(&mut AVSinks<T>, &ContainerEntity)>,
+    mut scenes: Query<&mut RendererSceneContext>,
+    frame: Res<FrameCount>,
+) {
+    for (mut video_player_sinks, container) in q.iter_mut() {
+        let AVSinks {
+            #[cfg(feature = "ffmpeg")]
+                audio: _,
+            video,
+            command_sender: _,
+            rate: _,
+            state,
+            sent_volume: _,
+            sent_state,
+            _phantom,
+        } = video_player_sinks.as_mut();
+
+        let Ok(mut context) = scenes.get_mut(container.root) else {
+            continue;
+        };
+
+        let new_state = *state.borrow_and_update();
+        if &new_state != sent_state
+            || (T::HAS_VIDEO
+                && video.as_ref().is_some_and(|video| {
+                    video.current_time >= video.last_reported_time + VIDEO_REPORT_FREQUENCY
+                }))
         {
-            new_state = Some(VideoState::VsPlaying);
-        }
-
-        if let Some(state) = new_state {
-            if let Ok(mut context) = scenes.get_mut(container.root) {
+            if T::HAS_VIDEO {
+                let Some(video) = video else {
+                    continue;
+                };
                 trace!("send current time = {}", video.current_time);
                 let event = PbVideoEvent {
                     timestamp: frame.0,
                     tick_number: context.tick_number,
                     current_offset: video.current_time as f32,
                     video_length: video.length.unwrap_or(-1.0) as f32,
-                    state: state.into(),
+                    state: new_state as i32,
                 };
                 context.update_crdt(
                     SceneComponentId::VIDEO_EVENT,
@@ -455,7 +489,51 @@ fn play_videos(
                     &event,
                 );
                 video.last_reported_time = video.current_time;
+            } else {
+                trace!("send audio event = {:?}", new_state);
+                let event = PbAudioEvent {
+                    timestamp: frame.0,
+                    state: new_state as i32,
+                };
+                context.update_crdt(
+                    SceneComponentId::AUDIO_EVENT,
+                    CrdtType::GO_ANY,
+                    container.container_id,
+                    &event,
+                );
             }
+        }
+    }
+}
+
+fn publish_stream_state(
+    mut q: Query<(&mut ReceiverImage, &ContainerEntity), With<VideoPlayer>>,
+    mut scenes: Query<&mut RendererSceneContext>,
+    frame: Res<FrameCount>,
+) {
+    for (mut receiver_image, container) in q.iter_mut() {
+        let ReceiverImage { image: _, state } = receiver_image.as_mut();
+
+        let Ok(mut context) = scenes.get_mut(container.root) else {
+            continue;
+        };
+
+        if state.has_changed().is_ok_and(|b| b) {
+            let new_state = *state.borrow_and_update();
+            trace!("send stream state = {:?}", new_state);
+            let event = PbVideoEvent {
+                timestamp: frame.0,
+                tick_number: context.tick_number,
+                current_offset: -1.,
+                video_length: -1.,
+                state: new_state as i32,
+            };
+            context.update_crdt(
+                SceneComponentId::VIDEO_EVENT,
+                CrdtType::GO_ANY,
+                container.container_id,
+                &event,
+            );
         }
     }
 }

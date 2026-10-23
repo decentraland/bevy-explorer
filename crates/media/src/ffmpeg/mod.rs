@@ -37,15 +37,13 @@ pub fn ffmpeg_worker(
     commands: tokio::sync::mpsc::UnboundedReceiver<AVCommand>,
     video: Option<tokio::sync::mpsc::Sender<VideoData>>,
     audio: tokio::sync::mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
+    state_sender: tokio::sync::watch::Sender<VideoState>,
     audio_handle: tokio::sync::oneshot::Receiver<AudioHandle>,
     mut path: String,
     hash: String,
 ) -> Result<(), anyhow::Error> {
-    if let Some(ref video) = video {
-        video
-            .blocking_send(VideoData::State(VideoState::VsLoading))
-            .report();
-    }
+    state_sender.send(VideoState::VsLoading).report();
+
     debug!("av thread spawned for {path} ...");
     let download = |url: &str| -> Result<String, anyhow::Error> {
         let local_folder = ipfas.cache_path().unwrap().join("video_downloads");
@@ -128,11 +126,23 @@ pub fn ffmpeg_worker(
         (None, None) => Ok(()),
         (None, Some(mut ac)) => {
             debug!("Processing stream with audio only");
-            process_streams(input_context, &mut [&mut ac], commands, audio_output)
+            process_streams(
+                input_context,
+                &mut [&mut ac],
+                commands,
+                audio_output,
+                state_sender,
+            )
         }
         (Some(mut vc), None) => {
             debug!("Processing stream with video only");
-            process_streams(input_context, &mut [&mut vc], commands, audio_output)
+            process_streams(
+                input_context,
+                &mut [&mut vc],
+                commands,
+                audio_output,
+                state_sender,
+            )
         }
         (Some(mut vc), Some(mut ac)) => {
             debug!("Processing stream");
@@ -141,6 +151,7 @@ pub fn ffmpeg_worker(
                 &mut [&mut vc, &mut ac],
                 commands,
                 audio_output,
+                state_sender,
             )
         }
     }

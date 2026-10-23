@@ -7754,6 +7754,8 @@ name = "livestream_manager"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "dcl_component",
+ "tokio",
  "wasm-bindgen-test",
 ]
 

@@ -4,9 +4,11 @@ use bevy::{
     render::render_resource::Extent3d,
 };
 use common::{debug_panic, util::AsH160};
+#[cfg(not(target_arch = "wasm32"))]
+use dcl_component::proto_components::sdk::components::VideoState;
 use livestream_manager::{
     ActiveAudioTransmitter, ActiveTransmitter, ActiveVideoCast, AudioTransmitterKind,
-    AudioTransmitterVolume, TransmissionUpdated, TransmitterKind,
+    AudioTransmitterVolume, TransmitterKind,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use {
@@ -609,9 +611,14 @@ fn video_track_is_now_subscribed(
 
     let (command_sender, command_receiver) = tokio::sync::mpsc::unbounded_channel();
     let (video_sender, video_receiver) = tokio::sync::mpsc::channel(10);
-    let image = (*active_transmitter).clone();
+    let image = active_transmitter.image.clone();
     // the page attaches the track's video element to the media host under this id
-    let media_id = media::adopt_video(command_receiver, video_sender, &image);
+    let media_id = media::adopt_video(
+        command_receiver,
+        video_sender,
+        active_transmitter.state.clone(),
+        &image,
+    );
     video.attach(media_id);
     commands.entity(entity).try_insert(HtmlMediaEntity {
         _commands: command_sender,
@@ -633,7 +640,6 @@ fn video_track_is_now_unsubscribed(
 fn queue_frame_copy(
     mut video_tracks: Query<&mut HtmlMediaEntity, (With<Video>, With<Subscribed>)>,
     mut images: ResMut<Assets<Image>>,
-    mut transmission_updated: EventWriter<TransmissionUpdated>,
 ) {
     for mut html_media_entity in video_tracks.iter_mut() {
         while let Ok(data) = html_media_entity.video.try_recv() {
@@ -652,7 +658,6 @@ fn queue_frame_copy(
                 height: info.height,
                 depth_or_array_layers: 1,
             };
-            transmission_updated.write(TransmissionUpdated);
         }
     }
 }
@@ -678,7 +683,6 @@ fn copy_frame(
     mut commands: Commands,
     active_transmitter: Single<(Entity, &ActiveTransmitter, &mut VideoFrameReceiver)>,
     mut images: ResMut<Assets<Image>>,
-    mut transmission_updated: EventWriter<TransmissionUpdated>,
 ) {
     let (entity, active_transmitter, mut video_frame_receiver): (
         Entity,
@@ -686,7 +690,7 @@ fn copy_frame(
         Mut<VideoFrameReceiver>,
     ) = active_transmitter.into_inner();
 
-    let Some(image) = images.get_mut(active_transmitter.id()) else {
+    let Some(image) = images.get_mut(active_transmitter.image.id()) else {
         debug_panic!("ActiveTransmitter image handle is invalid");
     };
 
@@ -710,7 +714,7 @@ fn copy_frame(
                 height: frame.height(),
                 depth_or_array_layers: 1,
             });
-            transmission_updated.write(TransmissionUpdated);
+            active_transmitter.send_if_modified(VideoState::VsPlaying);
         }
         if let Some(data) = &mut image.data {
             // TODO verify this transfer priority

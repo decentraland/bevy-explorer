@@ -1,8 +1,6 @@
 use std::collections::VecDeque;
 
 use bevy::prelude::*;
-use common::util::ReportErr;
-use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::{
     Packet, decoder,
     ffi::AVPixelFormat,
@@ -180,10 +178,6 @@ impl FfmpegContext for VideoContext {
 
     fn seconds_till_next_frame(&self) -> f64 {
         (self.current_frame - self.start_frame + 1) as f64 / self.rate
-    }
-
-    fn update_state(&self, state: VideoState) {
-        self.sink.blocking_send(VideoData::State(state)).report();
     }
 
     fn clear(&mut self) {

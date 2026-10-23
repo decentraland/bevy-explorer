@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use dcl_component::proto_components::sdk::components::VideoState;
 
 /// An active receiver entity
 #[derive(Component)]
@@ -17,5 +18,8 @@ impl Default for ReceiverVolume {
 
 /// Component with the handle to the image that the receiver
 /// should read from
-#[derive(Component, Deref)]
-pub struct ReceiverImage(pub(crate) Handle<Image>);
+#[derive(Component)]
+pub struct ReceiverImage {
+    pub image: Handle<Image>,
+    pub state: tokio::sync::watch::Receiver<VideoState>,
+}

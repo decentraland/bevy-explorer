@@ -4,6 +4,7 @@ use bevy::{
     prelude::*,
     render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
 };
+use dcl_component::proto_components::sdk::components::VideoState;
 
 use crate::{states::*, *};
 
@@ -11,9 +12,6 @@ pub struct LivestreamManagerPlugin;
 
 impl Plugin for LivestreamManagerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<TransmissionUpdated>();
-        app.add_event::<TransmissionStopped>();
-
         app.init_state::<TransmissionKind>();
         app.init_state::<Transmitter>();
         app.init_state::<Receiver>();
@@ -90,8 +88,21 @@ impl ComputedStates for TransmissionState {
     }
 }
 
-#[derive(Component, Deref)]
-struct LivestreamManager(Handle<Image>);
+#[derive(Component)]
+struct LivestreamManager {
+    image: Handle<Image>,
+    state: tokio::sync::watch::Sender<VideoState>,
+}
+
+impl LivestreamManager {
+    pub fn send_if_modified(&self, new_state: VideoState) -> bool {
+        self.state.send_if_modified(|state| {
+            let diff = state != &new_state;
+            *state = new_state;
+            diff
+        })
+    }
+}
 
 #[derive(Component)]
 #[relationship_target(relationship = PresentationCaster)]
@@ -167,8 +178,12 @@ fn setup_manager(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
         image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
     }
     let handle = images.add(image);
+    let (state_sender, _) = tokio::sync::watch::channel(VideoState::VsNone);
 
-    commands.spawn(LivestreamManager(handle));
+    commands.spawn(LivestreamManager {
+        image: handle,
+        state: state_sender,
+    });
     debug!("LivestreamManager setup");
 }
 
@@ -311,9 +326,10 @@ fn receiver_on(
 ) {
     let entity = trigger.target();
     debug!("New receiver {}", entity);
-    commands
-        .entity(entity)
-        .try_insert(ReceiverImage((**livestream_manager).clone()));
+    commands.entity(entity).try_insert(ReceiverImage {
+        image: livestream_manager.image.clone(),
+        state: livestream_manager.state.subscribe(),
+    });
     next_state.set(Receiver::On);
 }
 
@@ -383,7 +399,6 @@ fn manage_casts(
         )>,
     )>,
     active_transmission: Option<Single<Entity, With<ActiveTransmitter>>>,
-    mut transmission_updated: EventWriter<TransmissionUpdated>,
 ) {
     let (livestream_manager, any_streamer) = livestream_manager.into_inner();
     let collection = match any_streamer {
@@ -410,9 +425,12 @@ fn manage_casts(
         }
         commands
             .entity(highest_priority)
-            .try_insert(ActiveTransmitter((*livestream_manager).clone()));
+            .try_insert(ActiveTransmitter {
+                image: livestream_manager.image.clone(),
+                state: livestream_manager.state.clone(),
+            });
 
-        transmission_updated.write(TransmissionUpdated);
+        livestream_manager.send_if_modified(VideoState::VsPlaying);
     }
 }
 
@@ -449,9 +467,10 @@ fn manage_streams(
             .try_remove::<ActiveTransmitter>();
     }
     debug!("{} now ActiveTransmitter", *stream);
-    commands
-        .entity(*stream)
-        .try_insert(ActiveTransmitter((*livestream_manager).clone()));
+    commands.entity(*stream).try_insert(ActiveTransmitter {
+        image: livestream_manager.image.clone(),
+        state: livestream_manager.state.clone(),
+    });
 }
 
 fn enter_transmission_kind<'w, R: RelationshipTarget>(
@@ -465,9 +484,11 @@ fn enter_transmission_kind<'w, R: RelationshipTarget>(
 
 fn exit_transmission_kind<'w, R: RelationshipTarget>(
     mut commands: Commands,
-    livestream_manager: Single<'w, &R, With<LivestreamManager>>,
+    livestream_manager: Single<'w, (&R, &mut LivestreamManager)>,
 ) {
-    for entity in livestream_manager.collection().iter() {
+    let (r, livestream_manager) = livestream_manager.into_inner();
+    livestream_manager.send_if_modified(VideoState::VsNone);
+    for entity in r.collection().iter() {
         commands
             .entity(entity)
             .try_remove::<(ActiveAudioTransmitter, AudioTransmitterVolume)>();
@@ -488,10 +509,10 @@ fn transfer_receiver_volume(
     }
 }
 
-fn send_update_event(mut transmission_updated: EventWriter<TransmissionUpdated>) {
-    transmission_updated.write(TransmissionUpdated);
+fn send_update_event(livestream_manager: Single<&LivestreamManager>) {
+    livestream_manager.send_if_modified(VideoState::VsPlaying);
 }
 
-fn send_stopped_event(mut transmission_stopped: EventWriter<TransmissionStopped>) {
-    transmission_stopped.write(TransmissionStopped);
+fn send_stopped_event(livestream_manager: Single<&LivestreamManager>) {
+    livestream_manager.send_if_modified(VideoState::VsLoading);
 }
