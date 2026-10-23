@@ -524,8 +524,8 @@ fn publish_stream_state(
             let event = PbVideoEvent {
                 timestamp: frame.0,
                 tick_number: context.tick_number,
-                current_offset: 0.,
-                video_length: 0.,
+                current_offset: -1.,
+                video_length: -1.,
                 state: new_state as i32,
             };
             context.update_crdt(
