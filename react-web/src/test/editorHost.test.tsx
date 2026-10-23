@@ -206,6 +206,18 @@ describe('editor host', () => {
     await host().engineConsole(`set_scene ${own}`)
     await host().engineConsole('/walk_player_to 5 2 3.5 5')
     expect(engineConsole.mock.calls.map(([line]) => line)).toEqual(['/time', `/reload ${own}`, `set_scene ${own}`, '/walk_player_to 5 2 3.5 5'])
+    // the phone UI: the page makes the canvas phone-shaped, letterboxed in the window
+    const canvas = document.createElement('canvas')
+    canvas.id = 'mygame-canvas'
+    canvas.style.width = '100%'
+    canvas.style.height = '100%'
+    document.body.appendChild(canvas)
+    await host().engineConsole('/mobile_ui on')
+    // 1600x720: as wide as the window allows, 9/20 as tall
+    expect(canvas.style).toMatchObject({ height: 'min(100vh, 45vw)', position: 'absolute', margin: 'auto' })
+    expect(canvas.style.width).toMatch(/^min\(100vw, /)
+    await host().engineConsole('/mobile_ui')
+    expect(canvas.style.position).toBe('absolute')
     engineConsole.mockClear()
 
     // its analytics join the page's queue, as its one event and nothing else
@@ -230,8 +242,10 @@ describe('editor host', () => {
     expect(session.editor.setMode).toHaveBeenLastCalledWith('off')
     await vi.waitFor(() => expect(travel).toHaveBeenLastCalledWith('boedo.dcl.eth', { x: 3, y: 4 }))
     expect(session.create.show).toHaveBeenLastCalledWith(true)
-    // the inspection pin is cleared and the clock is the one read on the way in
-    await vi.waitFor(() => expect(engineConsole.mock.calls.map(([line]) => line)).toEqual(['/set_scene', '/time 10.5 7']))
+    // the phone UI is switched off, the inspection pin is cleared and the clock is the one read on the way in
+    expect(canvas.style).toMatchObject({ width: '100%', height: '100%', position: '', margin: '' })
+    await vi.waitFor(() => expect(engineConsole.mock.calls.map(([line]) => line)).toEqual(['/mobile_ui off', '/set_scene', '/time 10.5 7']))
+    canvas.remove()
     // a scene opened again before the travel back lands still goes home to where the player was
     w.set_url_params!(JSON.stringify({ realm, position: '4,-2', editor: false }))
     expect(JSON.parse(synced.mock.lastCall![0] as string)).toMatchObject({ realm: 'boedo.dcl.eth', position: '3,4' })

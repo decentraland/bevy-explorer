@@ -23,9 +23,11 @@ pub fn add_ui_layout_command(app: &mut App) {
     app.add_console_command::<MobileUiCommand, _>(mobile_ui_cmd);
 }
 
-/// Lay scene UI out as on a 1600x720 phone: the scene is told it runs on mobile and gets the
-/// mobile client's interactable area, inside a phone-shaped root fitted in the window. Reload the
-/// scene after switching, it reads the platform when it starts. Native touch controls are not drawn.
+/// Tell scenes they run on a phone: the mobile platform, and the mobile client's interactable area
+/// scaled from a 1600-wide canvas to the window. The window keeps its size: on web the editor
+/// host makes the canvas phone-shaped. The platform is fixed when a scene spawns (and the SDK
+/// caches it), so reload the scene to pick it up; the canvas info applies live. Native touch
+/// controls are not drawn.
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/mobile_ui")]
 struct MobileUiCommand {
@@ -119,7 +121,7 @@ fn ui_layout_cmd(
         })
     });
 
-    // under /mobile_ui (or a constrained UI) the scene's root is a box inside the window
+    // with a constrained UI the scene's root is a box inside the window
     let Some(origin) = links
         .get(scene_ent)
         .ok()

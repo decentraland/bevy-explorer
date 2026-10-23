@@ -665,7 +665,6 @@ fn create_ui_roots(
     hidden_uis: Res<HiddenSceneUis>,
     interactable_area: Res<InteractableArea>,
     mobile: Res<MobileUiEmulation>,
-    mut last_mobile_screen: Local<Option<Rect>>,
     window: Query<&Window, With<PrimaryWindow>>,
     mut atlases: ResMut<SceneCanvasAtlases>,
 ) {
@@ -686,11 +685,6 @@ fn create_ui_roots(
         overflow: Overflow::clip(),
         ..Default::default()
     };
-
-    // the emulated phone screen moves with the window, so a resize rebuilds the roots
-    let mobile_screen = mobile.screen(width, height).map(|(screen, _)| screen);
-    let mobile_changed = mobile.is_changed() || mobile_screen != *last_mobile_screen;
-    *last_mobile_screen = mobile_screen;
 
     let current_scenes = player
         .single()
@@ -745,7 +739,7 @@ fn create_ui_roots(
             && (maybe_link.is_none()
                 || config.is_changed()
                 || interactable_area.is_changed()
-                || mobile_changed)
+                || mobile.is_changed())
         {
             let display = if maybe_super.is_some()
                 || hidden_uis
@@ -759,18 +753,8 @@ fn create_ui_roots(
                 Display::None
             };
 
-            let root_style = if let Some(screen) = mobile_screen.filter(|_| maybe_super.is_none()) {
-                Node {
-                    display,
-                    position_type: PositionType::Absolute,
-                    left: Val::Px(screen.min.x),
-                    top: Val::Px(screen.min.y),
-                    width: Val::Px(screen.width()),
-                    height: Val::Px(screen.height()),
-                    overflow: Overflow::clip(),
-                    ..Default::default()
-                }
-            } else if config.constrain_scene_ui && maybe_super.is_none() {
+            // a phone gives the scene the whole screen; it applies the interactable area itself
+            let root_style = if config.constrain_scene_ui && maybe_super.is_none() && !mobile.0 {
                 Node {
                     display,
                     ..constrained_root_style.clone()

@@ -245,28 +245,25 @@ pub struct SceneLoopSchedule {
 #[derive(Default, Resource)]
 pub struct InteractableArea(pub Option<Vec4>);
 
-/// Lays scene UI out as on a phone: the scene is told it runs on mobile, its UI root becomes the
-/// phone canvas's aspect fitted in the window, and the canvas it is told about carries the mobile
-/// client's interactable area. The platform is read when a scene starts, so reload it after
-/// switching. Native touch controls are not drawn.
+/// Tells scenes they run on a phone: they get the mobile platform and the mobile client's
+/// interactable area, scaled to the window. The window keeps its own size, so the host makes it
+/// phone-shaped (on web, the editor host sizes `#mygame-canvas`). The platform is fixed in a
+/// scene's `CrdtContext` when it spawns and the SDK caches `getExplorerInformation` at module
+/// load, so a scene picks the switch up when reloaded; the canvas size and interactable area
+/// apply live. Native touch controls are not drawn.
 #[derive(Default, Resource, PartialEq)]
 pub struct MobileUiEmulation(pub bool);
 
-/// the mobile client's UI canvas and its interactable area on it (left, top, right, bottom),
-/// as godot-explorer reports them for a 1600x720 landscape phone
-pub const MOBILE_CANVAS: Vec2 = Vec2::new(1600.0, 720.0);
+/// the mobile client's UI canvas width and its interactable area on it (left, top, right,
+/// bottom), as godot-explorer reports them for a 1600x720 landscape phone
+pub const MOBILE_CANVAS_WIDTH: f32 = 1600.0;
 pub const MOBILE_INTERACTABLE_AREA: Vec4 = Vec4::new(436.0, 32.0, 108.0, 45.0);
 
 impl MobileUiEmulation {
-    /// the emulated phone screen in window logical px, and its scale from the phone canvas
-    pub fn screen(&self, width: f32, height: f32) -> Option<(Rect, f32)> {
-        let scale = (width / MOBILE_CANVAS.x).min(height / MOBILE_CANVAS.y);
-        if !self.0 || scale <= 0.0 {
-            return None;
-        }
-        let size = MOBILE_CANVAS * scale;
-        let min = (Vec2::new(width, height) - size) / 2.0;
-        Some((Rect::from_corners(min, min + size), scale))
+    /// the mobile interactable area on a window this wide, or None when off
+    pub fn interactable_area(&self, width: f32) -> Option<Vec4> {
+        self.0
+            .then(|| MOBILE_INTERACTABLE_AREA * (width / MOBILE_CANVAS_WIDTH))
     }
 }
 
@@ -274,40 +271,20 @@ impl MobileUiEmulation {
 mod mobile_ui_tests {
     use super::*;
 
-    fn assert_screen(window: Vec2, rect: Rect, scale: f32) {
-        let (got, got_scale) = MobileUiEmulation(true).screen(window.x, window.y).unwrap();
-        assert!((got_scale - scale).abs() < 1e-4, "{got_scale} != {scale}");
+    #[test]
+    fn scales_the_interactable_area_from_the_phone_width() {
+        let on = MobileUiEmulation(true);
+        assert_eq!(on.interactable_area(1600.0), Some(MOBILE_INTERACTABLE_AREA));
+        let half = on.interactable_area(800.0).unwrap();
         assert!(
-            got.min.abs_diff_eq(rect.min, 1e-3) && got.max.abs_diff_eq(rect.max, 1e-3),
-            "{got:?} != {rect:?}"
+            half.abs_diff_eq(Vec4::new(218.0, 16.0, 54.0, 22.5), 1e-4),
+            "{half}"
         );
     }
 
     #[test]
-    fn fits_the_phone_canvas_in_the_window() {
-        assert_screen(
-            Vec2::new(1600.0, 720.0),
-            Rect::new(0.0, 0.0, 1600.0, 720.0),
-            1.0,
-        );
-        // a 16:9 window is taller than the phone: full width, centred vertically
-        assert_screen(
-            Vec2::new(1920.0, 1080.0),
-            Rect::new(0.0, 108.0, 1920.0, 972.0),
-            1.2,
-        );
-        // a wider window: full height, centred horizontally
-        assert_screen(
-            Vec2::new(2000.0, 720.0),
-            Rect::new(200.0, 0.0, 1800.0, 720.0),
-            1.0,
-        );
-    }
-
-    #[test]
-    fn no_screen_when_off_or_without_a_window() {
-        assert_eq!(MobileUiEmulation(false).screen(1600.0, 720.0), None);
-        assert_eq!(MobileUiEmulation(true).screen(0.0, 0.0), None);
+    fn no_area_when_off() {
+        assert_eq!(MobileUiEmulation(false).interactable_area(1600.0), None);
     }
 }
 
@@ -1082,17 +1059,16 @@ fn send_scene_updates(
         let width = window.resolution.width();
         let height = window.resolution.height();
         let interactable = screen_areas.interactable.get_or_default(width, height);
-        let mobile_screen = screen_areas
+        let mobile_area = screen_areas
             .mobile
-            .screen(width, height)
+            .interactable_area(width)
             .filter(|_| !is_super);
 
-        if let Some((screen, scale)) = mobile_screen {
-            let area = MOBILE_INTERACTABLE_AREA * scale;
+        if let Some(area) = mobile_area {
             PbUiCanvasInformation {
                 device_pixel_ratio: window.resolution.scale_factor(),
-                width: screen.width() as i32,
-                height: screen.height() as i32,
+                width: width as i32,
+                height: height as i32,
                 interactable_area: Some(BorderRect {
                     left: area.x,
                     top: area.y,
