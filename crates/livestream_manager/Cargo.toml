@@ -4,7 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+dcl_component = { workspace = true }
+
 bevy = { workspace = true }
+tokio = { workspace = true }
 
 [dev-dependencies]
 wasm-bindgen-test = { workspace = true }

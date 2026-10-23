@@ -2,8 +2,6 @@
 //! [`AVCommand`]s and reports [`VideoData`]. Native decodes with ffmpeg on a thread; the web
 //! plays the source in a page media element ([`crate::html`]).
 
-use dcl_component::proto_components::sdk::components::VideoState;
-
 #[derive(Debug)]
 pub enum AVCommand {
     Play,
@@ -26,7 +24,6 @@ pub struct VideoInfo {
 pub enum VideoData {
     Info(VideoInfo),
     Frame(VideoFrame, f64),
-    State(VideoState),
 }
 
 /// A decoded frame. Native carries the pixels; on the web the page copied the frame straight to

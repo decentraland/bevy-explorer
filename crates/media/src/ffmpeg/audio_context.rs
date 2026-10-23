@@ -2,7 +2,6 @@ use std::{collections::VecDeque, time::Duration};
 
 use bevy::prelude::*;
 use common::{structs::AudioDecoderError, util::ReportErr};
-use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::{
     Packet, decoder, ffi::AVSampleFormat, format::context::Input, media::Type, util::frame,
 };
@@ -356,10 +355,6 @@ impl FfmpegContext for AudioContext {
 
     fn seconds_till_next_frame(&self) -> f64 {
         (self.current_frame - self.start_frame + 1) as f64 / self.rate
-    }
-
-    fn update_state(&self, _state: VideoState) {
-        // disregard
     }
 
     fn clear(&mut self) {

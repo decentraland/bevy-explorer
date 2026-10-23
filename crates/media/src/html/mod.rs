@@ -95,6 +95,7 @@ struct AvSource {
     id: MediaId,
     commands: tokio::sync::mpsc::UnboundedReceiver<AVCommand>,
     video: tokio::sync::mpsc::Sender<VideoData>,
+    state_sender: tokio::sync::watch::Sender<VideoState>,
     size: Option<(u32, u32)>,
     duration: f64,
 }
@@ -103,6 +104,7 @@ impl AvSource {
     fn new(
         commands: tokio::sync::mpsc::UnboundedReceiver<AVCommand>,
         video: tokio::sync::mpsc::Sender<VideoData>,
+        state_sender: tokio::sync::watch::Sender<VideoState>,
         image: &Handle<Image>,
     ) -> Self {
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
@@ -111,6 +113,7 @@ impl AvSource {
             id,
             commands,
             video,
+            state_sender,
             size: None,
             duration: 0.0,
         }
@@ -120,6 +123,14 @@ impl AvSource {
         if self.video.try_send(data).is_err() {
             trace!("media {}: video channel full or closed", self.id);
         }
+    }
+
+    fn send_state(&mut self, video_state: VideoState) {
+        self.state_sender.send_if_modified(|state| {
+            let diff = *state != video_state;
+            *state = video_state;
+            diff
+        });
     }
 
     fn send_info(&self) {
@@ -140,11 +151,12 @@ impl AvSource {
 pub fn spawn_av(
     commands: tokio::sync::mpsc::UnboundedReceiver<AVCommand>,
     video: tokio::sync::mpsc::Sender<VideoData>,
+    state_sender: tokio::sync::watch::Sender<VideoState>,
     url: Option<String>,
     has_video: bool,
     image: &Handle<Image>,
 ) {
-    let source = AvSource::new(commands, video, image);
+    let source = AvSource::new(commands, video, state_sender, image);
     send_host(HostCommand::Create {
         id: source.id,
         url,
@@ -159,9 +171,10 @@ pub fn spawn_av(
 pub fn adopt_video(
     commands: tokio::sync::mpsc::UnboundedReceiver<AVCommand>,
     video: tokio::sync::mpsc::Sender<VideoData>,
+    state_sender: tokio::sync::watch::Sender<VideoState>,
     image: &Handle<Image>,
 ) -> MediaId {
-    let source = AvSource::new(commands, video, image);
+    let source = AvSource::new(commands, video, state_sender, image);
     let id = source.id;
     NEW_SOURCES.lock().unwrap().push(source);
     id

@@ -440,7 +440,7 @@ fn receiver_image_added(
         debug!("ReceiverImage added to {}", entity);
         commands
             .entity(entity)
-            .try_insert(VideoTextureOutput((*receiver_image).clone()));
+            .try_insert(VideoTextureOutput(receiver_image.image.clone()));
 
         if transmitter_state.get() == &Transmitter::On {
             commands.trigger(SetState::<VideoPlayer> {

@@ -609,9 +609,14 @@ fn video_track_is_now_subscribed(
 
     let (command_sender, command_receiver) = tokio::sync::mpsc::unbounded_channel();
     let (video_sender, video_receiver) = tokio::sync::mpsc::channel(10);
-    let image = (*active_transmitter).clone();
+    let image = active_transmitter.image.clone();
     // the page attaches the track's video element to the media host under this id
-    let media_id = media::adopt_video(command_receiver, video_sender, &image);
+    let media_id = media::adopt_video(
+        command_receiver,
+        video_sender,
+        active_transmitter.state.clone(),
+        &image,
+    );
     video.attach(media_id);
     commands.entity(entity).try_insert(HtmlMediaEntity {
         _commands: command_sender,
@@ -686,7 +691,7 @@ fn copy_frame(
         Mut<VideoFrameReceiver>,
     ) = active_transmitter.into_inner();
 
-    let Some(image) = images.get_mut(active_transmitter.id()) else {
+    let Some(image) = images.get_mut(active_transmitter.image.id()) else {
         debug_panic!("ActiveTransmitter image handle is invalid");
     };
 

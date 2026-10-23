@@ -67,7 +67,6 @@ pub trait FfmpegContext {
     fn set_start_frame(&mut self);
     fn reset_start_frame(&mut self);
     fn seconds_till_next_frame(&self) -> f64;
-    fn update_state(&self, state: VideoState);
     fn clear(&mut self);
 }
 
@@ -77,23 +76,13 @@ pub fn process_streams(
     streams: &mut [&mut dyn FfmpegContext],
     mut commands: tokio::sync::mpsc::UnboundedReceiver<AVCommand>,
     mut audio: AudioOutput,
+    state_sender: tokio::sync::watch::Sender<VideoState>,
 ) -> Result<(), anyhow::Error> {
     let mut start_instant: Option<Instant> = None;
     let mut repeat = false;
     // only repeat if the last pass produced data, else a dead or empty input spins on reset
     let mut read_since_reset = false;
     let mut init = false;
-    let mut last_state = VideoState::VsNone;
-
-    let mut update_state = |state: VideoState, streams: &mut [&mut dyn FfmpegContext]| {
-        trace!("Setting state to {state:?}.");
-        if state != last_state {
-            for stream in streams {
-                stream.update_state(state)
-            }
-            last_state = state;
-        }
-    };
 
     let mut tick = 0;
 
@@ -108,7 +97,11 @@ pub fn process_streams(
         // ensure frame available
         if !input_context.is_eof() && streams.iter().any(|ctx| ctx.buffered_time() == 0.0) {
             trace!("Buffering stream");
-            update_state(VideoState::VsBuffering, streams);
+            state_sender.send_if_modified(|state| {
+                let diff = state != &VideoState::VsBuffering;
+                *state = VideoState::VsBuffering;
+                diff
+            });
             while !input_context.is_eof() && streams.iter().any(|ctx| ctx.buffered_time() == 0.0) {
                 if let Some((stream_index, packet)) = input_context.blocking_next() {
                     read_since_reset = true;
@@ -125,7 +118,11 @@ pub fn process_streams(
         // state ready if required
         if !init {
             trace!("Init stream");
-            update_state(VideoState::VsReady, streams);
+            state_sender.send_if_modified(|state| {
+                let diff = state != &VideoState::VsReady;
+                *state = VideoState::VsReady;
+                diff
+            });
             init = true;
         }
 
@@ -179,7 +176,11 @@ pub fn process_streams(
                     stream.clear();
                 }
                 input_context.seek_to(time);
-                update_state(VideoState::VsSeeking, streams);
+                state_sender.send_if_modified(|state| {
+                    let diff = state != &VideoState::VsSeeking;
+                    *state = VideoState::VsSeeking;
+                    diff
+                });
                 continue;
             }
             Ok(AVCommand::Volume(volume)) => {
@@ -200,9 +201,17 @@ pub fn process_streams(
         }
 
         if start_instant.is_some() {
-            update_state(VideoState::VsPlaying, streams);
+            state_sender.send_if_modified(|state| {
+                let diff = state != &VideoState::VsPlaying;
+                *state = VideoState::VsPlaying;
+                diff
+            });
         } else {
-            update_state(VideoState::VsPaused, streams);
+            state_sender.send_if_modified(|state| {
+                let diff = state != &VideoState::VsPaused;
+                *state = VideoState::VsPaused;
+                diff
+            });
         }
 
         if let Some(play_instant) = start_instant {
