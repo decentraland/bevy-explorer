@@ -98,8 +98,9 @@ pub fn av_sinks<T: AVPlayer>(
         video: T::has_video().then_some(VideoSink::new(source, video_receiver, image)),
         command_sender,
         rate: None,
-        sent_volume: None,
         state: state_receiver,
+        sent_volume: None,
+        sent_state: VideoState::VsNone,
         _phantom: Default::default(),
     }
 }
@@ -195,8 +196,9 @@ pub fn noop_sinks<T: AVPlayer>(source: String, image: Handle<Image>) -> AVSinks<
         video: Some(VideoSink::new(source, video_receiver, image)),
         command_sender,
         rate: None,
-        sent_volume: None,
         state: state_receiver,
+        sent_volume: None,
+        sent_state: VideoState::VsNone,
         _phantom: Default::default(),
     }
 }

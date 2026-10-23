@@ -241,9 +241,10 @@ fn player_config_added<T: AVPlayer>(
             audio: _,
         video: _,
         command_sender,
-        sent_volume: _,
         rate,
         state: _,
+        sent_volume: _,
+        sent_state: _,
         _phantom,
     } = sinks.as_mut();
 
@@ -279,8 +280,9 @@ fn update_av_volume<T: AVPlayer>(
             video: _,
             command_sender,
             rate: _,
-            sent_volume,
             state: _,
+            sent_volume,
+            sent_state: _,
             _phantom,
         } = sinks.as_mut();
 
@@ -369,8 +371,9 @@ fn play_videos(
             video: Some(video),
             command_sender: _,
             rate: sink_rate,
-            sent_volume: _,
             state: _,
+            sent_volume: _,
+            sent_state: _,
             _phantom,
         } = video_player_sinks.as_mut()
         else {
@@ -436,6 +439,8 @@ fn play_videos(
     }
 }
 
+const VIDEO_REPORT_FREQUENCY: f64 = 1.0;
+
 fn publish_av_player_state<T: AVPlayer>(
     mut q: Query<(&mut AVSinks<T>, &ContainerEntity)>,
     mut scenes: Query<&mut RendererSceneContext>,
@@ -448,8 +453,9 @@ fn publish_av_player_state<T: AVPlayer>(
             video,
             command_sender: _,
             rate: _,
-            sent_volume: _,
             state,
+            sent_volume: _,
+            sent_state,
             _phantom,
         } = video_player_sinks.as_mut();
 
@@ -457,8 +463,13 @@ fn publish_av_player_state<T: AVPlayer>(
             continue;
         };
 
-        if state.has_changed().is_ok_and(|b| b) {
-            let new_state = *state.borrow_and_update();
+        let new_state = *state.borrow_and_update();
+        if &new_state != sent_state
+            || (T::has_video()
+                && video.as_ref().is_some_and(|video| {
+                    video.current_time >= video.last_reported_time + VIDEO_REPORT_FREQUENCY
+                }))
+        {
             if T::has_video() {
                 let Some(video) = video else {
                     continue;
